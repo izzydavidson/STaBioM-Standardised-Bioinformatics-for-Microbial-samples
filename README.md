@@ -1,11 +1,11 @@
-# STaMP-Standardized-Taxonomic-Microbiome-Pipeline-for-Nanopore-data
+# STaMP-Standardised-Taxonomic-Microbiome-Pipeline-for-Nanopore-data
 
-This repository provides a standardized analysis pipeline for Nanopore microbiome data across multiple specimen types. The goal is to **reduce method-driven variability** by enforcing consistent inputs, preprocessing, QC, classification, and reporting.
+This repository provides a standardised analysis pipeline for Nanopore metagenomic microbiome data across multiple specimen types. The goal is to **reduce method-driven variability** by enforcing consistent inputs, preprocessing, QC, classification, and reporting.
 
 The pipeline supports two entry modes:
 
-* **FASTQ mode**: for publicly available data or already basecalled reads
-* **FAST5 mode**: for raw, unbasecalled sequencing output that requires basecalling
+* **FASTQ mode**: for publicly available data or already basecalled reads (performed by any tool)
+* **FAST5 mode**: for raw, unbasecalled sequencing output that requires basecalling first
 
 Both modes converge on consistent QC, taxonomy outputs, and standardized summary tables and plots.
 
@@ -71,14 +71,15 @@ Expectations:
 Typical flow:
 
 1. **Basecalling** (Dorado)
-2. **Demultiplexing** (Dorado, where applicable)
-3. **Trimming** (Dorado, where applicable)
-4. **FASTQ standardization**
-5. **FastQC**
-6. **MultiQC**
-7. **Kraken classification**
-8. **VALENCIA** (vaginal samples)
-9. **Tidy summary tables + run-level plots**
+2. **Demultiplexing** (Dorado)
+3. **Trimming** (Dorado)
+4. **Low-quality read removal**
+5. **FASTQ standardization**
+6. **FastQC**
+7. **MultiQC**
+8. **Kraken classification**
+9. **VALENCIA** (vaginal samples)
+10. **Tidy summary tables + run-level plots**
 
 ---
 
