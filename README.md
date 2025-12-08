@@ -1,11 +1,5 @@
 # STaMP-Standardized-Taxonomic-Microbiome-Pipeline-for-Nanopore-data
 
-Absolutely — here’s a fuller **README.md draft** you can paste in. I’ve kept it aligned to your “core contract” goal, but added the extra pieces you said you want: rationale, FASTQ vs FAST5 usage patterns, tidy CSV schema example, and clear VALENCIA behaviour.
-
----
-
-# Nanopore Multi-Site Microbiome Pipeline
-
 This repository provides a standardized analysis pipeline for Nanopore microbiome data across multiple specimen types. The goal is to **reduce method-driven variability** by enforcing consistent inputs, preprocessing, QC, classification, and reporting.
 
 The pipeline supports two entry modes:
