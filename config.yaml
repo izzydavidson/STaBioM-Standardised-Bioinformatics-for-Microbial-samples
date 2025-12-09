@@ -1,4 +1,4 @@
-# --- Required concept fields ---
+# --- Required concept fields (example) ---
 input_type: fastq                # fastq | fast5
 sample_type: vaginal             # skin | oral | gut | vaginal
 
