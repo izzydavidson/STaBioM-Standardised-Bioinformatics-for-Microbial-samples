@@ -33,9 +33,7 @@ git clone <YOUR_REPO_URL>
 cd STaMP
 ```
 
-### 2) Minimal config example
-
-Create a `config.yaml`:
+### 2) Edit the Config.yaml file to be specific to your run
 
 ```yaml
 # --- Required concept fields ---
