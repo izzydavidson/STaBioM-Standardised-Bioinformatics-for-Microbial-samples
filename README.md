@@ -24,6 +24,58 @@ Sample type selection may drive validated parameter presets and determine whethe
 
 ---
 
+## Quickstart
+
+### 1) Clone
+
+```bash
+git clone <YOUR_REPO_URL>
+cd STaMP
+```
+
+### 2) Minimal config example
+
+Create a `config.yaml`:
+
+```yaml
+# --- Required concept fields ---
+input_type: fastq                # fastq | fast5
+sample_type: vaginal             # skin | oral | gut | vaginal
+
+# --- Input paths (use the one matching input_type) ---
+fastq_dir: /path/to/fastq        # used when input_type: fastq
+fast5_dir: /path/to/fast5        # used when input_type: fast5
+
+# --- Optional but recommended ---
+run_id: run_001
+output_dir: /path/to/output
+
+# --- Optional preprocessing controls ---
+prep_profile: alt_fastq_prep     # dorado | alt_fastq_prep
+barcode_kit: null                # e.g., SQK-RBK114.24 (if applicable)
+min_qscore: 10                   # example default; adjust per validated preset
+
+# --- Classification modules ---
+kraken_enabled: true
+valencia_enabled: auto           # auto | true | false
+```
+
+### 3) Run
+
+**FASTQ mode**
+
+```bash
+./run_fastq.sh --config config.yaml
+```
+
+**FAST5 mode**
+
+```bash
+./run_raw.sh --config config.yaml
+```
+
+---
+
 ## Core Contract (Inputs & Outputs)
 
 ### Accepted Input Types
@@ -209,6 +261,68 @@ Key concept fields:
 
 ---
 
+## Parameter Presets (by Sample Type)
+
+These presets describe **intended default behaviour** for each specimen type. Final values should reflect your validated testing; treat these as the structure you’ll lock once vaginal/gut/skin cloud validation is complete.
+
+### Skin
+
+**Recommended defaults**
+
+* `sample_type: skin`
+* `valencia_enabled: false`
+* `kraken_enabled: true`
+* Consider a slightly stricter QC threshold depending on your run characteristics.
+
+**Notes**
+
+* Skin samples can be lower biomass; contamination-aware interpretation is recommended.
+
+---
+
+### Oral
+
+**Recommended defaults**
+
+* `sample_type: oral`
+* `valencia_enabled: false`
+* `kraken_enabled: true`
+
+**Notes**
+
+* Oral communities can be diverse with common commensals; ensure database versioning is recorded.
+
+---
+
+### Gut / faecal
+
+**Recommended defaults**
+
+* `sample_type: gut`
+* `valencia_enabled: false`
+* `kraken_enabled: true`
+
+**Notes**
+
+* Gut samples often support robust species-level profiling; ensure read length and QC summaries remain part of your reproducibility outputs.
+
+---
+
+### Vaginal
+
+**Recommended defaults**
+
+* `sample_type: vaginal`
+* `valencia_enabled: auto` *(effectively on)*
+* `kraken_enabled: true`
+
+**Notes**
+
+* VALENCIA output is a required category for vaginal runs under this contract.
+* The tidy output should link CST-related summaries (if you choose to include them) to `run_id` and `sample_id`.
+
+---
+
 ## Example Usage Patterns
 
 These examples are intentionally high-level and can be adapted to your final CLI.
@@ -294,6 +408,12 @@ The UI will not contain scientific logic; it will **operate the workflow safely*
 
 ---
 
+## Methods-ready paragraph (for your paper)
+
+We developed **STaMP**, a standardised, multi-site Nanopore microbiome workflow supporting both basecalled FASTQ inputs and raw FAST5 inputs requiring integrated basecalling. The pipeline applies specimen-aware preprocessing, quality control, and taxonomic classification to produce harmonised outputs including FastQC/MultiQC reports, Kraken-based taxonomic profiles, and VALENCIA vaginal CST classification where appropriate. STaMP generates analysis-ready, tidy per-sample summary tables and run-level visualisations, while automatically recording software versions and key parameters for each run. By enforcing consistent input requirements, validated specimen-specific presets, and reproducible reporting across FASTQ- and FAST5-derived workflows, STaMP is designed to reduce method-driven variability and improve cross-study comparability.
+
+---
+
 ## License & Citation
 
 A license and citation guide will be added prior to public release to support reuse and appropriate attribution.
@@ -305,9 +425,3 @@ A license and citation guide will be added prior to public release to support re
 For questions, collaboration, or feature requests, please open an issue.
 
 ---
-
-If you want, I can also add:
-
-* a **“Quickstart”** section with a minimal config example
-* a **parameter presets** section per sample type
-* a short **Methods-ready paragraph** you can drop straight into your paper.
