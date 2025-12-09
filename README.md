@@ -406,11 +406,6 @@ A lightweight plug-and-play UI will be added to:
 
 The UI will not contain scientific logic; it will **operate the workflow safely** to preserve reproducibility.
 
----
-
-## Methods-ready paragraph (for your paper)
-
-We developed **STaMP**, a standardised, multi-site Nanopore microbiome workflow supporting both basecalled FASTQ inputs and raw FAST5 inputs requiring integrated basecalling. The pipeline applies specimen-aware preprocessing, quality control, and taxonomic classification to produce harmonised outputs including FastQC/MultiQC reports, Kraken-based taxonomic profiles, and VALENCIA vaginal CST classification where appropriate. STaMP generates analysis-ready, tidy per-sample summary tables and run-level visualisations, while automatically recording software versions and key parameters for each run. By enforcing consistent input requirements, validated specimen-specific presets, and reproducible reporting across FASTQ- and FAST5-derived workflows, STaMP is designed to reduce method-driven variability and improve cross-study comparability.
 
 ---
 
