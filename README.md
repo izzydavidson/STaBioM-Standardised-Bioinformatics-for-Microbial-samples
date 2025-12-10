@@ -1,3 +1,4 @@
+````md
 # STaMP-Standardised-Taxonomic-Microbiome-Pipeline-for-Nanopore-data
 
 This repository provides a standardised analysis pipeline for Nanopore metagenomic microbiome data across multiple specimen types. The goal is to **reduce method-driven variability** by enforcing consistent inputs, preprocessing, QC, classification, and reporting.
@@ -24,6 +25,40 @@ Sample type selection may drive validated parameter presets and determine whethe
 
 ---
 
+## Requirements
+
+This pipeline assumes a Linux/macOS environment with standard command-line tooling. Some components are optional depending on whether you run FASTQ or FAST5 mode and whether you enable vaginal CST classification.
+
+Core requirements for both modes include a modern Bash environment, Git, Python 3, and R. You will also need core classification and QC tools available on PATH. The pipeline is designed to check for missing tools and will exit with a clear error if a required dependency is not available.
+
+For FASTQ mode, you will need Kraken2 installed and a compatible database available at the path defined in your config. Bracken is optional but recommended for improved abundance estimation where you have a matching k-mer distribution file for your read length.
+
+For FAST5 mode, Dorado is required for basecalling and demultiplexing. A CUDA-capable environment is recommended if you intend to basecall at scale. CPU mode can work for small test runs but will be slower.
+
+For vaginal runs, VALENCIA is used for CST classification. The pipeline will clone the VALENCIA repository automatically if it is not already present in the configured directory, but you still need Python available to run the classifier.
+
+You should also plan for substantial disk usage depending on database size and run count. Kraken2 databases can be large, and storing intermediate files for multiple samples can add up quickly.
+
+Suggested tool list to document explicitly:
+
+* Bash
+* Git
+* Python 3.x
+* R 4.x
+* Kraken2
+* Bracken (recommended)
+* FastQC and MultiQC (if QC is enabled)
+* Minimap2 (if host read removal is part of your workflow)
+* Dorado (FAST5 mode only)
+* VALENCIA repo (auto-cloned when enabled)
+
+Database requirements:
+
+* A Kraken2 database compatible with your workflow and specified in your config.
+* If using Bracken, a matching k-mer distribution file for your read length.
+
+---
+
 ## Quickstart
 
 ### 1) Clone
@@ -31,7 +66,7 @@ Sample type selection may drive validated parameter presets and determine whethe
 ```bash
 git clone <YOUR_REPO_URL>
 cd STaMP
-```
+````
 
 ### 2) Edit the Config.yaml file to be specific to your run
 
@@ -404,7 +439,6 @@ A lightweight plug-and-play UI will be added to:
 
 The UI will not contain scientific logic; it will **operate the workflow safely** to preserve reproducibility.
 
-
 ---
 
 ## License & Citation
@@ -416,5 +450,4 @@ A license and citation guide will be added prior to public release to support re
 ## Contact
 
 For questions, collaboration, or feature requests, please open an issue.
-
 ---
