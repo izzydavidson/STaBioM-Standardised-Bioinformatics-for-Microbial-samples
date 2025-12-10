@@ -1,4 +1,3 @@
-````md
 # STaMP-Standardised-Taxonomic-Microbiome-Pipeline-for-Nanopore-data
 
 This repository provides a standardised analysis pipeline for Nanopore metagenomic microbiome data across multiple specimen types. The goal is to **reduce method-driven variability** by enforcing consistent inputs, preprocessing, QC, classification, and reporting.
