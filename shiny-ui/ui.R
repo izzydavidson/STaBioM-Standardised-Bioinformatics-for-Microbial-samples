@@ -13,7 +13,13 @@ stamp_config_defaults <- list(
   min_qscore = 10,
   valencia_enabled = "auto",
   output_styles = c("stacked_bar", "raw_csv"),
-  run_scope = "full"
+  run_scope = "full",
+  
+  # NEW defaults (2x2 options live here)
+  sequencing_approach = "shotgun",  # shotgun | amplicon
+  read_technology = "long",         # long | short
+  platform = "nanopore",            # nanopore | pacbio | illumina
+  marker = "16S"                    # only used when amplicon
 )
 
 ui <- page_fluid(
@@ -39,6 +45,7 @@ ui <- page_fluid(
     .sidebar #sample_dir,
     .sidebar #run_label,
     .sidebar #output_dir,
+    .sidebar #sequencing_approach,
     .sidebar #input_type,
     .sidebar #sample_type,
     .sidebar #prep_profile,
@@ -73,6 +80,7 @@ ui <- page_fluid(
     .bslib-sidebar #sample_dir,
     .bslib-sidebar #run_label,
     .bslib-sidebar #output_dir,
+    .bslib-sidebar #sequencing_approach,
     .bslib-sidebar #input_type,
     .bslib-sidebar #sample_type,
     .bslib-sidebar #prep_profile,
@@ -125,6 +133,8 @@ ui <- page_fluid(
   ")),
   
   layout_sidebar(
+    fill = FALSE,  # ✅ prevents the “box” when adding more inputs
+    
     sidebar = sidebar(
       h4("Inputs"),
       p("Add files for a new run."),
@@ -177,6 +187,17 @@ ui <- page_fluid(
       
       h5("Run configuration"),
       p("Set analysis mode and preprocessing options for this run."),
+      
+      # NEW (step 1 only)
+      selectInput(
+        inputId = "sequencing_approach",
+        label = "Sequencing approach",
+        choices = c(
+          "Shotgun metagenomics" = "shotgun",
+          "Amplicon sequencing" = "amplicon"
+        ),
+        selected = stamp_config_defaults$sequencing_approach
+      ),
       
       selectInput(
         inputId = "input_type",
@@ -278,10 +299,10 @@ ui <- page_fluid(
     
     div(
       class = "stamp-hero",
-      h1("STaMeN"),
+      h1("STaBioM"),
       p(
-        "STaMeN – Standardised Taxonomic Metagenomics Pipeline for Nanopore Data ",
-        "is a lightweight interface for preparing Nanopore metagenomic microbiome runs. ",
+        "STaBioM – Standardised Bioinformatics for Microbial samples ",
+        "is a lightweight interface for preparing microbial sequencing runs. ",
         "Upload sequencing inputs, choose your run configuration, review the files received, ",
         "then run your local workflow."
       )
@@ -308,3 +329,4 @@ ui <- page_fluid(
     verbatimTextOutput("upload_messages")
   )
 )
+
