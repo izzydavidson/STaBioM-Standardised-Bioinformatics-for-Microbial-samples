@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stabiom.local/schemas/run.schema.json",
+  "title": "STaBioM Run Config",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["pipeline_id", "run", "technology", "input", "resources", "params", "output"],
+  "properties": {
+    "pipeline_id": {
+      "type": "string",
+      "enum": ["lr_meta", "lr_amp", "sr_meta", "sr_amp_qiime2"]
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["work_dir", "run_id", "force_overwrite"],
+      "properties": {
+        "work_dir": { "type": "string", "minLength": 1 },
+        "run_id": { "type": "string" },
+        "force_overwrite": { "type": "integer", "enum": [0, 1] }
+      }
+    },
+    "technology": {
+      "type": "string",
+      "enum": ["ONT", "PACBIO", "ILLUMINA", "BGI", "IONTORRENT"]
+    },
+    "input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["style"],
+      "properties": {
+        "style": { "type": "string", "enum": ["FAST5", "FASTQ", "BAM"] },
+
+        "fast5_dir": { "type": "string" },
+
+        "fastq": { "type": "string" },
+
+        "bam": { "type": "string" },
+
+        "r1": { "type": "string" },
+        "r2": { "type": "string" },
+
+        "manifest_csv": { "type": "string" }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["threads"],
+      "properties": {
+        "threads": { "type": "integer", "minimum": 1, "maximum": 256 }
+      }
+    },
+    "tools": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "params": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["common"],
+      "properties": {
+        "common": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["min_qscore", "remove_host"],
+          "properties": {
+            "min_qscore": { "type": "integer", "minimum": 0, "maximum": 60 },
+            "remove_host": { "type": "integer", "enum": [0, 1] }
+          }
+        }
+      }
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["selected"],
+      "properties": {
+        "selected": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "export_dir": { "type": "string" }
+      }
+    }
+  },
+
+  "allOf": [
+    {
+      "if": { "properties": { "pipeline_id": { "enum": ["LR-META", "LR-AMP"] } } },
+      "then": {
+        "properties": {
+          "technology": { "enum": ["ONT", "PACBIO"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "pipeline_id": { "enum": ["SR-META", "SR-AMP-QIIME2"] } } },
+      "then": {
+        "properties": {
+          "technology": { "enum": ["ILLUMINA", "BGI", "IONTORRENT"] }
+        }
+      }
+    },
+
+    {
+      "if": { "properties": { "pipeline_id": { "enum": ["LR-META", "LR-AMP"] } } },
+      "then": {
+        "properties": {
+          "input": {
+            "allOf": [
+              {
+                "if": { "properties": { "style": { "const": "FAST5" } }, "required": ["style"] },
+                "then": { "required": ["fast5_dir"] }
+              },
+              {
+                "if": { "properties": { "style": { "const": "FASTQ" } }, "required": ["style"] },
+                "then": { "required": ["fastq"] }
+              },
+              {
+                "if": { "properties": { "style": { "const": "BAM" } }, "required": ["style"] },
+                "then": { "required": ["bam"] }
+              }
+            ]
+          }
+        }
+      }
+    },
+
+    {
+      "if": { "properties": { "pipeline_id": { "const": "SR-META" } } },
+      "then": {
+        "properties": {
+          "input": {
+            "required": ["style", "r1"],
+            "properties": { "style": { "const": "FASTQ" } }
+          }
+        }
+      }
+    },
+
+    {
+      "if": { "properties": { "pipeline_id": { "const": "SR-AMP-QIIME2" } } },
+      "then": {
+        "properties": {
+          "input": {
+            "required": ["style", "manifest_csv"],
+            "properties": { "style": { "const": "FASTQ" } }
+          }
+        }
+      }
+    }
+  ]
+}
