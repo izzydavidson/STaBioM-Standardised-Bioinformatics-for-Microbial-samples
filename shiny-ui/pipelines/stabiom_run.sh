@@ -28,7 +28,6 @@ if [[ ! -f "${CONFIG_PATH}" ]]; then
   exit 2
 fi
 
-# Resolve paths relative to where THIS script lives (so it works no matter your cwd)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MODULES_DIR="${SCRIPT_DIR}/modules"
 CAPABILITIES_PATH="${SCRIPT_DIR}/capabilities.json"
@@ -147,12 +146,72 @@ print("1" if key in pipelines else "0")
 PY
 }
 
+normalize_input_style() {
+  local style_raw="$1"
+  python3 - "$style_raw" <<'PY'
+import sys
+s = (sys.argv[1] or "").strip()
+if not s:
+  print("")
+  sys.exit(0)
+upper = s.upper().replace("-", "_")
+legacy = {
+  "FAST5": "FAST5_DIR",
+  "FASTQ": "FASTQ_SINGLE",
+}
+print(legacy.get(upper, upper))
+PY
+}
+
+capabilities_get_supported_inputs_csv() {
+  local pipeline_key="$1"
+  python3 - "$CAPABILITIES_PATH" "$pipeline_key" <<'PY'
+import json, sys
+cap_path = sys.argv[1]
+pipeline_key = sys.argv[2]
+with open(cap_path, "r", encoding="utf-8") as f:
+  cap = json.load(f)
+p = cap.get("pipelines", {}).get(pipeline_key, {})
+supported = p.get("supported_inputs", [])
+if not isinstance(supported, list):
+  supported = []
+print(",".join(supported))
+PY
+}
+
+capabilities_pipeline_supports_input() {
+  local pipeline_key="$1"
+  local input_style="$2"
+  python3 - "$CAPABILITIES_PATH" "$pipeline_key" "$input_style" <<'PY'
+import json, sys
+cap_path, pipeline_key, style = sys.argv[1:]
+with open(cap_path, "r", encoding="utf-8") as f:
+  cap = json.load(f)
+p = cap.get("pipelines", {}).get(pipeline_key, {})
+supported = p.get("supported_inputs", [])
+ok = isinstance(supported, list) and style in supported
+print("1" if ok else "0")
+PY
+}
+
+require_field() {
+  local expr="$1"
+  local label="$2"
+  local val
+  val="$(json_get "${expr}")"
+  if [[ -z "${val}" ]]; then
+    echo "ERROR: Missing required field '${expr}' (${label}) for input.style '${INPUT_STYLE_RAW}' (normalized: '${INPUT_STYLE}')" >&2
+    exit 4
+  fi
+}
+
 require_python
 
 PIPELINE_ID="$(json_get "pipeline_id")"
 WORK_DIR="$(json_get "run.work_dir")"
 RUN_ID="$(json_get "run.run_id")"
 FORCE_OVERWRITE="$(json_get "run.force_overwrite")"
+INPUT_STYLE_RAW="$(json_get "input.style")"
 
 if [[ -z "${PIPELINE_ID}" ]]; then
   echo "ERROR: Missing pipeline_id in config" >&2
@@ -176,7 +235,6 @@ if [[ -z "${PIPELINE_KEY}" ]]; then
   exit 4
 fi
 
-# Step 6: validate pipeline_id exists in capabilities.json (clearer errors early)
 if [[ ! -f "${CAPABILITIES_PATH}" ]]; then
   echo "ERROR: capabilities.json not found at: ${CAPABILITIES_PATH}" >&2
   echo "       Create it at pipelines/capabilities.json (relative to this dispatcher)." >&2
@@ -190,6 +248,48 @@ if [[ "${HAS_PIPELINE}" != "1" ]]; then
   exit 5
 fi
 
+INPUT_STYLE="$(normalize_input_style "${INPUT_STYLE_RAW}")"
+if [[ -z "${INPUT_STYLE}" ]]; then
+  echo "ERROR: Missing input.style in config" >&2
+  echo "       Example: \"input\": { \"style\": \"FAST5_DIR\", ... }" >&2
+  exit 4
+fi
+
+INPUT_OK="$(capabilities_pipeline_supports_input "${PIPELINE_KEY}" "${INPUT_STYLE}")"
+if [[ "${INPUT_OK}" != "1" ]]; then
+  ALLOWED="$(capabilities_get_supported_inputs_csv "${PIPELINE_KEY}")"
+  echo "ERROR: input.style '${INPUT_STYLE_RAW}' (normalized: '${INPUT_STYLE}') is not supported for pipeline '${PIPELINE_ID}'" >&2
+  echo "       Allowed input styles for ${PIPELINE_KEY}: ${ALLOWED}" >&2
+  exit 5
+fi
+
+# Step 7A: validate required config fields for the chosen input style
+case "${INPUT_STYLE}" in
+  FAST5_DIR)
+    require_field "input.fast5_dir" "path to FAST5 directory"
+    ;;
+  FAST5_ARCHIVE)
+    require_field "input.fast5_archive" "path to FAST5 archive (.zip or .tar.gz)"
+    ;;
+  FASTQ_SINGLE)
+    require_field "input.fastq_r1" "path to single-end FASTQ (R1)"
+    ;;
+  FASTQ_PAIRED)
+    require_field "input.fastq_r1" "path to paired-end FASTQ (R1)"
+    require_field "input.fastq_r2" "path to paired-end FASTQ (R2)"
+    ;;
+  FASTQ_DIR_SINGLE)
+    require_field "input.fastq_dir" "path to directory of single-end FASTQ files"
+    ;;
+  FASTQ_DIR_PAIRED)
+    require_field "input.fastq_dir" "path to directory of paired FASTQ files"
+    ;;
+  *)
+    echo "ERROR: Unknown input.style after normalization: '${INPUT_STYLE}'" >&2
+    exit 4
+    ;;
+esac
+
 RUN_ID_RESOLVED="$(sanitize_id "${RUN_ID}")"
 if [[ -z "${RUN_ID_RESOLVED}" ]]; then
   RUN_ID_RESOLVED="run_$(date +%Y%m%d_%H%M%S)"
@@ -197,7 +297,6 @@ fi
 
 RUN_DIR="${WORK_DIR%/}/${RUN_ID_RESOLVED}"
 
-# Map pipeline_id -> module script (still explicit for now)
 case "${PIPELINE_KEY}" in
   lr_meta)
     MODULE_SCRIPT="${MODULES_DIR}/lr_meta.sh"
@@ -240,6 +339,9 @@ touch "${LOG_PATH}"
 
 EFFECTIVE_CONFIG_PATH="${RUN_DIR}/effective_config.json"
 
+# IMPORTANT:
+# - Override run.work_dir to RUN_DIR so modules write into this run folder
+# - Provide output_dir too (compat), in case any module reads it
 python3 - "$CONFIG_PATH" "$RUN_ID_RESOLVED" "$RUN_DIR" > "${EFFECTIVE_CONFIG_PATH}.tmp" <<'PY'
 import json, sys
 cfg_path, run_id_resolved, run_dir = sys.argv[1:]
@@ -249,12 +351,18 @@ with open(cfg_path, "r", encoding="utf-8") as f:
 cfg.setdefault("run", {})
 cfg["run"]["run_id_resolved"] = run_id_resolved
 cfg["run"]["run_dir"] = run_dir
+cfg["run"]["work_dir"] = run_dir  # <-- key fix: modules now write into RUN_DIR
+
+# optional compatibility for older shapes
+cfg["output_dir"] = run_dir
 
 print(json.dumps(cfg, ensure_ascii=False, indent=2))
 PY
 mv "${EFFECTIVE_CONFIG_PATH}.tmp" "${EFFECTIVE_CONFIG_PATH}"
 
 status_update "${RUN_DIR}" "running" "init" "Run started" 5
+
+echo "[runner] Using module: ${MODULE_SCRIPT}" >> "${LOG_PATH}"
 
 set +e
 bash "${MODULE_SCRIPT}" --config "${EFFECTIVE_CONFIG_PATH}"
@@ -267,11 +375,16 @@ if [[ ${MODULE_EXIT} -ne 0 ]]; then
   exit ${MODULE_EXIT}
 fi
 
-if [[ ! -f "${RUN_DIR}/outputs.json" ]]; then
-  status_update "${RUN_DIR}" "failed" "outputs" "outputs.json was not created by module"
-  echo "ERROR: outputs.json missing" >> "${LOG_PATH}"
+# Module writes outputs here: RUN_DIR/<module_name>/outputs.json
+MODULE_OUTPUTS_PATH="${RUN_DIR}/${PIPELINE_KEY}/outputs.json"
+if [[ ! -f "${MODULE_OUTPUTS_PATH}" ]]; then
+  status_update "${RUN_DIR}" "failed" "outputs" "Module outputs.json was not created where expected"
+  echo "ERROR: Expected module outputs.json at: ${MODULE_OUTPUTS_PATH}" >> "${LOG_PATH}"
   exit 7
 fi
+
+# Canonical contract file for the run
+cp -f "${MODULE_OUTPUTS_PATH}" "${RUN_DIR}/outputs.json"
 
 status_update "${RUN_DIR}" "succeeded" "done" "Run completed successfully" 100
 echo "DONE: ${RUN_DIR}"

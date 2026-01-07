@@ -1,0 +1,10 @@
+{
+  "module": "sr_meta",
+  "pipeline_id": "sr_meta",
+  "run_id": "SR_META_PAIRED_Test_01",
+  "input_style": "FASTQ_PAIRED",
+  "inputs": {
+    "fastq_r1": "/Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/sr_meta/inputs/fastq/test_R1.fastq",
+    "fastq_r2": "/Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/sr_meta/inputs/fastq/test_R2.fastq"
+  }
+}

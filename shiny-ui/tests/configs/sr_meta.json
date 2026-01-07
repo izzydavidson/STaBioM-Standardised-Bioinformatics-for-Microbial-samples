@@ -7,9 +7,9 @@
   },
   "technology": "ILLUMINA",
   "input": {
-    "style": "FASTQ",
-    "r1": "/path/to/sample_R1.fastq.gz",
-    "r2": "/path/to/sample_R2.fastq.gz"
+  "style": "FASTQ_PAIRED",
+  "fastq_r1": "/Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/test_inputs/test_R1.fastq",
+  "fastq_r2": "/Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/test_inputs/test_R2.fastq"
   },
   "resources": {
     "threads": 16
