@@ -7,7 +7,8 @@
   },
   "technology": "ONT",
   "input": {
-    "style": "FAST5",
+    "style": "FASTQ_SINGLE",
+    "fastq_r1": "/Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/test_inputs/test.fastq",
     "fast5_dir": "/path/to/fast5",
     "fastq": "",
     "bam": ""

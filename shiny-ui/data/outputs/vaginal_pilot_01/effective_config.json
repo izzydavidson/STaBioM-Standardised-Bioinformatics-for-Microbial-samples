@@ -1,7 +1,7 @@
 {
   "pipeline_id": "lr_meta",
   "run": {
-    "work_dir": "/Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs",
+    "work_dir": "/Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/vaginal_pilot_01",
     "run_id": "Vaginal_Pilot_01",
     "force_overwrite": 1,
     "run_id_resolved": "vaginal_pilot_01",
@@ -9,7 +9,8 @@
   },
   "technology": "ONT",
   "input": {
-    "style": "FAST5",
+    "style": "FASTQ_SINGLE",
+    "fastq_r1": "/Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/test_inputs/test.fastq",
     "fast5_dir": "/path/to/fast5",
     "fastq": "",
     "bam": ""
@@ -58,5 +59,6 @@
       "stacked_bar"
     ],
     "export_dir": ""
-  }
+  },
+  "output_dir": "/Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/vaginal_pilot_01"
 }

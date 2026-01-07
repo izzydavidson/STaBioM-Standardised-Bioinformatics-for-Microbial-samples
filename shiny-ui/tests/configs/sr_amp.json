@@ -1,15 +1,16 @@
 {
-  "pipeline_id": "sr_amp_qiime2",
+  "pipeline_id": "sr_amp",
   "run": {
     "work_dir": "/Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs",
-    "run_id": "SR_AMP_QIIME2_PAIRED_Test_01",
+    "run_id": "SR_AMP_PAIRED_Test_01",
     "force_overwrite": 1
   },
   "technology": "ILLUMINA",
-  "input": {
-    "style": "FASTQ",
-    "manifest_csv": "/path/to/qiime2_manifest_paired.csv"
-  },
+"input": {
+  "style": "FASTQ_PAIRED",
+  "fastq_r1": "/Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/test_inputs/test_R1.fastq",
+  "fastq_r2": "/Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/test_inputs/test_R2.fastq"
+},
   "resources": {
     "threads": 16
   },
@@ -20,6 +21,6 @@
     }
   },
   "output": {
-    "selected": ["qiime2_qzv", "feature_table", "taxonomy"]
+    "selected": ["sr_amp_qzv", "feature_table", "taxonomy"]
   }
 }

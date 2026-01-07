@@ -1,0 +1,9 @@
+{
+  "module": "lr_amp",
+  "pipeline_id": "lr_amp",
+  "run_id": "LR_AMP_ONT_FAST5_Test_01",
+  "input_style": "FASTQ_SINGLE",
+  "inputs": {
+    "fastq": "/Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/lr_amp/inputs/fastq/test.fastq"
+  }
+}
