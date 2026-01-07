@@ -1,0 +1,25 @@
+{
+  "pipeline_id": "sr_amp_qiime2",
+  "run": {
+    "work_dir": "/Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs",
+    "run_id": "SR_AMP_QIIME2_PAIRED_Test_01",
+    "force_overwrite": 1
+  },
+  "technology": "ILLUMINA",
+  "input": {
+    "style": "FASTQ",
+    "manifest_csv": "/path/to/qiime2_manifest_paired.csv"
+  },
+  "resources": {
+    "threads": 16
+  },
+  "params": {
+    "common": {
+      "min_qscore": 0,
+      "remove_host": 0
+    }
+  },
+  "output": {
+    "selected": ["qiime2_qzv", "feature_table", "taxonomy"]
+  }
+}

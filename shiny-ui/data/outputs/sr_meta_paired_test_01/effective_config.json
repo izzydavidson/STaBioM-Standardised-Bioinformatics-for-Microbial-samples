@@ -1,0 +1,32 @@
+{
+  "pipeline_id": "sr_meta",
+  "run": {
+    "work_dir": "/Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs",
+    "run_id": "SR_META_PAIRED_Test_01",
+    "force_overwrite": 1,
+    "run_id_resolved": "sr_meta_paired_test_01",
+    "run_dir": "/Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/sr_meta_paired_test_01"
+  },
+  "technology": "ILLUMINA",
+  "input": {
+    "style": "FASTQ",
+    "r1": "/path/to/sample_R1.fastq.gz",
+    "r2": "/path/to/sample_R2.fastq.gz"
+  },
+  "resources": {
+    "threads": 16
+  },
+  "params": {
+    "common": {
+      "min_qscore": 0,
+      "remove_host": 1
+    }
+  },
+  "output": {
+    "selected": [
+      "multiqc",
+      "kraken2_report",
+      "bracken_table"
+    ]
+  }
+}
