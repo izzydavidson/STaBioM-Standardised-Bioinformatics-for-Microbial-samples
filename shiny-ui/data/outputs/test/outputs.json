@@ -1,0 +1,12 @@
+{
+  "pipeline_id": "sr_amp",
+  "pipeline_key": "sr_amp",
+  "run_id": "test",
+  "run_dir": "/Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/test",
+  "success": true,
+  "exit_code": 0,
+  "logs": {
+    "module": "/Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/test/logs/sr_amp.log"
+  },
+  "artifacts": {}
+}

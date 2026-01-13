@@ -2,7 +2,7 @@
   "pipeline_id": "lr_amp",
   "run": {
     "work_dir": "/Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs",
-    "run_id": "LR_AMP_ONT_FAST5_Test_01",
+    "run_id": "",
     "force_overwrite": 1
   },
   "technology": "ONT",

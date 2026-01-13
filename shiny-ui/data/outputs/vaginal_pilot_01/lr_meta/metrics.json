@@ -1,6 +1,0 @@
-{
-  "module": "lr_meta",
-  "fastq": "/Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/vaginal_pilot_01/lr_meta/inputs/fastq/test.fastq",
-  "fastq_lines": 4,
-  "reads_estimate": 1
-}

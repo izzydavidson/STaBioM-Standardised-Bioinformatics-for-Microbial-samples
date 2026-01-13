@@ -2,7 +2,7 @@
   "pipeline_id": "lr_meta",
   "run": {
     "work_dir": "/Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs",
-    "run_id": "Vaginal_Pilot_01",
+    "run_id": "",
     "force_overwrite": 1
   },
   "technology": "ONT",

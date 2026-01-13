@@ -1,0 +1,15 @@
+[dispatch] pipeline_id: sr_amp
+[dispatch] pipeline_key: sr_amp
+[dispatch] input_style: FASTQ_PAIRED
+[dispatch] run_dir: /Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/sr_amp_20260113_050818
+[dispatch] module: /work/pipelines/modules/sr_amp.sh
+[dispatch] effective_config: /Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/sr_amp_20260113_050818/effective_config.json
+[dispatch] started_at: 2026-01-13T05:08:18+00:00
+
+[sr_amp] config: /Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/sr_amp_20260113_050818/effective_config.json
+[sr_amp] output_dir: /Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/sr_amp_20260113_050818
+[sr_amp] module_out_dir: /Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/sr_amp_20260113_050818/sr_amp
+[sr_amp] input_style: FASTQ_PAIRED
+
+[dispatch] ended_at: 2026-01-13T05:10:52+00:00
+[dispatch] exit_code: 3

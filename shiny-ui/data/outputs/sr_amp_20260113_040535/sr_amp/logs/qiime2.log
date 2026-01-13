@@ -1,0 +1,9 @@
+q2cli version 2024.10.1
+Run `qiime info` for more version details.
+Imported /run/sr_amp/results/qiime2/manifest.tsv as PairedEndFastqManifestPhred33V2 to /run/sr_amp/results/qiime2/demux-paired-end.qza
+Saved Visualization to: /run/sr_amp/results/qiime2/demux-paired-end.qzv
+Plugin error from dada2:
+
+  An error was encountered while running DADA2 in R (return code 1), please inspect stdout and stderr to learn more.
+
+Debug info has been saved to /tmp/qiime2-q2cli-err-74588j53.log

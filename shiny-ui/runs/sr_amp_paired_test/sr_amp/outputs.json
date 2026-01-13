@@ -1,0 +1,32 @@
+{
+  "module_name": "sr_amp",
+  "pipeline_id": "sr_amp",
+  "run_id": "sr_amp_paired_test",
+  "sample_id": "ERR10233589",
+  "input_style": "FASTQ_PAIRED",
+  "inputs": {
+    "fastq_r1": "runs/sr_amp_paired_test/sr_amp/inputs/fastq/ERR10233589_1.fastq.gz",
+    "fastq_r2": "runs/sr_amp_paired_test/sr_amp/inputs/fastq/ERR10233589_2.fastq.gz"
+  },
+  "reference": {
+    "classifier_qza": null,
+    "valencia_centroids": null
+  },
+  "metadata": {
+    "metadata_tsv": null,
+    "metadata_tsv_normalized": null
+  },
+  "metrics_path": "runs/sr_amp_paired_test/sr_amp/metrics.json",
+  "metrics": {
+    "module_name": "sr_amp",
+    "fastq_r1": "runs/sr_amp_paired_test/sr_amp/inputs/fastq/ERR10233589_1.fastq.gz",
+    "fastq_r2": "runs/sr_amp_paired_test/sr_amp/inputs/fastq/ERR10233589_2.fastq.gz",
+    "r1_lines": 16532,
+    "r2_lines": 16532,
+    "r1_reads_estimate": 4133,
+    "r2_reads_estimate": 4133
+  },
+  "steps_path": "runs/sr_amp_paired_test/sr_amp/steps.json",
+  "multiqc_dir": "runs/sr_amp_paired_test/sr_amp/results/multiqc",
+  "multiqc_report_html": "runs/sr_amp_paired_test/sr_amp/results/multiqc/multiqc_report.html"
+}

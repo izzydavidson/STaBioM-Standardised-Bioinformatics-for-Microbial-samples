@@ -1,0 +1,55 @@
+{
+  "pipeline_id": "sr_meta",
+  "host": {
+    "repo_root": "/Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui",
+    "mounts": {
+      "kraken2_db_host": "/Users/izzydavidson/Desktop/PhD/DB/kraken_host_db",
+      "kraken2_db_classify": "/Users/izzydavidson/Desktop/PhD/DB/kraken_classify_db"
+    }
+  },
+  "tools": {
+    "kraken2": {
+      "db_host": "/db/host",
+      "db_classify": "/db/classify"
+    }
+  }
+}
+
+  "run": {
+    "work_dir": "/Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs",
+    "run_id": "SR_META_PAIRED_Test_01",
+    "force_overwrite": 1
+  },
+  "technology": "ILLUMINA",
+  "input": {
+    "style": "FASTQ_PAIRED",
+    "fastq_r1": "/Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/test_inputs/test_R1.fastq",
+    "fastq_r2": "/Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/test_inputs/test_R2.fastq",
+    "sample_type": "non_vaginal"
+  },
+  "resources": {
+    "threads": 16
+  },
+  "params": {
+    "common": {
+      "remove_host": 1
+    },
+    "kraken2": {
+      "confidence": "0.02",
+      "min_hit_groups": 2
+    },
+    "bracken": {
+      "enabled": 0,
+      "readlen": 0
+    }
+  },
+  "tools": {
+    "kraken2": {
+      "db_host": "/db/kraken_host",
+      "db_classify": "/db/kraken_classify"
+    }
+  },
+  "output": {
+    "selected": ["multiqc", "host_removal", "kraken2_report"]
+  }
+}

@@ -8,41 +8,58 @@
   "properties": {
     "pipeline_id": {
       "type": "string",
-      "enum": ["lr_meta", "lr_amp", "sr_meta", "sr_amp_qiime2"]
+      "enum": ["lr_meta", "lr_amp", "sr_meta", "sr_amp"]
     },
+
     "run": {
       "type": "object",
       "additionalProperties": false,
       "required": ["work_dir", "run_id", "force_overwrite"],
       "properties": {
         "work_dir": { "type": "string", "minLength": 1 },
-        "run_id": { "type": "string" },
+        "run_id": { "type": "string", "minLength": 1 },
         "force_overwrite": { "type": "integer", "enum": [0, 1] }
       }
     },
+
     "technology": {
       "type": "string",
       "enum": ["ONT", "PACBIO", "ILLUMINA", "BGI", "IONTORRENT"]
     },
+
+    "specimen": {
+      "type": "string",
+      "enum": ["vaginal", "gut", "oral", "skin", "other"],
+      "default": "other"
+    },
+
     "input": {
       "type": "object",
       "additionalProperties": false,
       "required": ["style"],
       "properties": {
-        "style": { "type": "string", "enum": ["FAST5", "FASTQ", "BAM"] },
+        "style": {
+          "type": "string",
+          "enum": [
+            "FAST5_DIR",
+            "FAST5_ARCHIVE",
+            "FASTQ_SINGLE",
+            "FASTQ_PAIRED",
+            "FASTQ_DIR_SINGLE",
+            "FASTQ_DIR_PAIRED"
+          ]
+        },
 
         "fast5_dir": { "type": "string" },
+        "fast5_archive": { "type": "string" },
 
-        "fastq": { "type": "string" },
+        "fastq_r1": { "type": "string" },
+        "fastq_r2": { "type": "string" },
 
-        "bam": { "type": "string" },
-
-        "r1": { "type": "string" },
-        "r2": { "type": "string" },
-
-        "manifest_csv": { "type": "string" }
+        "fastq_dir": { "type": "string" }
       }
     },
+
     "resources": {
       "type": "object",
       "additionalProperties": true,
@@ -51,10 +68,12 @@
         "threads": { "type": "integer", "minimum": 1, "maximum": 256 }
       }
     },
+
     "tools": {
       "type": "object",
       "additionalProperties": true
     },
+
     "params": {
       "type": "object",
       "additionalProperties": true,
@@ -66,11 +85,75 @@
           "required": ["min_qscore", "remove_host"],
           "properties": {
             "min_qscore": { "type": "integer", "minimum": 0, "maximum": 60 },
-            "remove_host": { "type": "integer", "enum": [0, 1] }
+            "remove_host": { "type": "integer", "enum": [0, 1] },
+
+            "specimen": {
+              "type": "string",
+              "enum": ["vaginal", "gut", "oral", "skin", "other"]
+            }
           }
         }
       }
     },
+
+    "qiime2": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "sample_id": { "type": "string" },
+
+        "primers": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "forward": { "type": "string" },
+            "reverse": { "type": "string" }
+          }
+        },
+
+        "classifier": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "qza": { "type": "string" }
+          }
+        },
+
+        "dada2": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "trim_left_f": { "type": "integer", "minimum": 0 },
+            "trim_left_r": { "type": "integer", "minimum": 0 },
+            "trunc_len_f": { "type": "integer", "minimum": 0 },
+            "trunc_len_r": { "type": "integer", "minimum": 0 },
+            "n_threads": { "type": "integer", "minimum": 0 }
+          }
+        },
+
+        "diversity": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sampling_depth": { "type": "integer", "minimum": 0 },
+            "metadata_tsv": { "type": "string" }
+          }
+        }
+      }
+    },
+
+    "valencia": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": { "type": "string", "enum": ["auto", "on", "off"], "default": "auto" },
+
+        "repo_url": { "type": "string" },
+        "ref_csv": { "type": "string" },
+        "valencia_py": { "type": "string" }
+      }
+    },
+
     "output": {
       "type": "object",
       "additionalProperties": false,
@@ -88,39 +171,23 @@
 
   "allOf": [
     {
-      "if": { "properties": { "pipeline_id": { "enum": ["LR-META", "LR-AMP"] } } },
+      "if": { "properties": { "pipeline_id": { "enum": ["lr_meta", "lr_amp"] } } },
       "then": {
         "properties": {
-          "technology": { "enum": ["ONT", "PACBIO"] }
-        }
-      }
-    },
-    {
-      "if": { "properties": { "pipeline_id": { "enum": ["SR-META", "SR-AMP-QIIME2"] } } },
-      "then": {
-        "properties": {
-          "technology": { "enum": ["ILLUMINA", "BGI", "IONTORRENT"] }
-        }
-      }
-    },
-
-    {
-      "if": { "properties": { "pipeline_id": { "enum": ["LR-META", "LR-AMP"] } } },
-      "then": {
-        "properties": {
+          "technology": { "enum": ["ONT", "PACBIO"] },
           "input": {
             "allOf": [
               {
-                "if": { "properties": { "style": { "const": "FAST5" } }, "required": ["style"] },
+                "if": { "properties": { "style": { "const": "FAST5_DIR" } }, "required": ["style"] },
                 "then": { "required": ["fast5_dir"] }
               },
               {
-                "if": { "properties": { "style": { "const": "FASTQ" } }, "required": ["style"] },
-                "then": { "required": ["fastq"] }
+                "if": { "properties": { "style": { "const": "FAST5_ARCHIVE" } }, "required": ["style"] },
+                "then": { "required": ["fast5_archive"] }
               },
               {
-                "if": { "properties": { "style": { "const": "BAM" } }, "required": ["style"] },
-                "then": { "required": ["bam"] }
+                "if": { "properties": { "style": { "const": "FASTQ_SINGLE" } }, "required": ["style"] },
+                "then": { "required": ["fastq_r1"] }
               }
             ]
           }
@@ -129,24 +196,34 @@
     },
 
     {
-      "if": { "properties": { "pipeline_id": { "const": "SR-META" } } },
+      "if": { "properties": { "pipeline_id": { "enum": ["sr_meta", "sr_amp"] } } },
       "then": {
         "properties": {
+          "technology": { "enum": ["ILLUMINA", "BGI", "IONTORRENT"] },
           "input": {
-            "required": ["style", "r1"],
-            "properties": { "style": { "const": "FASTQ" } }
+            "allOf": [
+              {
+                "if": { "properties": { "style": { "const": "FASTQ_SINGLE" } }, "required": ["style"] },
+                "then": { "required": ["fastq_r1"] }
+              },
+              {
+                "if": { "properties": { "style": { "const": "FASTQ_PAIRED" } }, "required": ["style"] },
+                "then": { "required": ["fastq_r1", "fastq_r2"] }
+              }
+            ]
           }
         }
       }
     },
 
     {
-      "if": { "properties": { "pipeline_id": { "const": "SR-AMP-QIIME2" } } },
+      "if": { "properties": { "pipeline_id": { "const": "sr_amp" } } },
       "then": {
         "properties": {
           "input": {
-            "required": ["style", "manifest_csv"],
-            "properties": { "style": { "const": "FASTQ" } }
+            "properties": {
+              "style": { "enum": ["FASTQ_SINGLE", "FASTQ_PAIRED"] }
+            }
           }
         }
       }

@@ -1,0 +1,3 @@
+Module	Section	Sample Name	Source
+FastQC	all_sections	ERR10233589_1	/work/runs/sr_amp_20260113_035738/sr_amp/results/fastqc/ERR10233589_1_fastqc.zip
+FastQC	all_sections	ERR10233589_2	/work/runs/sr_amp_20260113_035738/sr_amp/results/fastqc/ERR10233589_2_fastqc.zip
