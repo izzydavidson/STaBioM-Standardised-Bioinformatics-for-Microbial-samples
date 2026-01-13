@@ -1,0 +1,9 @@
+{
+  "module_name": "sr_amp",
+  "fastq_r1": "runs/sr_amp_20260113_035738/sr_amp/inputs/fastq/ERR10233589_1.fastq.gz",
+  "fastq_r2": "runs/sr_amp_20260113_035738/sr_amp/inputs/fastq/ERR10233589_2.fastq.gz",
+  "r1_lines": 16532,
+  "r2_lines": 16532,
+  "r1_reads_estimate": 4133,
+  "r2_reads_estimate": 4133
+}

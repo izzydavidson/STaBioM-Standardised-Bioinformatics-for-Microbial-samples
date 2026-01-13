@@ -1,0 +1,5 @@
+q2cli version 2024.10.1
+Run `qiime info` for more version details.
+docker: Error response from daemon: create runs/val_test: "runs/val_test" includes invalid characters for a local volume name, only "[a-zA-Z0-9][a-zA-Z0-9_.-]" are allowed. If you intended to pass a host directory, use absolute path
+
+Run 'docker run --help' for more information

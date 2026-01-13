@@ -1,0 +1,3 @@
+[2026-01-13 03:57:45,588] multiqc.core.version_check                         [WARNING]  MultiQC Version v1.33 now available!
+[2026-01-13 03:57:45,592] multiqc.core.file_search                           [INFO   ]  Search path: /work/runs/sr_amp_20260113_035738/sr_amp/results
+[2026-01-13 03:57:45,731] multiqc.modules.fastqc.fastqc                      [INFO   ]  Found 2 reports

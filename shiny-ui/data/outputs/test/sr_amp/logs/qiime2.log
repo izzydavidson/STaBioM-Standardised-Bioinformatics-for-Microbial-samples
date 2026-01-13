@@ -1,0 +1,24 @@
+q2cli version 2024.10.1
+Run `qiime info` for more version details.
+Imported /run/sr_amp/results/qiime2/manifest.tsv as PairedEndFastqManifestPhred33V2 to /run/sr_amp/results/qiime2/demux-paired-end.qza
+Saved Visualization to: /run/sr_amp/results/qiime2/demux-paired-end.qzv
+Saved SampleData[PairedEndSequencesWithQuality] to: /run/sr_amp/results/qiime2/trimmed.qza
+Saved Visualization to: /run/sr_amp/results/qiime2/trimmed.qzv
+Saved FeatureTable[Frequency] to: /run/sr_amp/results/qiime2/table.qza
+Saved FeatureData[Sequence] to: /run/sr_amp/results/qiime2/rep-seqs.qza
+Saved SampleData[DADA2Stats] to: /run/sr_amp/results/qiime2/denoising-stats.qza
+Saved Visualization to: /run/sr_amp/results/qiime2/table.qzv
+Saved Visualization to: /run/sr_amp/results/qiime2/rep-seqs.qzv
+Saved Visualization to: /run/sr_amp/results/qiime2/denoising-stats.qzv
+Saved FeatureData[Taxonomy] to: /run/sr_amp/results/qiime2/taxonomy.qza
+Saved Visualization to: /run/sr_amp/results/qiime2/taxonomy.qzv
+Saved Visualization to: /run/sr_amp/results/qiime2/taxa-barplot.qzv
+Saved SampleData[AlphaDiversity] to: /run/sr_amp/results/qiime2/diversity/alpha/shannon.qza
+Saved SampleData[AlphaDiversity] to: /run/sr_amp/results/qiime2/diversity/alpha/observed_features.qza
+Saved SampleData[AlphaDiversity] to: /run/sr_amp/results/qiime2/diversity/alpha/pielou_e.qza
+Exported /run/sr_amp/results/qiime2/diversity/alpha/shannon.qza as AlphaDiversityDirectoryFormat to directory /run/sr_amp/results/qiime2/diversity/alpha/shannon_export
+Exported /run/sr_amp/results/qiime2/diversity/alpha/observed_features.qza as AlphaDiversityDirectoryFormat to directory /run/sr_amp/results/qiime2/diversity/alpha/observed_features_export
+Exported /run/sr_amp/results/qiime2/diversity/alpha/pielou_e.qza as AlphaDiversityDirectoryFormat to directory /run/sr_amp/results/qiime2/diversity/alpha/pielou_e_export
+Exported /run/sr_amp/results/qiime2/table.qza as BIOMV210DirFmt to directory /run/sr_amp/results/qiime2/exports/table
+Exported /run/sr_amp/results/qiime2/rep-seqs.qza as DNASequencesDirectoryFormat to directory /run/sr_amp/results/qiime2/exports/rep-seqs
+Exported /run/sr_amp/results/qiime2/taxonomy.qza as TSVTaxonomyDirectoryFormat to directory /run/sr_amp/results/qiime2/exports/taxonomy

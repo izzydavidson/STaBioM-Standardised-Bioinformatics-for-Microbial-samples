@@ -1,0 +1,192 @@
+[
+  {
+    "step": "metadata_normalize",
+    "status": "succeeded",
+    "message": "Normalized metadata sample IDs to barcodeXX (see logs/metadata_normalize.log)",
+    "tool": "python3",
+    "command": "python3 normalize_metadata",
+    "exit_code": 0,
+    "started_at": "2026-01-13T12:51:29+10:00",
+    "ended_at": "2026-01-13T12:51:29+10:00"
+  },
+  {
+    "step": "fastqc",
+    "status": "succeeded",
+    "message": "fastqc completed (R1 only; single-end)",
+    "tool": "fastqc",
+    "command": "fastqc",
+    "exit_code": 0,
+    "started_at": "2026-01-13T12:51:29+10:00",
+    "ended_at": "2026-01-13T12:51:33+10:00"
+  },
+  {
+    "step": "multiqc",
+    "status": "succeeded",
+    "message": "multiqc completed",
+    "tool": "multiqc",
+    "command": "multiqc",
+    "exit_code": 0,
+    "started_at": "2026-01-13T12:51:33+10:00",
+    "ended_at": "2026-01-13T12:51:35+10:00"
+  },
+  {
+    "step": "metadata_validate",
+    "status": "succeeded",
+    "message": "Metadata contains manifest sample-id",
+    "tool": "python3",
+    "command": "python3 validate_metadata",
+    "exit_code": 0,
+    "started_at": "2026-01-13T12:51:35+10:00",
+    "ended_at": "2026-01-13T12:51:35+10:00"
+  },
+  {
+    "step": "qiime2_import",
+    "status": "succeeded",
+    "message": "QIIME2 import completed",
+    "tool": "docker",
+    "command": "docker run --rm --platform=linux/amd64 -v /Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/sr_amp_paired_test_02:/run:rw quay.io/qiime2/amplicon:2024.10 qiime ...",
+    "exit_code": 0,
+    "started_at": "2026-01-13T12:51:42+10:00",
+    "ended_at": "2026-01-13T12:53:03+10:00"
+  },
+  {
+    "step": "qiime2_demux_summarize",
+    "status": "succeeded",
+    "message": "QIIME2 demux summarize completed",
+    "tool": "docker",
+    "command": "docker run --rm --platform=linux/amd64 -v /Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/sr_amp_paired_test_02:/run:rw quay.io/qiime2/amplicon:2024.10 qiime ...",
+    "exit_code": 0,
+    "started_at": "2026-01-13T12:53:03+10:00",
+    "ended_at": "2026-01-13T12:55:43+10:00"
+  },
+  {
+    "step": "qiime2_cutadapt",
+    "status": "succeeded",
+    "message": "Primer trimming completed (trim-single; front=FWD, adapter=REV)",
+    "tool": "docker",
+    "command": "docker run --rm --platform=linux/amd64 -v /Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/sr_amp_paired_test_02:/run:rw quay.io/qiime2/amplicon:2024.10 qiime ...",
+    "exit_code": 0,
+    "started_at": "2026-01-13T12:55:43+10:00",
+    "ended_at": "2026-01-13T12:57:08+10:00"
+  },
+  {
+    "step": "qiime2_trimmed_summarize",
+    "status": "succeeded",
+    "message": "Trimmed demux summarize completed",
+    "tool": "docker",
+    "command": "docker run --rm --platform=linux/amd64 -v /Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/sr_amp_paired_test_02:/run:rw quay.io/qiime2/amplicon:2024.10 qiime ...",
+    "exit_code": 0,
+    "started_at": "2026-01-13T12:57:08+10:00",
+    "ended_at": "2026-01-13T12:59:45+10:00"
+  },
+  {
+    "step": "qiime2_validate_demux",
+    "status": "succeeded",
+    "message": "Found manifest.tsv + demux .qza/.qzv",
+    "tool": null,
+    "command": null,
+    "exit_code": 0,
+    "started_at": "2026-01-13T12:59:45+10:00",
+    "ended_at": "2026-01-13T12:59:45+10:00"
+  },
+  {
+    "step": "qiime2_dada2",
+    "status": "succeeded",
+    "message": "DADA2 denoise-single completed",
+    "tool": "docker",
+    "command": "docker run --rm --platform=linux/amd64 -v /Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/sr_amp_paired_test_02:/run:rw quay.io/qiime2/amplicon:2024.10 qiime ...",
+    "exit_code": 0,
+    "started_at": "2026-01-13T12:59:45+10:00",
+    "ended_at": "2026-01-13T13:02:01+10:00"
+  },
+  {
+    "step": "qiime2_table_summarize",
+    "status": "succeeded",
+    "message": "feature-table summarize completed",
+    "tool": "docker",
+    "command": "docker run --rm --platform=linux/amd64 -v /Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/sr_amp_paired_test_02:/run:rw quay.io/qiime2/amplicon:2024.10 qiime ...",
+    "exit_code": 0,
+    "started_at": "2026-01-13T13:02:01+10:00",
+    "ended_at": "2026-01-13T13:03:31+10:00"
+  },
+  {
+    "step": "qiime2_repseqs_tabulate",
+    "status": "succeeded",
+    "message": "tabulate-seqs completed",
+    "tool": "docker",
+    "command": "docker run --rm --platform=linux/amd64 -v /Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/sr_amp_paired_test_02:/run:rw quay.io/qiime2/amplicon:2024.10 qiime ...",
+    "exit_code": 0,
+    "started_at": "2026-01-13T13:03:31+10:00",
+    "ended_at": "2026-01-13T13:05:06+10:00"
+  },
+  {
+    "step": "qiime2_denoising_stats_tabulate",
+    "status": "succeeded",
+    "message": "denoising-stats tabulate completed",
+    "tool": "docker",
+    "command": "docker run --rm --platform=linux/amd64 -v /Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/sr_amp_paired_test_02:/run:rw quay.io/qiime2/amplicon:2024.10 qiime ...",
+    "exit_code": 0,
+    "started_at": "2026-01-13T13:05:06+10:00",
+    "ended_at": "2026-01-13T13:06:50+10:00"
+  },
+  {
+    "step": "qiime2_taxonomy",
+    "status": "succeeded",
+    "message": "Taxonomy classification completed (classify-sklearn)",
+    "tool": "docker",
+    "command": "docker run --rm --platform=linux/amd64 -v /Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/sr_amp_paired_test_02:/run:rw quay.io/qiime2/amplicon:2024.10 qiime ...",
+    "exit_code": 0,
+    "started_at": "2026-01-13T13:06:50+10:00",
+    "ended_at": "2026-01-13T13:08:56+10:00"
+  },
+  {
+    "step": "qiime2_taxonomy_tabulate",
+    "status": "succeeded",
+    "message": "taxonomy.qzv created",
+    "tool": "docker",
+    "command": "docker run --rm --platform=linux/amd64 -v /Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/sr_amp_paired_test_02:/run:rw quay.io/qiime2/amplicon:2024.10 qiime ...",
+    "exit_code": 0,
+    "started_at": "2026-01-13T13:08:56+10:00",
+    "ended_at": "2026-01-13T13:10:28+10:00"
+  },
+  {
+    "step": "qiime2_taxa_barplot",
+    "status": "succeeded",
+    "message": "taxa-barplot.qzv created",
+    "tool": "docker",
+    "command": "docker run --rm --platform=linux/amd64 -v /Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/sr_amp_paired_test_02:/run:rw quay.io/qiime2/amplicon:2024.10 qiime ...",
+    "exit_code": 0,
+    "started_at": "2026-01-13T13:10:28+10:00",
+    "ended_at": "2026-01-13T13:12:02+10:00"
+  },
+  {
+    "step": "qiime2_diversity_alpha",
+    "status": "succeeded",
+    "message": "Alpha diversity exported (shannon, observed_features, pielou_e)",
+    "tool": "docker",
+    "command": "docker run --rm --platform=linux/amd64 -v /Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/sr_amp_paired_test_02:/run:rw quay.io/qiime2/amplicon:2024.10 qiime ...",
+    "exit_code": 0,
+    "started_at": "2026-01-13T13:12:02+10:00",
+    "ended_at": "2026-01-13T13:20:52+10:00"
+  },
+  {
+    "step": "qiime2_diversity_core",
+    "status": "skipped",
+    "message": "Core metrics skipped: sampling_depth not set (>0 required)",
+    "tool": null,
+    "command": null,
+    "exit_code": 0,
+    "started_at": "2026-01-13T13:20:52+10:00",
+    "ended_at": "2026-01-13T13:20:52+10:00"
+  },
+  {
+    "step": "qiime2_exports",
+    "status": "succeeded",
+    "message": "Exported BIOM/TSV/FASTA/NWK to results/qiime2/exports",
+    "tool": "docker",
+    "command": "docker run --rm --platform=linux/amd64 -v /Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/sr_amp_paired_test_02:/run:rw quay.io/qiime2/amplicon:2024.10 qiime ...",
+    "exit_code": 0,
+    "started_at": "2026-01-13T13:20:53+10:00",
+    "ended_at": "2026-01-13T13:25:20+10:00"
+  }
+]

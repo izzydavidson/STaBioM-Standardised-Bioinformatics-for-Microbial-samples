@@ -1,0 +1,12 @@
+{
+  "pipeline_id": "sr_amp",
+  "pipeline_key": "sr_amp",
+  "run_id": "sr_amp_20260113_035738",
+  "run_dir": "runs/sr_amp_20260113_035738",
+  "success": false,
+  "exit_code": 3,
+  "logs": {
+    "module": "runs/sr_amp_20260113_035738/logs/sr_amp.log"
+  },
+  "artifacts": {}
+}

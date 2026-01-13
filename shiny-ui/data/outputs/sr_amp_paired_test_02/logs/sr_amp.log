@@ -1,0 +1,13 @@
+[sr_amp] Done
+[sr_amp] fastqc: succeeded - fastqc completed (R1 only; single-end)
+[sr_amp] multiqc: succeeded - multiqc completed
+[sr_amp] metadata_normalize: succeeded - Normalized metadata sample IDs to barcodeXX (see logs/metadata_normalize.log)
+[sr_amp] metadata_validate: succeeded - Metadata contains manifest sample-id
+[sr_amp] qiime2_import: succeeded - QIIME2 import completed
+[sr_amp] qiime2_demux_summarize: succeeded - QIIME2 demux summarize completed
+[sr_amp] qiime2_cutadapt: succeeded - Primer trimming completed (trim-single; front=FWD, adapter=REV)
+[sr_amp] qiime2_dada2: succeeded - DADA2 denoise-single completed
+[sr_amp] qiime2_taxonomy: succeeded - Taxonomy classification completed (classify-sklearn)
+[sr_amp] qiime2_diversity_alpha: succeeded - Alpha diversity exported (shannon, observed_features, pielou_e)
+[sr_amp] qiime2_diversity_core: skipped - Core metrics skipped: sampling_depth not set (>0 required)
+[sr_amp] outputs.json: /Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/sr_amp_paired_test_02/sr_amp/outputs.json

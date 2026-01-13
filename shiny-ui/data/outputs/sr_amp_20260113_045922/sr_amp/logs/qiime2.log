@@ -1,0 +1,5 @@
+q2cli version 2024.10.1
+Run `qiime info` for more version details.
+bash: line 5: qiime: command not found
+bash: -c: line 6: syntax error near unexpected token `||'
+bash: -c: line 6: `   || ec=$?'

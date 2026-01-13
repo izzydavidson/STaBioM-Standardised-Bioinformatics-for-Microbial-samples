@@ -1,0 +1,72 @@
+[
+  {
+    "step": "fastqc",
+    "status": "succeeded",
+    "message": "fastqc completed (R1 + R2)",
+    "tool": "fastqc",
+    "command": "fastqc",
+    "exit_code": 0,
+    "started_at": "2026-01-13T14:28:37+10:00",
+    "ended_at": "2026-01-13T14:28:42+10:00"
+  },
+  {
+    "step": "multiqc",
+    "status": "succeeded",
+    "message": "multiqc completed",
+    "tool": "multiqc",
+    "command": "multiqc",
+    "exit_code": 0,
+    "started_at": "2026-01-13T14:28:42+10:00",
+    "ended_at": "2026-01-13T14:28:45+10:00"
+  },
+  {
+    "step": "qiime2_import",
+    "status": "succeeded",
+    "message": "QIIME2 import completed",
+    "tool": "docker",
+    "command": "docker run --rm --platform=linux/amd64 -v /Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/sr_amp_20260113_042836:/run:rw quay.io/qiime2/amplicon:2024.10 qiime ...",
+    "exit_code": 0,
+    "started_at": "2026-01-13T14:28:52+10:00",
+    "ended_at": "2026-01-13T14:30:12+10:00"
+  },
+  {
+    "step": "qiime2_demux_summarize",
+    "status": "succeeded",
+    "message": "QIIME2 demux summarize completed",
+    "tool": "docker",
+    "command": "docker run --rm --platform=linux/amd64 -v /Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/sr_amp_20260113_042836:/run:rw quay.io/qiime2/amplicon:2024.10 qiime ...",
+    "exit_code": 0,
+    "started_at": "2026-01-13T14:30:12+10:00",
+    "ended_at": "2026-01-13T14:33:59+10:00"
+  },
+  {
+    "step": "qiime2_cutadapt",
+    "status": "skipped",
+    "message": "No primers provided; skipping primer trimming",
+    "tool": null,
+    "command": null,
+    "exit_code": 0,
+    "started_at": "2026-01-13T14:33:59+10:00",
+    "ended_at": "2026-01-13T14:33:59+10:00"
+  },
+  {
+    "step": "qiime2_validate_demux",
+    "status": "succeeded",
+    "message": "Found manifest.tsv + demux .qza/.qzv",
+    "tool": null,
+    "command": null,
+    "exit_code": 0,
+    "started_at": "2026-01-13T14:33:59+10:00",
+    "ended_at": "2026-01-13T14:33:59+10:00"
+  },
+  {
+    "step": "qiime2_dada2",
+    "status": "failed",
+    "message": "DADA2 denoise-paired failed (see logs/qiime2.log)",
+    "tool": "docker",
+    "command": "docker run --rm --platform=linux/amd64 -v /Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/sr_amp_20260113_042836:/run:rw quay.io/qiime2/amplicon:2024.10 qiime ...",
+    "exit_code": 1,
+    "started_at": "2026-01-13T14:33:59+10:00",
+    "ended_at": "2026-01-13T14:36:23+10:00"
+  }
+]

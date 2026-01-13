@@ -1,0 +1,9 @@
+q2cli version 2024.10.1
+Run `qiime info` for more version details.
+
+[qiime2] step=qiime2_import
+[qiime2] cmd: docker run --rm --platform=linux/amd64 -v /Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/sr_amp_20260113_051330:/run:rw quay.io/qiime2/amplicon:2024.10 qiime tools import --type SampleData\[PairedEndSequencesWithQuality\] --input-path /run/sr_amp/results/qiime2/manifest.tsv --output-path /run/sr_amp/results/qiime2/demux-paired-end.qza --input-format PairedEndFastqManifestPhred33V2 
+Imported /run/sr_amp/results/qiime2/manifest.tsv as PairedEndFastqManifestPhred33V2 to /run/sr_amp/results/qiime2/demux-paired-end.qza
+
+[qiime2] step=qiime2_demux_summarize
+[qiime2] cmd: docker run --rm --platform=linux/amd64 -v /Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/sr_amp_20260113_051330:/run:rw quay.io/qiime2/amplicon:2024.10 qiime demux summarize --i-data /run/sr_amp/results/qiime2/demux-paired-end.qza --o-visualization /run/sr_amp/results/qiime2/demux-paired-end.qzv 

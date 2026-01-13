@@ -1,0 +1,9 @@
+{
+  "module_name": "sr_amp",
+  "fastq_r1": "/Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/sr_amp_20260113_040535/sr_amp/inputs/fastq/ERR10233589_1.fastq.gz",
+  "fastq_r2": "/Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/sr_amp_20260113_040535/sr_amp/inputs/fastq/ERR10233589_2.fastq.gz",
+  "r1_lines": 16532,
+  "r2_lines": 16532,
+  "r1_reads_estimate": 4133,
+  "r2_reads_estimate": 4133
+}

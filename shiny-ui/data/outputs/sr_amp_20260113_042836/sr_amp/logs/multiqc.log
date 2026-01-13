@@ -1,0 +1,9 @@
+
+/// MultiQC v1.25.1
+
+     version_check | MultiQC Version v1.33 now available!
+       file_search | Search path: /Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/sr_amp_20260113_042836/sr_amp/results
+            fastqc | Found 2 reports
+     write_results | Data        : /Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/sr_amp_20260113_042836/sr_amp/results/multiqc/multiqc_data
+     write_results | Report      : /Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/sr_amp_20260113_042836/sr_amp/results/multiqc/multiqc_report.html
+           multiqc | MultiQC complete
