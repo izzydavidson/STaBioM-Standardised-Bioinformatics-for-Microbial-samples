@@ -1,3 +1,0 @@
-Sample	Unique Reads	Duplicate Reads
-ERR10233589_1	283.0	3850.0
-ERR10233589_2	727.0	3406.0

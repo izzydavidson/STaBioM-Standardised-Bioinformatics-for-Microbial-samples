@@ -74,6 +74,68 @@
       "additionalProperties": true
     },
 
+    "host": {
+      "type": "object",
+      "description": "Host-level configuration for mounting external resources into containers",
+      "additionalProperties": true,
+      "properties": {
+        "repo_root": {
+          "type": "string",
+          "description": "Absolute path to the repository root on the host machine"
+        },
+        "mounts": {
+          "type": "object",
+          "description": "Legacy mount configuration (still supported for backwards compatibility)",
+          "additionalProperties": true
+        },
+        "resources": {
+          "type": "object",
+          "description": "External resources that must be mounted from the host into containers",
+          "additionalProperties": false,
+          "properties": {
+            "kraken2_db": {
+              "type": "object",
+              "description": "Kraken2 database configuration for taxonomic classification (required for sr_meta)",
+              "additionalProperties": false,
+              "properties": {
+                "host_path": {
+                  "type": "string",
+                  "description": "Absolute path to the Kraken2 database directory on the host machine"
+                },
+                "container_path": {
+                  "type": "string",
+                  "description": "Mount target path inside the container (default: /refs/kraken2_db)",
+                  "default": "/refs/kraken2_db"
+                }
+              },
+              "required": ["host_path"]
+            },
+            "minimap2_human_ref": {
+              "type": "object",
+              "description": "Human genome reference for host depletion with minimap2 (required when params.common.remove_host=1)",
+              "additionalProperties": false,
+              "properties": {
+                "host_path": {
+                  "type": "string",
+                  "description": "Absolute path to the human reference directory or file on the host machine"
+                },
+                "container_path": {
+                  "type": "string",
+                  "description": "Mount target path inside the container (default: /refs/human)",
+                  "default": "/refs/human"
+                },
+                "index_filename": {
+                  "type": "string",
+                  "description": "Name of the minimap2 index file (.mmi) within the directory. If host_path is a file, this is ignored."
+                }
+              },
+              "required": ["host_path"]
+            }
+          }
+        }
+      }
+    },
+
     "params": {
       "type": "object",
       "additionalProperties": true,
