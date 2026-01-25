@@ -1,3 +1,0 @@
-Module	Section	Sample Name	Source
-FastQC	all_sections	ERR10233589_1	/Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/test/sr_amp/results/fastqc/ERR10233589_1_fastqc.zip
-FastQC	all_sections	ERR10233589_2	/Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/test/sr_amp/results/fastqc/ERR10233589_2_fastqc.zip

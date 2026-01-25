@@ -1,8 +1,39 @@
+# Stage 1: Build Bracken and Krona from source (like sr dockerfile)
+FROM ubuntu:22.04 AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash \
+    ca-certificates \
+    curl \
+    git \
+    make \
+    g++ \
+    zlib1g-dev \
+    libbz2-dev \
+    liblzma-dev \
+    perl \
+  && rm -rf /var/lib/apt/lists/*
+
+# Bracken (clone repo for proper installation)
+RUN git clone --depth 1 --branch "v3.1" https://github.com/jenniferlu717/Bracken.git /opt/bracken
+
+# Krona
+RUN git clone --depth 1 --branch "v2.8.1" https://github.com/marbl/Krona.git /tmp/krona \
+  && cd /tmp/krona/KronaTools \
+  && ./install.pl --prefix /opt/krona
+
+# Stage 2: Runtime image
 FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+
+ARG INSTALL_HUMAN_REF=0
+# You can override this at build time if you want a different source
+ARG HUMAN_REF_URL="https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/001/405/GCF_000001405.40_GRCh38.p14/GCF_000001405.40_GRCh38.p14_genomic.fna.gz"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
@@ -17,24 +48,137 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     git \
     jq \
+    gcc \
     python3 \
     python3-pip \
-    default-jre \
-    fastqc \
+    perl \
     samtools \
     minimap2 \
+    kraken2 \
+    default-jre \
+    fastqc \
+    libnuma1 \
+    libhdf5-dev \
+    libgomp1 \
   && rm -rf /var/lib/apt/lists/*
 
-# Pin MultiQC so outputs don’t drift over time
-RUN pip3 install --no-cache-dir "multiqc==1.25.1"
+# Copy Bracken and Krona from builder
+COPY --from=builder /opt/bracken /opt/bracken
+COPY --from=builder /opt/krona /opt/krona
+
+# Symlink Bracken and Krona tools
+RUN install -d /usr/local/bin \
+  && ln -sf /opt/bracken/bracken /usr/local/bin/bracken \
+  && ln -sf /opt/krona/bin/ktImportText /usr/local/bin/ktImportText
+
+# Install Python packages: multiqc, NanoFilt, matplotlib (for plotting), pod5
+# Use python3 -m pip to ensure we use the correct pip
+# On Ubuntu 22.04 the system pip doesn't need --break-system-packages if we use --user or if pip is old enough
+RUN python3 -m pip install --no-cache-dir --upgrade pip setuptools \
+  && python3 -m pip install --no-cache-dir \
+    "multiqc==1.25.1" \
+    NanoFilt \
+    matplotlib \
+    numpy \
+    pandas \
+    pod5 \
+  && echo "[pip] All Python packages installed successfully" \
+  && python3 -c "import matplotlib; print('matplotlib OK:', matplotlib.__version__)" \
+  && NanoFilt --version 2>&1 | head -1 \
+  && multiqc --version 2>&1 | head -1
+
+# Ensure pip-installed scripts are in PATH (they may be in /usr/local/bin or ~/.local/bin)
+ENV PATH="/root/.local/bin:/usr/local/bin:${PATH}"
+
+# Install Dorado basecaller for ONT data
+# Using dorado 0.7.3 which supports ARM64
+# Dorado requires CUDA stub libraries even for CPU-only mode
+ARG DORADO_VERSION=0.7.3
+ARG TARGETARCH
+
+# Create CUDA stub libraries for CPU-only Dorado execution
+# These satisfy the dynamic linker without actual GPU support
+RUN mkdir -p /usr/local/lib/cuda-stubs && \
+    echo 'void __attribute__((visibility("default"))) nvtxRangePushA(const char* msg) {}' > /tmp/nvtx_stub.c && \
+    echo 'void __attribute__((visibility("default"))) nvtxRangePop(void) {}' >> /tmp/nvtx_stub.c && \
+    echo 'void __attribute__((visibility("default"))) nvtxMarkA(const char* msg) {}' >> /tmp/nvtx_stub.c && \
+    gcc -shared -fPIC -o /usr/local/lib/cuda-stubs/libnvToolsExt.so.1 /tmp/nvtx_stub.c && \
+    echo 'int __attribute__((visibility("default"))) cuptiActivityEnable(int kind) { return 0; }' > /tmp/cupti_stub.c && \
+    echo 'int __attribute__((visibility("default"))) cuptiActivityDisable(int kind) { return 0; }' >> /tmp/cupti_stub.c && \
+    echo 'int __attribute__((visibility("default"))) cuptiSubscribe(void** h, void* cb, void* u) { return 0; }' >> /tmp/cupti_stub.c && \
+    gcc -shared -fPIC -o /usr/local/lib/cuda-stubs/libcupti.so.11.4 /tmp/cupti_stub.c && \
+    rm /tmp/nvtx_stub.c /tmp/cupti_stub.c && \
+    ldconfig /usr/local/lib/cuda-stubs
+
+# Add CUDA stubs to library path (use :- to avoid unbound variable warning)
+ENV LD_LIBRARY_PATH="/usr/local/lib/cuda-stubs:${LD_LIBRARY_PATH:-}"
+
+# Install Dorado with robust download + extraction
+# - Use curl retries for flaky networks
+# - Verify tarball integrity BEFORE extracting
+# - Use --no-same-owner/--no-same-permissions to reduce metadata churn
+# - FAIL hard on any error (no silent continue)
+# - Delete tarball immediately after extraction in same layer
+RUN set -eux; \
+    ARCH=$(uname -m); \
+    if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then \
+        DORADO_ARCH="linux-arm64"; \
+    else \
+        DORADO_ARCH="linux-x64"; \
+    fi; \
+    DORADO_URL="https://cdn.oxfordnanoportal.com/software/analysis/dorado-${DORADO_VERSION}-${DORADO_ARCH}.tar.gz"; \
+    echo "[dorado] Installing Dorado ${DORADO_VERSION} for ${DORADO_ARCH}"; \
+    echo "[dorado] URL: ${DORADO_URL}"; \
+    curl -L --retry 5 --retry-connrefused --retry-delay 2 --fail \
+        -o /tmp/dorado.tar.gz "${DORADO_URL}"; \
+    echo "[dorado] Verifying tarball integrity..."; \
+    if ! tar -tzf /tmp/dorado.tar.gz >/dev/null 2>&1; then \
+        echo "[dorado] ERROR: tarball verification failed, deleting and aborting"; \
+        rm -f /tmp/dorado.tar.gz; \
+        exit 1; \
+    fi; \
+    echo "[dorado] Tarball OK, extracting..."; \
+    mkdir -p /opt/dorado; \
+    tar -xzf /tmp/dorado.tar.gz -C /opt/dorado --strip-components=1 \
+        --no-same-owner --no-same-permissions; \
+    rm -f /tmp/dorado.tar.gz; \
+    ln -sf /opt/dorado/bin/dorado /usr/local/bin/dorado; \
+    echo "[dorado] Testing dorado binary..."; \
+    dorado --version
 
 WORKDIR /work
 
+# Use bash for more complex commands
+SHELL ["/bin/bash", "-c"]
+
+# Optional: install GRCh38 + build minimap2 index inside the image
+RUN set -euo pipefail; \
+  if [ "${INSTALL_HUMAN_REF}" = "1" ]; then \
+    echo "[human-ref] Installing GRCh38 reference + minimap2 index"; \
+    mkdir -p /opt/stabiom/references/grch38; \
+    curl -L --retry 8 --retry-delay 5 --connect-timeout 20 --max-time 0 \
+      -o /opt/stabiom/references/grch38/GRCh38.fa.gz "${HUMAN_REF_URL}"; \
+    gunzip -f /opt/stabiom/references/grch38/GRCh38.fa.gz; \
+    minimap2 -d /opt/stabiom/references/grch38/GRCh38.mmi /opt/stabiom/references/grch38/GRCh38.fa; \
+    echo "[human-ref] Done"; \
+  else \
+    echo "[human-ref] Skipped (INSTALL_HUMAN_REF=${INSTALL_HUMAN_REF})"; \
+  fi
+
 # Quick sanity checks
-RUN fastqc --version || true
-RUN multiqc --version || true
 RUN samtools --version | head -n 1 || true
 RUN minimap2 --version || true
+RUN jq --version || true
+RUN python3 --version || true
+RUN kraken2 --version | head -n 1 || true
+RUN fastqc --version || true
+RUN multiqc --version || true
+RUN dorado --version 2>&1 | head -n 1 || true
+RUN pod5 --version || true
+RUN NanoFilt --version 2>&1 | head -n 1 || true
+RUN bash -lc "bracken -v 2>&1 | head -n 1" || true
+RUN ktImportText 2>&1 | head -n 1 || true
+RUN python3 -c "import matplotlib; print('matplotlib', matplotlib.__version__)" || true
 
 # Write a tool manifest the dispatcher/UI can read later
 RUN python3 - <<'PY'
@@ -48,14 +192,27 @@ def v(cmd):
     except Exception:
         return ""
 
+ref_fa = "/opt/stabiom/references/grch38/GRCh38.fa"
+ref_mmi = "/opt/stabiom/references/grch38/GRCh38.mmi"
+
 manifest = {
-    "fastqc": {"cmd": "fastqc --version", "version": v(["fastqc", "--version"])},
-    "multiqc": {"cmd": "multiqc --version", "version": v(["multiqc", "--version"])},
     "python3": {"cmd": "python3 --version", "version": v(["python3", "--version"])},
     "jq": {"cmd": "jq --version", "version": v(["jq", "--version"])},
-    "java": {"cmd": "java -version", "version": v(["bash", "-lc", "java -version 2>&1 | head -n 1"])},
     "samtools": {"cmd": "samtools --version", "version": v(["bash", "-lc", "samtools --version | head -n 1"])},
     "minimap2": {"cmd": "minimap2 --version", "version": v(["minimap2", "--version"])},
+    "kraken2": {"cmd": "kraken2 --version", "version": v(["bash", "-lc", "kraken2 --version | head -n 1"])},
+    "bracken": {"cmd": "bracken -v", "version": v(["bash", "-lc", "bracken -v 2>&1 | head -n 1"])},
+    "krona": {"cmd": "ktImportText", "version": v(["bash", "-lc", "ktImportText 2>&1 | head -n 1"])},
+    "nanofilt": {"cmd": "NanoFilt --version", "version": v(["bash", "-lc", "NanoFilt --version 2>&1 | head -n 1"])},
+    "matplotlib": {"cmd": "python3 -c 'import matplotlib'", "version": v(["python3", "-c", "import matplotlib; print(matplotlib.__version__)"])},
+    "fastqc": {"cmd": "fastqc --version", "version": v(["bash", "-lc", "fastqc --version 2>&1 | head -n 1"])},
+    "multiqc": {"cmd": "multiqc --version", "version": v(["bash", "-lc", "multiqc --version 2>&1 | head -n 1"])},
+    "dorado": {"cmd": "dorado --version", "version": v(["bash", "-lc", "dorado --version 2>&1 | head -n 1"])},
+    "pod5": {"cmd": "pod5 --version", "version": v(["bash", "-lc", "pod5 --version 2>&1 | head -n 1"])},
+    "human_reference": {
+        "fasta_path": ref_fa if os.path.exists(ref_fa) else "",
+        "mmi_path": ref_mmi if os.path.exists(ref_mmi) else ""
+    }
 }
 
 os.makedirs("/opt/stabiom", exist_ok=True)

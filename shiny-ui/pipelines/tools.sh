@@ -31,8 +31,10 @@ resolve_tool() {
     return 0
   fi
 
+  # Return empty string but with exit 0 - callers handle empty values
+  # This prevents set -e from exiting the script when a tool is optional
   echo ""
-  return 1
+  return 0
 }
 
 

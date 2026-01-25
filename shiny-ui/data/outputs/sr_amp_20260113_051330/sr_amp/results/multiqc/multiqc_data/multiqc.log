@@ -1,3 +1,0 @@
-[2026-01-13 05:13:40,818] multiqc.core.version_check                         [WARNING]  MultiQC Version v1.33 now available!
-[2026-01-13 05:13:40,822] multiqc.core.file_search                           [INFO   ]  Search path: /Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs/sr_amp_20260113_051330/sr_amp/results
-[2026-01-13 05:13:41,005] multiqc.modules.fastqc.fastqc                      [INFO   ]  Found 2 reports

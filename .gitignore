@@ -1,4 +1,56 @@
+# R session files
 .Rproj.user
 .Rhistory
 .RData
 .Ruserdata
+.Rapp.history
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.env
+
+# Pipeline outputs and results
+shiny-ui/data/outputs/
+shiny-ui/runs/
+
+# Test input data (large files)
+shiny-ui/data/test_inputs/fast5/
+shiny-ui/data/test_inputs/fastq/
+shiny-ui/data/test_inputs/sample_sheets/
+
+# Reference databases (large files)
+shiny-ui/data/reference/human/
+shiny-ui/data/reference/qiime2/
+*.qza
+
+# App state/config
+shiny-ui/.stabiom/
+
+# Generated configs
+shiny-ui/configs/
+
+# Diagnostic files
+*.diagnose.txt
+docker_desktop_diagnose.txt
+shiny-ui/docker_desktop_diagnose.txt
+
+# Build/tool artifacts
+shiny-ui/tools/
+
+# Keep files (for maintaining empty directories)
+!.keep
+!**/.keep
+
+# Log files
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
