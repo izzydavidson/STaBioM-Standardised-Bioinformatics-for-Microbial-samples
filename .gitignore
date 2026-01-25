@@ -20,8 +20,6 @@ shiny-ui/data/outputs/
 shiny-ui/runs/
 
 # Test input data (large files)
-shiny-ui/data/test_inputs/fast5/
-shiny-ui/data/test_inputs/fastq/
 shiny-ui/data/test_inputs/sample_sheets/
 
 # Reference databases (large files)
