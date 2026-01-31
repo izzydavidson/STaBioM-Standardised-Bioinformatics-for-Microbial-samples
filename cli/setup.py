@@ -1,0 +1,621 @@
+"""Setup and environment validation for STaBioM CLI."""
+
+import os
+import platform
+import shutil
+import subprocess
+import sys
+import tarfile
+import urllib.request
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+from cli.progress import Colors, is_tty
+
+
+# Database download URLs and sizes
+DATABASES = {
+    "kraken2-standard-8": {
+        "name": "Kraken2 Standard-8 (8GB)",
+        "description": "Standard Kraken2 database, 8GB version - good balance of accuracy and size",
+        "url": "https://genome-idx.s3.amazonaws.com/kraken/k2_standard_08gb_20240605.tar.gz",
+        "size_gb": 8,
+        "pipelines": ["sr_meta", "lr_meta", "lr_amp"],
+    },
+    "kraken2-standard-16": {
+        "name": "Kraken2 Standard-16 (16GB)",
+        "description": "Standard Kraken2 database, 16GB version - better accuracy",
+        "url": "https://genome-idx.s3.amazonaws.com/kraken/k2_standard_16gb_20240605.tar.gz",
+        "size_gb": 16,
+        "pipelines": ["sr_meta", "lr_meta", "lr_amp"],
+    },
+    "emu-default": {
+        "name": "Emu Default Database",
+        "description": "Default Emu database for full-length 16S classification",
+        "url": "https://gitlab.com/treangenlab/emu/-/raw/master/emu_database.tar.gz",
+        "size_gb": 0.5,
+        "pipelines": ["lr_amp"],
+    },
+}
+
+# Docker install instructions by platform
+DOCKER_INSTALL = {
+    "Darwin": {
+        "name": "Docker Desktop for Mac",
+        "url": "https://docs.docker.com/desktop/install/mac-install/",
+        "command": None,  # Manual install required
+        "brew": "brew install --cask docker",
+    },
+    "Linux": {
+        "name": "Docker Engine",
+        "url": "https://docs.docker.com/engine/install/",
+        "command": "curl -fsSL https://get.docker.com | sh",
+    },
+}
+
+
+def check_docker() -> Tuple[bool, str]:
+    """Check if Docker is installed and running.
+
+    Returns:
+        Tuple of (is_available, message)
+    """
+    # Check if docker command exists
+    docker_path = shutil.which("docker")
+    if not docker_path:
+        return False, "Docker not found in PATH"
+
+    # Check if Docker daemon is running
+    try:
+        result = subprocess.run(
+            ["docker", "info"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            return True, "Docker is installed and running"
+        else:
+            return False, "Docker is installed but daemon is not running"
+    except subprocess.TimeoutExpired:
+        return False, "Docker command timed out - daemon may not be running"
+    except Exception as e:
+        return False, f"Error checking Docker: {e}"
+
+
+def check_disk_space(path: Path, required_gb: float) -> Tuple[bool, float]:
+    """Check if there's enough disk space.
+
+    Returns:
+        Tuple of (has_space, available_gb)
+    """
+    try:
+        import shutil
+        total, used, free = shutil.disk_usage(path)
+        available_gb = free / (1024 ** 3)
+        return available_gb >= required_gb, available_gb
+    except Exception:
+        return True, 0  # Assume OK if we can't check
+
+
+def get_data_dir() -> Path:
+    """Get the data directory for databases."""
+    # Check if running as PyInstaller bundle
+    if getattr(sys, 'frozen', False):
+        base = Path(sys.executable).parent
+    else:
+        from cli.discovery import find_repo_root
+        base = find_repo_root()
+
+    data_dir = base / "main" / "data" / "databases"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    return data_dir
+
+
+def download_with_progress(url: str, dest: Path, desc: str = "Downloading") -> bool:
+    """Download a file with progress display."""
+    try:
+        # Get file size
+        with urllib.request.urlopen(url) as response:
+            total_size = int(response.headers.get('content-length', 0))
+
+        # Download with progress
+        downloaded = 0
+        chunk_size = 1024 * 1024  # 1MB chunks
+
+        with urllib.request.urlopen(url) as response:
+            with open(dest, 'wb') as f:
+                while True:
+                    chunk = response.read(chunk_size)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    downloaded += len(chunk)
+
+                    if total_size > 0:
+                        pct = (downloaded / total_size) * 100
+                        downloaded_mb = downloaded / (1024 * 1024)
+                        total_mb = total_size / (1024 * 1024)
+                        print(f"\r  {desc}: {downloaded_mb:.1f}/{total_mb:.1f} MB ({pct:.1f}%)", end="", flush=True)
+                    else:
+                        downloaded_mb = downloaded / (1024 * 1024)
+                        print(f"\r  {desc}: {downloaded_mb:.1f} MB", end="", flush=True)
+
+        print()  # Newline after progress
+        return True
+    except Exception as e:
+        print(f"\n  Error: {e}")
+        return False
+
+
+def extract_tarball(archive: Path, dest_dir: Path) -> bool:
+    """Extract a tar.gz archive."""
+    try:
+        print(f"  Extracting to {dest_dir}...")
+        with tarfile.open(archive, "r:gz") as tar:
+            tar.extractall(path=dest_dir)
+        return True
+    except Exception as e:
+        print(f"  Error extracting: {e}")
+        return False
+
+
+def prompt_yes_no(question: str, default: bool = True) -> bool:
+    """Prompt user for yes/no answer."""
+    if default:
+        prompt = f"{question} [Y/n]: "
+    else:
+        prompt = f"{question} [y/N]: "
+
+    try:
+        response = input(prompt).strip().lower()
+        if not response:
+            return default
+        return response in ('y', 'yes')
+    except (EOFError, KeyboardInterrupt):
+        print()
+        return False
+
+
+def prompt_choice(question: str, options: List[str], default: int = 0) -> int:
+    """Prompt user to choose from options."""
+    print(question)
+    for i, opt in enumerate(options):
+        marker = "*" if i == default else " "
+        print(f"  {marker} [{i + 1}] {opt}")
+
+    try:
+        response = input(f"Choice [1-{len(options)}] (default: {default + 1}): ").strip()
+        if not response:
+            return default
+        choice = int(response) - 1
+        if 0 <= choice < len(options):
+            return choice
+        return default
+    except (ValueError, EOFError, KeyboardInterrupt):
+        print()
+        return default
+
+
+def get_stabiom_bin_dir() -> Path:
+    """Get the directory containing the stabiom executable."""
+    if getattr(sys, 'frozen', False):
+        # PyInstaller bundle - executable is in this directory
+        return Path(sys.executable).parent
+    else:
+        # Development mode - find the repo root
+        from cli.discovery import find_repo_root
+        return find_repo_root()
+
+
+def get_shell_config_file() -> Tuple[Optional[Path], str]:
+    """Detect user's shell and return the appropriate config file.
+
+    Returns:
+        Tuple of (config_file_path, shell_name)
+    """
+    shell = os.environ.get("SHELL", "")
+    home = Path.home()
+
+    if "zsh" in shell:
+        # zsh - prefer .zshrc
+        zshrc = home / ".zshrc"
+        return zshrc, "zsh"
+    elif "bash" in shell:
+        # bash - check for .bash_profile (macOS) or .bashrc (Linux)
+        if platform.system() == "Darwin":
+            # macOS uses .bash_profile for login shells
+            bash_profile = home / ".bash_profile"
+            if bash_profile.exists():
+                return bash_profile, "bash"
+            # Fall back to .bashrc
+            return home / ".bashrc", "bash"
+        else:
+            # Linux typically uses .bashrc
+            bashrc = home / ".bashrc"
+            return bashrc, "bash"
+    elif "fish" in shell:
+        # fish shell
+        fish_config = home / ".config" / "fish" / "config.fish"
+        return fish_config, "fish"
+    else:
+        # Unknown shell - try common options
+        for config in [".zshrc", ".bashrc", ".bash_profile", ".profile"]:
+            path = home / config
+            if path.exists():
+                return path, "unknown"
+        # Default to .profile
+        return home / ".profile", "unknown"
+
+
+def check_path_configured(bin_dir: Path) -> bool:
+    """Check if stabiom is already in PATH."""
+    # Check if stabiom command is available
+    stabiom_path = shutil.which("stabiom")
+    if stabiom_path:
+        # Verify it's our stabiom
+        return Path(stabiom_path).parent.resolve() == bin_dir.resolve()
+
+    # Also check if the directory is in PATH
+    path_dirs = os.environ.get("PATH", "").split(os.pathsep)
+    return str(bin_dir) in path_dirs or str(bin_dir.resolve()) in path_dirs
+
+
+def add_to_path(bin_dir: Path, shell_config: Path, shell_name: str) -> bool:
+    """Add stabiom directory to PATH in shell config.
+
+    Returns:
+        True if successfully added, False otherwise
+    """
+    # Generate the export line based on shell
+    if shell_name == "fish":
+        export_line = f'set -gx PATH "{bin_dir}" $PATH'
+        comment = "# Added by STaBioM setup"
+    else:
+        export_line = f'export PATH="{bin_dir}:$PATH"'
+        comment = "# Added by STaBioM setup"
+
+    full_addition = f"\n{comment}\n{export_line}\n"
+
+    try:
+        # Check if already added
+        if shell_config.exists():
+            content = shell_config.read_text()
+            if str(bin_dir) in content:
+                return True  # Already configured
+
+        # Create parent directories if needed
+        shell_config.parent.mkdir(parents=True, exist_ok=True)
+
+        # Append to config file
+        with open(shell_config, "a") as f:
+            f.write(full_addition)
+
+        return True
+    except Exception as e:
+        print(f"   Error writing to {shell_config}: {e}")
+        return False
+
+
+def run_setup(interactive: bool = True, install_docker: bool = False,
+              databases: Optional[List[str]] = None, skip_path: bool = False) -> int:
+    """Run the setup wizard.
+
+    Args:
+        interactive: If True, prompt for user input
+        install_docker: If True, attempt to install Docker
+        databases: List of database IDs to download
+        skip_path: If True, skip PATH configuration
+
+    Returns:
+        Exit code (0 = success)
+    """
+    print()
+    print(Colors.cyan_bold("STaBioM Setup") if is_tty() else "=== STaBioM Setup ===")
+    print("=" * 40)
+    print()
+
+    issues = []
+    needs_shell_restart = False
+
+    # Step 1: Add to PATH
+    print(Colors.cyan_bold("1. Adding stabiom to PATH...") if is_tty() else "1. Adding stabiom to PATH...")
+
+    bin_dir = get_stabiom_bin_dir()
+    path_configured = check_path_configured(bin_dir)
+
+    if path_configured:
+        print(f"   {Colors.green_bold('OK')} stabiom is already in your PATH" if is_tty()
+              else "   [OK] stabiom is already in your PATH")
+    elif skip_path:
+        print(f"   {Colors.yellow_bold('SKIPPED')} PATH configuration skipped" if is_tty()
+              else "   [SKIPPED] PATH configuration skipped")
+    else:
+        shell_config, shell_name = get_shell_config_file()
+        print(f"   Detected shell: {shell_name}")
+        print(f"   Config file: {shell_config}")
+        print(f"   STaBioM directory: {bin_dir}")
+
+        if interactive:
+            if prompt_yes_no(f"   Add stabiom to your PATH?", default=True):
+                if add_to_path(bin_dir, shell_config, shell_name):
+                    print(f"   {Colors.green_bold('OK')} Added to {shell_config}" if is_tty()
+                          else f"   [OK] Added to {shell_config}")
+                    needs_shell_restart = True
+                else:
+                    print(f"   {Colors.red_bold('FAILED')} Could not update {shell_config}" if is_tty()
+                          else f"   [FAILED] Could not update {shell_config}")
+                    print(f"   You can manually add this line to your shell config:")
+                    print(f'   export PATH="{bin_dir}:$PATH"')
+            else:
+                print(f"   {Colors.yellow_bold('SKIPPED')} You can run stabiom with: {bin_dir}/stabiom" if is_tty()
+                      else f"   [SKIPPED] Run with: {bin_dir}/stabiom")
+        else:
+            # Non-interactive: add automatically
+            if add_to_path(bin_dir, shell_config, shell_name):
+                print(f"   {Colors.green_bold('OK')} Added to {shell_config}" if is_tty()
+                      else f"   [OK] Added to {shell_config}")
+                needs_shell_restart = True
+
+    print()
+
+    # Step 2: Check Docker
+    print(Colors.cyan_bold("2. Checking Docker...") if is_tty() else "2. Checking Docker...")
+    docker_ok, docker_msg = check_docker()
+
+    if docker_ok:
+        print(f"   {Colors.green_bold('OK')} {docker_msg}" if is_tty() else f"   [OK] {docker_msg}")
+    else:
+        print(f"   {Colors.red_bold('MISSING')} {docker_msg}" if is_tty() else f"   [MISSING] {docker_msg}")
+
+        system = platform.system()
+        install_info = DOCKER_INSTALL.get(system, {})
+
+        if interactive:
+            print()
+            print(f"   Docker is required to run STaBioM pipelines.")
+            print(f"   Install instructions: {install_info.get('url', 'https://docs.docker.com/get-docker/')}")
+
+            if system == "Darwin" and install_info.get("brew"):
+                print(f"   Or with Homebrew: {install_info['brew']}")
+            elif system == "Linux" and install_info.get("command"):
+                if prompt_yes_no("   Would you like to install Docker now?"):
+                    print(f"   Running: {install_info['command']}")
+                    try:
+                        subprocess.run(install_info['command'], shell=True, check=True)
+                        docker_ok, docker_msg = check_docker()
+                        if docker_ok:
+                            print(f"   {Colors.green_bold('OK')} Docker installed successfully!" if is_tty() else "   [OK] Docker installed!")
+                    except subprocess.CalledProcessError:
+                        print(f"   Installation failed. Please install manually.")
+
+        if not docker_ok:
+            issues.append("Docker not available")
+
+    print()
+
+    # Step 3: Check/Download databases
+    print(Colors.cyan_bold("3. Reference Databases") if is_tty() else "3. Reference Databases")
+
+    data_dir = get_data_dir()
+    print(f"   Database directory: {data_dir}")
+    print()
+
+    # Check existing databases
+    existing_dbs = []
+    for db_id, db_info in DATABASES.items():
+        db_path = data_dir / db_id
+        if db_path.exists():
+            existing_dbs.append(db_id)
+            print(f"   {Colors.green_bold('FOUND')} {db_info['name']}" if is_tty() else f"   [FOUND] {db_info['name']}")
+
+    missing_dbs = [db_id for db_id in DATABASES if db_id not in existing_dbs]
+
+    if missing_dbs and interactive:
+        print()
+        print("   Available databases to download:")
+        for db_id in missing_dbs:
+            db_info = DATABASES[db_id]
+            print(f"   - {db_info['name']}: {db_info['description']}")
+            print(f"     Size: ~{db_info['size_gb']} GB, Used by: {', '.join(db_info['pipelines'])}")
+
+        print()
+        if prompt_yes_no("   Would you like to download any databases now?", default=False):
+            # Let user choose which to download
+            for db_id in missing_dbs:
+                db_info = DATABASES[db_id]
+                if prompt_yes_no(f"   Download {db_info['name']} (~{db_info['size_gb']} GB)?", default=False):
+                    # Check disk space
+                    has_space, available = check_disk_space(data_dir, db_info['size_gb'] * 1.5)
+                    if not has_space:
+                        print(f"   Warning: Only {available:.1f} GB available, need ~{db_info['size_gb'] * 1.5:.1f} GB")
+                        if not prompt_yes_no("   Continue anyway?", default=False):
+                            continue
+
+                    # Download
+                    archive_path = data_dir / f"{db_id}.tar.gz"
+                    print(f"   Downloading {db_info['name']}...")
+
+                    if download_with_progress(db_info['url'], archive_path, "Downloading"):
+                        if extract_tarball(archive_path, data_dir / db_id):
+                            archive_path.unlink()  # Remove archive after extraction
+                            print(f"   {Colors.green_bold('OK')} {db_info['name']} installed!" if is_tty() else f"   [OK] Installed!")
+                        else:
+                            print(f"   Failed to extract database")
+                    else:
+                        print(f"   Failed to download database")
+
+    elif databases:
+        # Non-interactive mode with specific databases requested
+        for db_id in databases:
+            if db_id not in DATABASES:
+                print(f"   Unknown database: {db_id}")
+                continue
+            if db_id in existing_dbs:
+                print(f"   {db_id} already installed")
+                continue
+
+            db_info = DATABASES[db_id]
+            archive_path = data_dir / f"{db_id}.tar.gz"
+            print(f"   Downloading {db_info['name']}...")
+
+            if download_with_progress(db_info['url'], archive_path, "Downloading"):
+                if extract_tarball(archive_path, data_dir / db_id):
+                    archive_path.unlink()
+                    print(f"   Installed {db_info['name']}")
+
+    print()
+
+    # Step 4: Summary
+    print(Colors.cyan_bold("4. Summary") if is_tty() else "4. Summary")
+    print()
+
+    if not issues:
+        print(f"   {Colors.green_bold('All checks passed!')} STaBioM is ready to use." if is_tty()
+              else "   [OK] All checks passed! STaBioM is ready to use.")
+
+        if needs_shell_restart:
+            print()
+            print(f"   {Colors.yellow_bold('ACTION REQUIRED:')} Restart your terminal or run:" if is_tty()
+                  else "   [ACTION REQUIRED] Restart your terminal or run:")
+            shell_config, _ = get_shell_config_file()
+            print(f"     source {shell_config}")
+
+        print()
+        print("   Quick start:")
+        print("     stabiom list              # List available pipelines")
+        print("     stabiom run -p sr_amp -i reads/  # Run a pipeline")
+        print()
+        return 0
+    else:
+        print(f"   {Colors.yellow_bold('Setup incomplete:')} " if is_tty() else "   [WARN] Setup incomplete:")
+        for issue in issues:
+            print(f"   - {issue}")
+
+        if needs_shell_restart:
+            print()
+            print(f"   {Colors.yellow_bold('Note:')} Restart your terminal to use 'stabiom' command globally." if is_tty()
+                  else "   [Note] Restart your terminal to use 'stabiom' command globally.")
+
+        print()
+        print("   Run 'stabiom setup' again after resolving these issues.")
+        print()
+        return 1
+
+
+def run_doctor() -> int:
+    """Run system diagnostics and report status.
+
+    Returns:
+        Exit code (0 = all OK, 1 = issues found)
+    """
+    print()
+    print(Colors.cyan_bold("STaBioM Doctor") if is_tty() else "=== STaBioM Doctor ===")
+    print("=" * 40)
+    print()
+
+    all_ok = True
+
+    # Check PATH
+    print("PATH Configuration:")
+    bin_dir = get_stabiom_bin_dir()
+    if check_path_configured(bin_dir):
+        stabiom_path = shutil.which("stabiom")
+        print(f"  {Colors.green_bold('OK')} stabiom is in PATH: {stabiom_path}" if is_tty()
+              else f"  [OK] stabiom is in PATH: {stabiom_path}")
+    else:
+        print(f"  {Colors.yellow_bold('NOT IN PATH')} Run 'stabiom setup' to add to PATH" if is_tty()
+              else "  [NOT IN PATH] Run 'stabiom setup' to add to PATH")
+        print(f"  Current location: {bin_dir}/stabiom")
+
+    print()
+
+    # Check Docker
+    print("Docker:")
+    docker_ok, docker_msg = check_docker()
+    if docker_ok:
+        print(f"  {Colors.green_bold('OK')} {docker_msg}" if is_tty() else f"  [OK] {docker_msg}")
+
+        # Check for required images
+        try:
+            result = subprocess.run(
+                ["docker", "images", "--format", "{{.Repository}}:{{.Tag}}"],
+                capture_output=True, text=True, timeout=10
+            )
+            images = result.stdout.strip().split('\n') if result.stdout.strip() else []
+
+            required_images = [
+                "stabiom-tools-lr",
+                "stabiom-tools-sr",
+                "quay.io/qiime2/amplicon",
+            ]
+
+            for img in required_images:
+                found = any(img in i for i in images)
+                if found:
+                    print(f"  {Colors.green_bold('OK')} Image: {img}" if is_tty() else f"  [OK] Image: {img}")
+                else:
+                    print(f"  {Colors.yellow_bold('MISSING')} Image: {img} (will be pulled on first run)" if is_tty()
+                          else f"  [MISSING] Image: {img}")
+        except Exception:
+            pass
+    else:
+        print(f"  {Colors.red_bold('ERROR')} {docker_msg}" if is_tty() else f"  [ERROR] {docker_msg}")
+        all_ok = False
+
+    print()
+
+    # Check databases
+    print("Databases:")
+    data_dir = get_data_dir()
+
+    found_any = False
+    for db_id, db_info in DATABASES.items():
+        db_path = data_dir / db_id
+        if db_path.exists():
+            found_any = True
+            print(f"  {Colors.green_bold('OK')} {db_info['name']}: {db_path}" if is_tty()
+                  else f"  [OK] {db_info['name']}: {db_path}")
+
+    if not found_any:
+        print(f"  {Colors.yellow_bold('NONE')} No databases installed" if is_tty() else "  [NONE] No databases installed")
+        print(f"  Run 'stabiom setup' to download databases")
+
+    print()
+
+    # Check disk space
+    print("Disk Space:")
+    has_space, available = check_disk_space(data_dir, 10)
+    if available >= 50:
+        print(f"  {Colors.green_bold('OK')} {available:.1f} GB available" if is_tty() else f"  [OK] {available:.1f} GB available")
+    elif available >= 10:
+        print(f"  {Colors.yellow_bold('LOW')} {available:.1f} GB available" if is_tty() else f"  [LOW] {available:.1f} GB available")
+    else:
+        print(f"  {Colors.red_bold('CRITICAL')} Only {available:.1f} GB available" if is_tty() else f"  [CRITICAL] {available:.1f} GB available")
+        all_ok = False
+
+    print()
+
+    # Check Python packages (for compare module)
+    print("Python Environment:")
+    try:
+        import pandas
+        print(f"  {Colors.green_bold('OK')} pandas {pandas.__version__}" if is_tty() else f"  [OK] pandas")
+    except ImportError:
+        print(f"  {Colors.yellow_bold('MISSING')} pandas (needed for compare command)" if is_tty() else "  [MISSING] pandas")
+
+    try:
+        import numpy
+        print(f"  {Colors.green_bold('OK')} numpy {numpy.__version__}" if is_tty() else f"  [OK] numpy")
+    except ImportError:
+        print(f"  {Colors.yellow_bold('MISSING')} numpy" if is_tty() else "  [MISSING] numpy")
+
+    print()
+
+    if all_ok:
+        print(Colors.green_bold("All systems operational!") if is_tty() else "[OK] All systems operational!")
+        return 0
+    else:
+        print(Colors.yellow_bold("Some issues found. Run 'stabiom setup' to resolve.") if is_tty()
+              else "[WARN] Some issues found.")
+        return 1

@@ -120,10 +120,12 @@ def main():
         """),
         epilog=textwrap.dedent(f"""
 {Colors.cyan_bold("COMMANDS:") if is_tty() else "COMMANDS:"}
+  setup    Set up STaBioM (first-time installation)
   run      Run a microbiome analysis pipeline
   compare  Compare results from multiple pipeline runs
   list     List available pipelines
   info     Show detailed pipeline information
+  doctor   Check system requirements and diagnose issues
 
 Use 'stabiom <command> --help' for more information on a specific command.
         """),
@@ -422,6 +424,56 @@ Use 'stabiom <command> --help' for more information on a specific command.
     )
 
     # =========================================================================
+    # SETUP COMMAND
+    # =========================================================================
+    setup_parser = subparsers.add_parser(
+        "setup",
+        help="Set up STaBioM (install Docker, download databases)",
+        formatter_class=StabiomHelpFormatter,
+        description=textwrap.dedent("""
+        Interactive setup wizard for STaBioM.
+
+        Checks system requirements, helps install Docker if needed,
+        and downloads reference databases for your pipelines.
+
+        Run this after first installing STaBioM to ensure everything
+        is configured correctly.
+        """),
+    )
+    setup_parser.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="Run without prompts (for CI/automation)",
+    )
+    setup_parser.add_argument(
+        "--database", "-d",
+        action="append",
+        dest="databases",
+        metavar="DB",
+        help="Database to download: kraken2-standard-8, kraken2-standard-16, emu-default",
+    )
+    setup_parser.add_argument(
+        "--skip-path",
+        action="store_true",
+        help="Skip adding stabiom to PATH",
+    )
+
+    # =========================================================================
+    # DOCTOR COMMAND
+    # =========================================================================
+    doctor_parser = subparsers.add_parser(
+        "doctor",
+        help="Check system requirements and diagnose issues",
+        formatter_class=StabiomHelpFormatter,
+        description=textwrap.dedent("""
+        Diagnose your STaBioM installation.
+
+        Checks Docker status, installed databases, disk space,
+        and other requirements. Use this to troubleshoot issues.
+        """),
+    )
+
+    # =========================================================================
     # INFO COMMAND
     # =========================================================================
     info_parser = subparsers.add_parser(
@@ -608,6 +660,20 @@ Use 'stabiom <command> --help' for more information on a specific command.
         print()
         sys.exit(0)
 
+    if args.command == "setup":
+        from cli.setup import run_setup
+        exit_code = run_setup(
+            interactive=not args.non_interactive,
+            databases=args.databases,
+            skip_path=args.skip_path,
+        )
+        sys.exit(exit_code)
+
+    if args.command == "doctor":
+        from cli.setup import run_doctor
+        exit_code = run_doctor()
+        sys.exit(exit_code)
+
     if args.command == "info":
         if args.pipeline:
             pipelines = [args.pipeline]
@@ -696,6 +762,20 @@ Use 'stabiom <command> --help' for more information on a specific command.
             sys.exit(1)
 
     if args.command == "run":
+        # Check for Docker if containers are being used
+        if not args.no_container and not args.dry_run:
+            from cli.setup import check_docker
+            docker_ok, docker_msg = check_docker()
+            if not docker_ok:
+                print(f"{Colors.red_bold('ERROR')}: {docker_msg}", file=sys.stderr)
+                print(file=sys.stderr)
+                print("Docker is required to run pipelines. To set up STaBioM:", file=sys.stderr)
+                print("  stabiom setup", file=sys.stderr)
+                print(file=sys.stderr)
+                print("Or run without containers (requires local tool installation):", file=sys.stderr)
+                print("  stabiom run --no-container ...", file=sys.stderr)
+                sys.exit(1)
+
         # Expand glob patterns and directories in input paths
         input_paths = []
         for pattern in args.input:

@@ -1,452 +1,280 @@
-# STaMeN – Standardised Taxonomic Metagenomics Pipeline for Nanopore Data
+# STaBioM - Standardised Bioinformatics for Microbial Samples
 
-This repository provides a standardised analysis pipeline for Nanopore metagenomic microbiome data across multiple specimen types. The goal is to **reduce method-driven variability** by enforcing consistent inputs, preprocessing, QC, classification, and reporting.
+A unified CLI for running microbiome analysis pipelines on long-read and short-read sequencing data, supporting both 16S amplicon and shotgun metagenomics workflows.
 
-The pipeline supports two entry modes:
+## Features
 
-* **FASTQ mode**: for publicly available data or already basecalled reads (performed by any tool)
-* **FAST5 mode**: for raw, unbasecalled sequencing output that requires basecalling first
+- **Multiple pipelines**: Short-read amplicon (QIIME2/DADA2), long-read amplicon (Emu/Kraken2), and metagenomics (Kraken2/Bracken)
+- **Zero dependencies**: Download and run - Python is bundled in the binary
+- **Interactive setup**: Guided installation of Docker and reference databases
+- **Containerized tools**: All bioinformatics tools run in Docker containers
+- **Standardized outputs**: Consistent taxonomy tables, diversity metrics, and visualizations
+- **Valencia CST analysis**: Automatic community state type classification for vaginal samples
 
-Both modes converge on consistent QC, taxonomy outputs, and standardized summary tables and plots.
+## Quick Start
 
----
+### 1. Download
 
-## Supported Specimen Types
+Download the latest release for your platform from [GitHub Releases](https://github.com/YOUR_ORG/STaBioM/releases):
 
-This pipeline currently supports:
+| Platform | Download |
+|----------|----------|
+| macOS (Apple Silicon M1/M2/M3) | `stabiom-vX.X.X-macos-arm64.tar.gz` |
+| macOS (Intel) | `stabiom-vX.X.X-macos-x64.tar.gz` |
+| Linux (x64) | `stabiom-vX.X.X-linux-x64.tar.gz` |
 
-* **Skin**
-* **Oral**
-* **Gut / faecal**
-* **Vaginal**
+```bash
+# Download (replace URL with actual release)
+curl -LO https://github.com/YOUR_ORG/STaBioM/releases/download/v1.0.0/stabiom-v1.0.0-macos-arm64.tar.gz
 
-Sample type selection may drive validated parameter presets and determine whether vaginal-specific classification (VALENCIA) is enabled.
+# Extract
+tar -xzf stabiom-v1.0.0-macos-arm64.tar.gz
+cd stabiom-v1.0.0-macos-arm64
+```
 
----
+### 2. Run Setup
+
+The setup wizard configures everything you need:
+
+```bash
+./stabiom setup
+```
+
+This will:
+1. **Add `stabiom` to your PATH** - so you can run it from anywhere
+2. **Check for Docker** - and provide installation instructions if missing
+3. **Download reference databases** - Kraken2 and Emu databases (optional, interactive)
+
+After setup completes, restart your terminal or run:
+```bash
+source ~/.zshrc  # or ~/.bashrc for bash users
+```
+
+### 3. Run a Pipeline
+
+```bash
+# List available pipelines
+stabiom list
+
+# Run short-read 16S amplicon analysis
+stabiom run -p sr_amp -i /path/to/reads/
+
+# Run long-read 16S amplicon analysis
+stabiom run -p lr_amp -i /path/to/reads/
+
+# Dry-run to preview configuration
+stabiom run -p sr_amp -i /path/to/reads/ --dry-run
+```
+
+## Available Pipelines
+
+| Pipeline | Description | Classifier |
+|----------|-------------|------------|
+| `sr_amp` | Short-read 16S amplicon (Illumina, IonTorrent, BGI) | QIIME2/DADA2 |
+| `sr_meta` | Short-read shotgun metagenomics | Kraken2/Bracken |
+| `lr_amp` | Long-read 16S amplicon (ONT, PacBio) | Emu or Kraken2 |
+| `lr_meta` | Long-read shotgun metagenomics | Kraken2/Bracken |
+
+## Commands
+
+### `stabiom setup`
+
+Interactive setup wizard. Run this after first installing STaBioM.
+
+```bash
+stabiom setup                    # Interactive setup
+stabiom setup --non-interactive  # Automated setup (for CI)
+stabiom setup -d kraken2-standard-8  # Download specific database
+```
+
+### `stabiom run`
+
+Run a microbiome analysis pipeline.
+
+```bash
+# Basic usage
+stabiom run -p <pipeline> -i <input>
+
+# Examples
+stabiom run -p sr_amp -i reads/*.fastq.gz
+stabiom run -p lr_amp -i pod5_pass/ --sample-type vaginal
+stabiom run -p sr_meta -i reads/ --db /path/to/kraken2/db -o ./results
+
+# Key options
+  -p, --pipeline      Pipeline: sr_amp | sr_meta | lr_amp | lr_meta (required)
+  -i, --input         Input files, directory, or glob pattern (required)
+  -o, --outdir        Output directory (default: ./outputs)
+  --sample-type       Sample type: vaginal | gut | oral | skin | other
+  --db                Kraken2 database path
+  --threads           Number of CPU threads (default: 4)
+  --dry-run           Preview configuration without running
+  --no-container      Run without Docker (use local tools)
+```
+
+### `stabiom compare`
+
+Compare taxonomic profiles from multiple pipeline runs.
+
+```bash
+stabiom compare --run outputs/run1 --run outputs/run2
+stabiom compare --run run1 --run run2 --rank species --norm clr
+```
+
+### `stabiom list`
+
+List all available pipelines with descriptions.
+
+```bash
+stabiom list
+```
+
+### `stabiom info`
+
+Show detailed information about pipelines.
+
+```bash
+stabiom info           # Show all pipelines
+stabiom info sr_amp    # Show specific pipeline
+```
+
+### `stabiom doctor`
+
+Diagnose your installation and check system requirements.
+
+```bash
+stabiom doctor
+```
+
+Shows status of:
+- PATH configuration
+- Docker installation
+- Downloaded databases
+- Disk space
+- Required dependencies
 
 ## Requirements
 
-This pipeline assumes a Linux/macOS environment with standard command-line tooling. Some components are optional depending on whether you run FASTQ or FAST5 mode and whether you enable vaginal CST classification.
+### What's Included (No Installation Needed)
 
-Core requirements for both modes include a modern Bash environment, Git, Python 3, and R. You will also need core classification and QC tools available on PATH. The pipeline is designed to check for missing tools and will exit with a clear error if a required dependency is not available.
+- Python runtime (bundled in binary)
+- Pipeline scripts
+- Configuration schemas
 
-For FASTQ mode, you will need Kraken2 installed and a compatible database available at the path defined in your config. Bracken is optional but recommended for improved abundance estimation where you have a matching k-mer distribution file for your read length.
+### What You Need
 
-For FAST5 mode, Dorado is required for basecalling and demultiplexing. A CUDA-capable environment is recommended if you intend to basecall at scale. CPU mode can work for small test runs but will be slower.
+- **Docker**: Required to run pipelines (installed via `stabiom setup`)
+- **Reference databases**: Downloaded via `stabiom setup` or manually
 
-For vaginal runs, VALENCIA is used for CST classification. The pipeline will clone the VALENCIA repository automatically if it is not already present in the configured directory, but you still need Python available to run the classifier.
+### Supported Databases
 
-You should also plan for substantial disk usage depending on database size and run count. Kraken2 databases can be large, and storing intermediate files for multiple samples can add up quickly.
+| Database | Size | Used By |
+|----------|------|---------|
+| Kraken2 Standard-8 | ~8 GB | sr_meta, lr_meta, lr_amp (partial) |
+| Kraken2 Standard-16 | ~16 GB | sr_meta, lr_meta, lr_amp (partial) |
+| Emu Default | ~0.5 GB | lr_amp (full-length 16S) |
 
-Suggested tool list to document explicitly:
+## Sample Types
 
-* Bash
-* Git
-* Python 3.x
-* R 4.x
-* Kraken2
-* Bracken (recommended)
-* FastQC and MultiQC (if QC is enabled)
-* Minimap2 (if host read removal is part of your workflow)
-* Dorado (FAST5 mode only)
-* VALENCIA repo (auto-cloned when enabled)
+| Type | Valencia CST | Notes |
+|------|--------------|-------|
+| `vaginal` | Auto-enabled | Community state type analysis |
+| `gut` | Disabled | Gut microbiome |
+| `oral` | Disabled | Oral microbiome |
+| `skin` | Disabled | Skin microbiome |
+| `other` | Disabled | Generic (default) |
 
-Database requirements:
+## Output Structure
 
-* A Kraken2 database compatible with your workflow and specified in your config.
-* If using Bracken, a matching k-mer distribution file for your read length.
+Each pipeline run produces:
 
----
-
-## Quickstart
-
-### 1) Clone
-
-```bash
-git clone <YOUR_REPO_URL>
-cd STaMP
-````
-
-### 2) Edit the Config.yaml file to be specific to your run
-
-```yaml
-# --- Required concept fields ---
-input_type: fastq                # fastq | fast5
-sample_type: vaginal             # skin | oral | gut | vaginal
-
-# --- Input paths (use the one matching input_type) ---
-fastq_dir: /path/to/fastq        # used when input_type: fastq
-fast5_dir: /path/to/fast5        # used when input_type: fast5
-
-# --- Optional but recommended ---
-run_id: run_001
-output_dir: /path/to/output
-
-# --- Optional preprocessing controls ---
-prep_profile: alt_fastq_prep     # dorado | alt_fastq_prep
-barcode_kit: null                # e.g., SQK-RBK114.24 (if applicable)
-min_qscore: 10                   # example default; adjust per validated preset
-
-# --- Classification modules ---
-kraken_enabled: true
-valencia_enabled: auto           # auto | true | false
+```
+outputs/
+└── 20240131_143052/           # Run ID (timestamp)
+    ├── config.json            # Run configuration
+    ├── outputs.json           # Output file manifest
+    ├── logs/                  # Pipeline logs
+    ├── intermediate/          # Intermediate files
+    │   ├── qc/               # Quality control
+    │   ├── filtered/         # Filtered reads
+    │   └── classification/   # Raw classifier output
+    └── final/                 # Analysis-ready outputs
+        ├── taxonomy/         # Abundance tables
+        ├── diversity/        # Alpha/beta diversity
+        ├── plots/            # Visualizations
+        └── report/           # Summary reports
 ```
 
-### 3) Run
+## Development Installation
 
-**FASTQ mode**
-
-```bash
-./run_fastq.sh --config config.yaml
-```
-
-**FAST5 mode**
+For contributors or advanced users who want to run from source:
 
 ```bash
-./run_raw.sh --config config.yaml
+# Clone the repository
+git clone https://github.com/YOUR_ORG/STaBioM.git
+cd STaBioM
+
+# Run directly with Python
+python -m cli --help
+python -m cli run -p sr_amp -i reads/
+
+# Or install in development mode
+pip install -e .
+stabiom --help
 ```
 
----
-
-## Core Contract (Inputs & Outputs)
-
-### Accepted Input Types
-
-#### 1) FASTQ (basecalled reads)
-
-Use this mode when you have:
-
-* publicly downloaded reads, or
-* outputs from separate basecalling and/or demultiplexing
-
-Accepted formats:
-
-* `.fastq`
-* `.fastq.gz`
-
-Expectations:
-
-* Files are readable and non-empty.
-* Sample naming/barcode mapping is consistent with your metadata, if applicable.
-
----
-
-#### 2) FAST5 (raw, unbasecalled Nanopore output)
-
-Use this mode when starting from:
-
-* raw sequencer output that has not been basecalled
-
-Accepted formats:
-
-* `.fast5` (single- or multi-FAST5)
-
-Expectations:
-
-* Files are organized in a coherent run directory.
-* Basecalling will be performed within the FAST5 pipeline.
-
----
-
-## Pipeline Stages (High Level)
-
-### FAST5 Pipeline (Raw Input)
-
-Typical flow:
-
-1. **Basecalling** (Dorado)
-2. **Demultiplexing** (Dorado)
-3. **Trimming** (Dorado)
-4. **Low-quality read removal**
-5. **FASTQ standardization**
-6. **FastQC**
-7. **MultiQC**
-8. **Kraken classification**
-9. **VALENCIA** (vaginal samples)
-10. **Tidy summary tables + run-level plots**
-
----
-
-### FASTQ Pipeline (Basecalled Input)
-
-Typical flow:
-
-1. **Demultiplexing** (if needed; non-Dorado toolchain)
-2. **Trimming**
-3. **Low-quality read removal**
-4. **FASTQ standardization**
-5. **FastQC**
-6. **MultiQC**
-7. **Kraken classification**
-8. **VALENCIA** (vaginal samples)
-9. **Tidy summary tables + run-level plots**
-
----
-
-## Outputs
-
-Each run produces a standardized `results/` directory containing:
-
-### Quality Control
-
-* **FastQC outputs**
-* **MultiQC report**
-
-### Classification Outputs
-
-* **Kraken outputs** (reports, summaries)
-* **VALENCIA outputs** *(when applicable, see below)*
-
-### Analysis-ready Summary
-
-* A **tidied `.csv`** linking:
-
-  * sample IDs
-  * bacterial taxa
-  * abundance fields
-
-### Run-level Visualization
-
-* A **stacked bar chart** summarizing microbial composition across the run.
-
----
-
-## Standard Output Structure
-
-A typical run is expected to produce:
-
-* `results/`
-
-  * `fastqc/`
-  * `multiqc/`
-  * `kraken/`
-  * `valencia/`
-  * `tables/`
-
-    * `tidy_taxa_by_sample.csv`
-  * `plots/`
-
-    * `stacked_bar_run.png` (or `.pdf`)
-  * `summaries/`
-
-    * `params_used.json`
-    * `versions.txt`
-
-Folder names may vary slightly by implementation, but the **content categories** above are part of the core contract.
-
----
-
-## VALENCIA Behaviour
-
-VALENCIA is a vaginal CST classifier.
-
-Default behaviour:
-
-* **Enabled automatically for `sample_type: vaginal`.**
-* **Disabled for skin/oral/gut unless explicitly overridden.**
-
-This keeps the pipeline biologically appropriate by default while still allowing advanced users to run VALENCIA manually if needed.
-
----
-
-## Tidy CSV Schema (Example)
-
-The pipeline produces a run-level tidy table intended for downstream stats and visualization.
-
-Expected columns may include:
-
-* `sample_id`
-* `taxon`
-* `rank` (optional)
-* `read_count` (optional)
-* `relative_abundance`
-* `sample_type` (optional but recommended)
-* `run_id` (optional but recommended)
-
-Example (illustrative):
-
-| sample_id | taxon                   | relative_abundance |
-| --------- | ----------------------- | ------------------ |
-| S01       | Lactobacillus crispatus | 0.72               |
-| S01       | Gardnerella vaginalis   | 0.11               |
-| S02       | Bacteroides fragilis    | 0.18               |
-
-Your exact fields can be refined as your downstream needs evolve, but the contract requires at minimum:
-
-* **sample ID**
-* **bacteria/taxon**
-* **an abundance field**
-
----
-
-## Configuration
-
-The pipeline is driven by a unified config that supports both modes.
-
-Key concept fields:
-
-* `input_type: fastq | fast5`
-* `sample_type: skin | oral | gut | vaginal`
-* `prep_profile: dorado | alt_fastq_prep` *(if you expose this)*
-* input paths
-* optional barcode kit and trimming policies
-
----
-
-## Parameter Presets (by Sample Type)
-
-These presets describe **intended default behaviour** for each specimen type. Final values should reflect your validated testing; treat these as the structure you’ll lock once vaginal/gut/skin cloud validation is complete.
-
-### Skin
-
-**Recommended defaults**
-
-* `sample_type: skin`
-* `valencia_enabled: false`
-* `kraken_enabled: true`
-* Consider a slightly stricter QC threshold depending on your run characteristics.
-
-**Notes**
-
-* Skin samples can be lower biomass; contamination-aware interpretation is recommended.
-
----
-
-### Oral
-
-**Recommended defaults**
-
-* `sample_type: oral`
-* `valencia_enabled: false`
-* `kraken_enabled: true`
-
-**Notes**
-
-* Oral communities can be diverse with common commensals; ensure database versioning is recorded.
-
----
-
-### Gut / faecal
-
-**Recommended defaults**
-
-* `sample_type: gut`
-* `valencia_enabled: false`
-* `kraken_enabled: true`
-
-**Notes**
-
-* Gut samples often support robust species-level profiling; ensure read length and QC summaries remain part of your reproducibility outputs.
-
----
-
-### Vaginal
-
-**Recommended defaults**
-
-* `sample_type: vaginal`
-* `valencia_enabled: auto` *(effectively on)*
-* `kraken_enabled: true`
-
-**Notes**
-
-* VALENCIA output is a required category for vaginal runs under this contract.
-* The tidy output should link CST-related summaries (if you choose to include them) to `run_id` and `sample_id`.
-
----
-
-## Example Usage Patterns
-
-These examples are intentionally high-level and can be adapted to your final CLI.
-
-### FASTQ Mode (public or pre-basecalled)
-
-Example pattern:
-
-* Provide FASTQs
-* Select sample type
-* Run
+### Building the Binary
 
 ```bash
-./run_fastq.sh --config config.yaml
+# Install PyInstaller
+pip install pyinstaller
+
+# Build
+./scripts/build-release.sh --version v1.0.0
+
+# Test
+./dist/stabiom-v1.0.0-macos-arm64/stabiom --help
 ```
 
----
+## Troubleshooting
 
-### FAST5 Mode (raw sequencer output)
+### "Docker not found"
 
-Example pattern:
+Run the setup wizard to get installation instructions:
+```bash
+stabiom setup
+```
 
-* Provide FAST5 folder
-* Dorado basecall + demux + trim
-* Continue into QC + classification
+Or install Docker manually:
+- **macOS**: [Docker Desktop for Mac](https://docs.docker.com/desktop/install/mac-install/)
+- **Linux**: `curl -fsSL https://get.docker.com | sh`
+
+### "stabiom: command not found"
+
+The PATH wasn't configured. Either:
+1. Run `stabiom setup` again
+2. Restart your terminal
+3. Or run with full path: `./stabiom`
+
+### Check system status
 
 ```bash
-./run_raw.sh --config config.yaml
+stabiom doctor
 ```
 
----
+This shows what's working and what needs attention.
 
-## Reproducibility & Variability Reduction
+## Citation
 
-This pipeline reduces method-driven variability by:
+If you use STaBioM in your research, please cite:
 
-* Standardizing input expectations and sample type presets
-* Using consistent preprocessing and QC stages per mode
-* Producing harmonized outputs across workflows
-* Recording:
+```
+[Citation pending publication]
+```
 
-  * tool versions
-  * parameters used
-  * (where applicable) database versions
+## License
 
-Each run should emit:
-
-* `summaries/versions.txt`
-* `summaries/params_used.json`
-
----
-
-## Validation Status
-
-Current focus:
-
-* Cloud testing across:
-
-  * **vaginal**
-  * **gut**
-  * **skin**
-
-Once these are validated:
-
-* presets will be finalized
-* test datasets + expected output checks will be bundled
-* the UI “wizard” layer will be added
-
----
-
-## Future Interface (Planned)
-
-A lightweight plug-and-play UI will be added to:
-
-* select input type (FASTQ vs FAST5)
-* choose sample type
-* apply validated presets
-* generate a config automatically
-* run the appropriate pipeline
-* show logs and link outputs
-
-The UI will not contain scientific logic; it will **operate the workflow safely** to preserve reproducibility.
-
----
-
-## License & Citation
-
-A license and citation guide will be added prior to public release to support reuse and appropriate attribution.
-
----
+[License pending]
 
 ## Contact
 
-For questions, collaboration, or feature requests, please open an issue.
----
+For questions, issues, or feature requests, please [open an issue](https://github.com/YOUR_ORG/STaBioM/issues).
