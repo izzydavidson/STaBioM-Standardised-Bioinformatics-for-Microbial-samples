@@ -1,6 +1,7 @@
 """Discovery utilities for finding pipelines and repository structure."""
 
 import json
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -58,7 +59,23 @@ def find_repo_root(start_path: Optional[Path] = None) -> Path:
 
     Searches upward from start_path (or cwd) for directories containing
     known project markers like 'main', 'cli', etc.
+
+    For PyInstaller bundles, returns the directory containing the executable
+    where bundled resources (pipelines, configs, etc.) are located.
     """
+    # Check if running as PyInstaller bundle
+    if getattr(sys, 'frozen', False):
+        # When frozen, sys.executable is the path to the binary
+        # The binary and resources are in the same directory
+        bundle_dir = Path(sys.executable).parent
+        # Check if this looks like our bundle (has main/ with pipelines)
+        if (bundle_dir / "main" / "pipelines").exists():
+            return bundle_dir
+        # Also check if main is directly here (flat structure)
+        if (bundle_dir / "pipelines").exists():
+            # Return parent to simulate repo structure
+            return bundle_dir
+
     if start_path is None:
         start_path = Path.cwd()
 
