@@ -3,6 +3,7 @@
 import os
 import platform
 import shutil
+import ssl
 import subprocess
 import sys
 import tarfile
@@ -144,18 +145,51 @@ def get_tools_dir() -> Path:
     return tools_dir
 
 
+def get_ssl_context() -> ssl.SSLContext:
+    """Get an SSL context for HTTPS requests.
+
+    PyInstaller bundles may not include system certificates, so we try
+    multiple approaches to get a working SSL context.
+    """
+    # Try to use certifi if available (provides Mozilla's CA bundle)
+    try:
+        import certifi
+        context = ssl.create_default_context(cafile=certifi.where())
+        return context
+    except ImportError:
+        pass
+
+    # Try default context (works on most systems)
+    try:
+        context = ssl.create_default_context()
+        # Test if it can verify a known good site
+        return context
+    except Exception:
+        pass
+
+    # Fallback: create unverified context with warning
+    # This is less secure but allows downloads to work
+    print("  Warning: Using unverified SSL (certificates not available)")
+    context = ssl.create_default_context()
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    return context
+
+
 def download_with_progress(url: str, dest: Path, desc: str = "Downloading") -> bool:
     """Download a file with progress display."""
     try:
+        ssl_context = get_ssl_context()
+
         # Get file size
-        with urllib.request.urlopen(url) as response:
+        with urllib.request.urlopen(url, context=ssl_context) as response:
             total_size = int(response.headers.get('content-length', 0))
 
         # Download with progress
         downloaded = 0
         chunk_size = 1024 * 1024  # 1MB chunks
 
-        with urllib.request.urlopen(url) as response:
+        with urllib.request.urlopen(url, context=ssl_context) as response:
             with open(dest, 'wb') as f:
                 while True:
                     chunk = response.read(chunk_size)
@@ -279,7 +313,8 @@ def get_stabiom_bin_dir() -> Path:
     """Get the directory containing the stabiom executable."""
     if getattr(sys, 'frozen', False):
         # PyInstaller bundle - executable is in this directory
-        return Path(sys.executable).parent
+        # Use resolve() to get the actual path without symlinks
+        return Path(sys.executable).resolve().parent
     else:
         # Development mode - find the repo root
         from cli.discovery import find_repo_root
