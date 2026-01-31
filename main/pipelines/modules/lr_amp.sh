@@ -1464,7 +1464,7 @@ def log(msg):
     print(msg)
 
 log(f"[postprocess] Starting postprocessing for {module_name} run: {run_name}")
-log(f"[postprocess] lr_amp uses Emu-only (no Kraken2)")
+log(f"[postprocess] Using Emu classifier")
 
 # Parse Emu rel-abundance TSV files
 def parse_emu_abundance(path):
@@ -1618,7 +1618,7 @@ PY
 ############################################
 
 main() {
-  log_info "=== lr_amp Pipeline (Emu-only) ==="
+  log_info "=== lr_amp Pipeline ==="
   log_info "Technology: ${TECHNOLOGY}"
   log_info "Seq type (minimap2 preset): ${SEQ_TYPE}"
   log_info "Full-length: ${FULL_LENGTH}"
@@ -1778,7 +1778,7 @@ main() {
   started="$(iso_now)"
   kraken2_secondary_per_barcode  # This is now a no-op that logs "disabled"
   ended="$(iso_now)"
-  steps_append "${STEPS_JSON}" "taxonomy_kraken2" "skipped" "Kraken2 disabled for lr_amp (Emu-only)" "" "" "0" "${started}" "${ended}"
+  steps_append "${STEPS_JSON}" "taxonomy_kraken2" "skipped" "Skipped (using Emu classifier)" "" "" "0" "${started}" "${ended}"
 
   # Run VALENCIA (inline Python, mirrors sr_amp approach)
   run_valencia
@@ -1844,7 +1844,7 @@ main() {
 
 main "$@"
 
-echo "[${MODULE_NAME}] Step staging complete (Emu-only pipeline)"
+echo "[${MODULE_NAME}] Step staging complete"
 if [[ "${INPUT_STYLE}" == "FAST5_DIR" || "${INPUT_STYLE}" == "FAST5" ]]; then
   print_step_status "${STEPS_JSON}" "fast5_to_pod5"
   print_step_status "${STEPS_JSON}" "dorado_basecall"
