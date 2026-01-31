@@ -44,6 +44,7 @@ This will:
 1. **Add `stabiom` to your PATH** - so you can run it from anywhere
 2. **Check for Docker** - and provide installation instructions if missing
 3. **Download reference databases** - Kraken2 and Emu databases (optional, interactive)
+4. **Download analysis tools** - VALENCIA for vaginal CST classification (optional, interactive)
 
 After setup completes, restart your terminal or run:
 ```bash
