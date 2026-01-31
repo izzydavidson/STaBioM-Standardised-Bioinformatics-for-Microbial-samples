@@ -967,7 +967,7 @@ emu_classification_per_barcode() {
 kraken2_secondary_per_barcode() {
   # lr_amp uses ONLY Emu for taxonomy classification
   # Kraken2/Bracken are disabled - use lr_meta for Kraken2-based workflows
-  log_info "Kraken2 disabled for lr_amp (Emu-only pipeline)"
+  : # Kraken2 not used in lr_amp pipeline
   return 0
 }
 
@@ -999,7 +999,7 @@ run_valencia() {
     return 0
   fi
 
-  # Check for Emu output files (not kreports - lr_amp is Emu-only)
+  # Check for Emu output files
   if [[ ! -d "${emu_run_dir}" ]]; then
     local started ended
     started="$(iso_now)"; ended="$(iso_now)"
@@ -1596,7 +1596,7 @@ plots_dir.mkdir(exist_ok=True)
 manifest = {
     "module": module_name,
     "run_name": run_name,
-    "classifier": "emu",  # lr_amp is Emu-only
+    "classifier": "emu",
     "outputs": {
         "tables": sorted([f.name for f in tables_dir.glob("*")]) if tables_dir.exists() else [],
         "plots": sorted([f.name for f in plots_dir.glob("*.png")]) if plots_dir.exists() else [],
@@ -1774,7 +1774,7 @@ main() {
     steps_append "${STEPS_JSON}" "emu_primary" "skipped" "Emu classification skipped" "${EMU_BIN}" "emu abundance" "${ec}" "${started}" "${ended}"
   fi
 
-  # Kraken2 is disabled for lr_amp (Emu-only pipeline)
+  # Kraken2 is disabled for lr_amp
   started="$(iso_now)"
   kraken2_secondary_per_barcode  # This is now a no-op that logs "disabled"
   ended="$(iso_now)"
@@ -1799,7 +1799,7 @@ main() {
     steps_append "${STEPS_JSON}" "postprocess" "failed" "postprocess failed" "python3" "python3 postprocess" "${ec}" "${started}" "${ended}"
   fi
 
-  # lr_amp is Emu-only - collect Emu outputs
+  # Collect Emu outputs
   local emu_run_dir="${EMU_DIR}/${RUN_NAME}"
   local emu_files_json="[]"
   if [[ -d "${emu_run_dir}" ]]; then
