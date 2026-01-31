@@ -1255,14 +1255,33 @@ def build_config(config: RunConfig, repo_root: Optional[Path] = None) -> Dict[st
             else:
                 classifier_path = "/work/data/reference/qiime2/silva-138-99-nb-classifier.qza"
 
-        # Valencia centroids path - use user-provided path if available
+        # Valencia centroids path - auto-detect from multiple locations
+        # Check multiple locations for VALENCIA centroids:
+        # 1. tools/VALENCIA/ (installed by setup in bundle)
+        # 2. main/tools/VALENCIA/ (legacy/development location)
+        valencia_centroids_candidates = [
+            repo_root / "tools" / "VALENCIA" / "CST_centroids_012920.csv",
+            repo_root / "main" / "tools" / "VALENCIA" / "CST_centroids_012920.csv",
+        ]
+        valencia_centroids_host_resolved = None
+        for candidate in valencia_centroids_candidates:
+            if candidate.exists():
+                valencia_centroids_host_resolved = candidate
+                break
+
         if config.valencia_centroids:
             # Convert relative paths to absolute
             user_centroids = Path(config.valencia_centroids)
             if not user_centroids.is_absolute():
                 user_centroids = Path.cwd() / user_centroids
             valencia_centroids = str(user_centroids.resolve())
+        elif valencia_centroids_host_resolved:
+            if use_host_paths:
+                valencia_centroids = str(valencia_centroids_host_resolved)
+            else:
+                valencia_centroids = "/work/tools/VALENCIA/CST_centroids_012920.csv"
         else:
+            # Default path (may not exist)
             valencia_centroids_host = repo_root / "main" / "tools" / "VALENCIA" / "CST_centroids_012920.csv"
             if use_host_paths:
                 valencia_centroids = str(valencia_centroids_host)
@@ -1369,13 +1388,35 @@ def build_config(config: RunConfig, repo_root: Optional[Path] = None) -> Dict[st
         # Store the host path for mounting later
         config._emu_db_host_path = emu_db_host_path
 
-        # Valencia paths - use user-provided centroids path if available
+        # Valencia paths - auto-detect centroids file from multiple locations
+        # Check multiple locations for VALENCIA centroids:
+        # 1. tools/VALENCIA/ (installed by setup in bundle)
+        # 2. main/tools/VALENCIA/ (legacy/development location)
+        valencia_centroids_candidates = [
+            repo_root / "tools" / "VALENCIA" / "CST_centroids_012920.csv",
+            repo_root / "main" / "tools" / "VALENCIA" / "CST_centroids_012920.csv",
+        ]
+        # Also check parent of repo_root for bundle case
+        if (repo_root.parent / "tools" / "VALENCIA" / "CST_centroids_012920.csv").exists():
+            valencia_centroids_candidates.insert(0, repo_root.parent / "tools" / "VALENCIA" / "CST_centroids_012920.csv")
+
+        valencia_centroids_host_resolved = None
+        for candidate in valencia_centroids_candidates:
+            if candidate.exists():
+                valencia_centroids_host_resolved = candidate
+                break
+
+        # Store the host path for mounting later (needed if outside main/)
+        config._valencia_centroids_host = valencia_centroids_host_resolved
+
         if config.use_container:
             valencia_root = "/work/tools/VALENCIA"
-            default_centroids = "/work/tools/VALENCIA/CST_centroids_012920.csv"
+            # Default container path - will be updated if we need to mount
+            default_centroids = "/valencia/centroids.csv" if valencia_centroids_host_resolved else "/work/tools/VALENCIA/CST_centroids_012920.csv"
         else:
             valencia_root = str(repo_root / "main" / "tools" / "VALENCIA")
-            default_centroids = str(repo_root / "main" / "tools" / "VALENCIA" / "CST_centroids_012920.csv")
+            default_centroids = str(valencia_centroids_host_resolved) if valencia_centroids_host_resolved else str(repo_root / "main" / "tools" / "VALENCIA" / "CST_centroids_012920.csv")
+
         if config.valencia_centroids:
             # Convert relative paths to absolute
             user_centroids = Path(config.valencia_centroids)
