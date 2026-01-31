@@ -18,26 +18,26 @@ __pycache__/
 
 # Pipeline outputs and results
 outputs/
-shiny-ui/outputs/
-shiny-ui/data/outputs/
+main/outputs/
+main/data/outputs/
 
 # Reference databases (large files)
-shiny-ui/data/reference/
+main/data/reference/
 
 # QIIME2 artifacts (large files)
 *.qza
 
 # App state/config
-shiny-ui/.stabiom/
+main/.stabiom/
 
 # Generated configs
-shiny-ui/configs/
+main/configs/
 
 # Diagnostic files
 *.diagnose.txt
 
 # Build/tool artifacts (preserve wrappers)
-shiny-ui/tools/VALENCIA/
+main/tools/VALENCIA/
 
 # Keep files (for maintaining empty directories)
 !.keep

@@ -8,13 +8,13 @@ import sys
 import textwrap
 from pathlib import Path
 
-from stabiom_cli.discovery import (
+from cli.discovery import (
     find_repo_root,
     get_pipeline_info,
     list_pipeline_ids,
 )
-from stabiom_cli.runner import RunConfig, RunnerError, run_pipeline
-from stabiom_cli.progress import Colors, is_tty, print_banner
+from cli.runner import RunConfig, RunnerError, run_pipeline
+from cli.progress import Colors, is_tty, print_banner
 
 
 class StabiomHelpFormatter(argparse.RawDescriptionHelpFormatter):
@@ -308,7 +308,7 @@ Use 'stabiom <command> --help' for more information on a specific command.
         metavar="PATH",
         help="Path to human genome minimap2 index (.mmi file) for host depletion. "
              "Required when --host-depletion is enabled. "
-             "Example: shiny-ui/data/reference/human/grch38.mmi",
+             "Example: main/data/reference/human/grch38.mmi",
     )
     preproc_group.add_argument(
         "--minimap2-split",

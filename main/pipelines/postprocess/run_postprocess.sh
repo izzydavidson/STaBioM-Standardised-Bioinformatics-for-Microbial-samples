@@ -32,8 +32,8 @@ Options:
   -h, --help                Show help
 
 Example:
-  bash shiny-ui/pipelines/postprocess/run_postprocess.sh \
-    --sweep-root "/path/to/shiny-ui/runs" \
+  bash main/pipelines/postprocess/run_postprocess.sh \
+    --sweep-root "/path/to/main/runs" \
     --run-base "vaginal_testrun"
 
 EOF

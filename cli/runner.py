@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, TextIO, Tuple
 
-from stabiom_cli.discovery import (
+from cli.discovery import (
     find_repo_root,
     get_pipeline_info,
     get_pipeline_container_images,
@@ -23,7 +23,7 @@ from stabiom_cli.discovery import (
     pipeline_spawns_containers,
     validate_pipeline_id,
 )
-from stabiom_cli.progress import (
+from cli.progress import (
     Colors,
     ProgressTracker,
     StageRunner,
@@ -568,11 +568,11 @@ def select_docker_image(
         for img in all_stabiom_images:
             error_msg += f"    - {img}\n"
         error_msg += f"\n  Build the {pipeline_type.upper()} image with:\n"
-        error_msg += f"    docker build -f shiny-ui/pipelines/container/dockerfile.{pipeline_type} -t {default_image} shiny-ui/pipelines/container/\n"
+        error_msg += f"    docker build -f main/pipelines/container/dockerfile.{pipeline_type} -t {default_image} main/pipelines/container/\n"
     else:
         error_msg += f"  No stabiom Docker images found locally.\n"
         error_msg += f"\n  Build the {pipeline_type.upper()} image with:\n"
-        error_msg += f"    docker build -f shiny-ui/pipelines/container/dockerfile.{pipeline_type} -t {default_image} shiny-ui/pipelines/container/\n"
+        error_msg += f"    docker build -f main/pipelines/container/dockerfile.{pipeline_type} -t {default_image} main/pipelines/container/\n"
 
     error_msg += f"\n  Or run without container: --no-container"
 
@@ -724,7 +724,7 @@ def run_postprocess(
         return 0  # Not an error, just nothing to postprocess
 
     # Use the unified R postprocess runner
-    r_postprocess_script = repo_root / "shiny-ui" / "pipelines" / "postprocess" / "r" / "run_r_postprocess.sh"
+    r_postprocess_script = repo_root / "main" / "pipelines" / "postprocess" / "r" / "run_r_postprocess.sh"
 
     if not r_postprocess_script.exists():
         if verbose:
@@ -752,7 +752,7 @@ def run_postprocess(
         cmd,
         postprocess_log,
         env=env,
-        cwd=str(repo_root / "shiny-ui"),
+        cwd=str(repo_root / "main"),
         verbose=verbose,
         prefix=f"[{pipeline}] ",
         pipeline=pipeline,
@@ -1247,7 +1247,7 @@ def build_config(config: RunConfig, repo_root: Optional[Path] = None) -> Dict[st
         use_host_paths = not config.use_container or pipeline_spawns_containers(config.pipeline)
 
         # Check if default classifier exists on host
-        default_classifier_host = repo_root / "shiny-ui" / "data" / "reference" / "qiime2" / "silva-138-99-nb-classifier.qza"
+        default_classifier_host = repo_root / "main" / "data" / "reference" / "qiime2" / "silva-138-99-nb-classifier.qza"
         classifier_path = ""
         if default_classifier_host.exists():
             if use_host_paths:
@@ -1263,7 +1263,7 @@ def build_config(config: RunConfig, repo_root: Optional[Path] = None) -> Dict[st
                 user_centroids = Path.cwd() / user_centroids
             valencia_centroids = str(user_centroids.resolve())
         else:
-            valencia_centroids_host = repo_root / "shiny-ui" / "tools" / "VALENCIA" / "CST_centroids_012920.csv"
+            valencia_centroids_host = repo_root / "main" / "tools" / "VALENCIA" / "CST_centroids_012920.csv"
             if use_host_paths:
                 valencia_centroids = str(valencia_centroids_host)
             else:
@@ -1294,8 +1294,8 @@ def build_config(config: RunConfig, repo_root: Optional[Path] = None) -> Dict[st
         }
 
         # QC tools configuration - use Docker wrappers if not on PATH
-        fastqc_wrapper = repo_root / "shiny-ui" / "tools" / "wrappers" / "fastqc"
-        multiqc_wrapper = repo_root / "shiny-ui" / "tools" / "wrappers" / "multiqc"
+        fastqc_wrapper = repo_root / "main" / "tools" / "wrappers" / "fastqc"
+        multiqc_wrapper = repo_root / "main" / "tools" / "wrappers" / "multiqc"
 
         # Check if tools are on PATH
         fastqc_on_path = subprocess.run(["which", "fastqc"], capture_output=True).returncode == 0
@@ -1324,7 +1324,7 @@ def build_config(config: RunConfig, repo_root: Optional[Path] = None) -> Dict[st
                 user_centroids = Path.cwd() / user_centroids
             valencia_centroids = str(user_centroids.resolve())
         else:
-            valencia_centroids_host = repo_root / "shiny-ui" / "tools" / "VALENCIA" / "CST_centroids_012920.csv"
+            valencia_centroids_host = repo_root / "main" / "tools" / "VALENCIA" / "CST_centroids_012920.csv"
             if config.use_container:
                 valencia_centroids = "/work/tools/VALENCIA/CST_centroids_012920.csv"
             else:
@@ -1338,7 +1338,7 @@ def build_config(config: RunConfig, repo_root: Optional[Path] = None) -> Dict[st
     elif config.pipeline in ("lr_amp", "lr_meta"):
         # Emu database path - use CLI arg if provided, else default
         # Use the main emu database directory (contains default rrnDB + NCBI 16S RefSeq database)
-        emu_db_host = repo_root / "shiny-ui" / "data" / "reference" / "emu"
+        emu_db_host = repo_root / "main" / "data" / "reference" / "emu"
         if config.emu_db:
             emu_db = config.emu_db
         elif config.use_container:
@@ -1351,8 +1351,8 @@ def build_config(config: RunConfig, repo_root: Optional[Path] = None) -> Dict[st
             valencia_root = "/work/tools/VALENCIA"
             default_centroids = "/work/tools/VALENCIA/CST_centroids_012920.csv"
         else:
-            valencia_root = str(repo_root / "shiny-ui" / "tools" / "VALENCIA")
-            default_centroids = str(repo_root / "shiny-ui" / "tools" / "VALENCIA" / "CST_centroids_012920.csv")
+            valencia_root = str(repo_root / "main" / "tools" / "VALENCIA")
+            default_centroids = str(repo_root / "main" / "tools" / "VALENCIA" / "CST_centroids_012920.csv")
         if config.valencia_centroids:
             # Convert relative paths to absolute
             user_centroids = Path(config.valencia_centroids)
@@ -1360,14 +1360,14 @@ def build_config(config: RunConfig, repo_root: Optional[Path] = None) -> Dict[st
                 user_centroids = Path.cwd() / user_centroids
             user_centroids = user_centroids.resolve()
 
-            # For Docker, convert host path to container path if under shiny-ui/
+            # For Docker, convert host path to container path if under main/
             if config.use_container:
-                shiny_ui_path = repo_root / "shiny-ui"
+                main_path = repo_root / "main"
                 try:
-                    rel_path = user_centroids.relative_to(shiny_ui_path)
+                    rel_path = user_centroids.relative_to(main_path)
                     valencia_centroids = f"/work/{rel_path}"
                 except ValueError:
-                    # File is outside shiny-ui/, use host path (will need extra mount)
+                    # File is outside main/, use host path (will need extra mount)
                     valencia_centroids = str(user_centroids)
             else:
                 valencia_centroids = str(user_centroids)
@@ -1482,7 +1482,7 @@ def check_qc_tools(config_dict: Dict[str, Any], repo_root: Path) -> Dict[str, An
             result["fastqc"]["source"] = "PATH"
         else:
             # Check if Docker wrapper exists
-            wrapper_path = repo_root / "shiny-ui" / "tools" / "wrappers" / "fastqc"
+            wrapper_path = repo_root / "main" / "tools" / "wrappers" / "fastqc"
             if wrapper_path.exists():
                 result["fastqc"]["available"] = True
                 result["fastqc"]["path"] = str(wrapper_path)
@@ -1511,7 +1511,7 @@ def check_qc_tools(config_dict: Dict[str, Any], repo_root: Path) -> Dict[str, An
             result["multiqc"]["source"] = "PATH"
         else:
             # Check if Docker wrapper exists
-            wrapper_path = repo_root / "shiny-ui" / "tools" / "wrappers" / "multiqc"
+            wrapper_path = repo_root / "main" / "tools" / "wrappers" / "multiqc"
             if wrapper_path.exists():
                 result["multiqc"]["available"] = True
                 result["multiqc"]["path"] = str(wrapper_path)
@@ -1549,7 +1549,7 @@ def validate_preflight(pipeline: str, config_dict: Dict[str, Any], use_container
                 "Download SILVA classifier: https://docs.qiime2.org/2024.10/data-resources/"
             )
             errors.append(
-                "Place it at: shiny-ui/data/reference/qiime2/silva-138-99-nb-classifier.qza"
+                "Place it at: main/data/reference/qiime2/silva-138-99-nb-classifier.qza"
             )
             errors.append(
                 "Or disable Valencia with --no-valencia flag."
@@ -1925,7 +1925,7 @@ def run_pipeline(
         # Mount patched Emu script (fixes taxonomy index type mismatch in v3.5.5)
         # The bug: Emu loads taxonomy.tsv with dtype=str, but parses SAM tax_ids as int
         # This patch keeps tax_ids as strings to match the taxonomy index
-        patched_emu_path = repo_root / "shiny-ui" / "pipelines" / "patches" / "emu_v3.5.5_patched.py"
+        patched_emu_path = repo_root / "main" / "pipelines" / "patches" / "emu_v3.5.5_patched.py"
         if patched_emu_path.exists():
             extra_mounts.append((str(patched_emu_path), "/usr/local/bin/emu"))
             if config.verbose:
@@ -1955,7 +1955,7 @@ def run_pipeline(
                 print(f"{Colors.yellow_bold('Warning')}: Human index not found: {human_index_path}")
                 print(f"         Host depletion will fail unless the file exists.")
                 print(f"         Available .mmi files in reference/human/:")
-                human_ref_dir = repo_root / "shiny-ui" / "data" / "reference" / "human"
+                human_ref_dir = repo_root / "main" / "data" / "reference" / "human"
                 if human_ref_dir.exists():
                     for mmi in human_ref_dir.rglob("*.mmi"):
                         print(f"           - {mmi.relative_to(repo_root)}")
@@ -1984,7 +1984,7 @@ def run_pipeline(
         # Build Docker command with volume mounts
         cmd = [
             "docker", "run", "--rm",
-            "-v", f"{repo_root / 'shiny-ui'}:{container_repo}:rw",
+            "-v", f"{repo_root / 'main'}:{container_repo}:rw",
             "-v", f"{input_parent}:/input:ro",
             "-v", f"{outdir}:{container_repo}/outputs:rw",
         ]
@@ -2081,7 +2081,7 @@ def run_pipeline(
                 cmd,
                 pipeline_log_path,
                 env=env,
-                cwd=str(repo_root / "shiny-ui"),
+                cwd=str(repo_root / "main"),
                 verbose=config.verbose,
                 prefix=f"[{config.pipeline}] ",
                 pipeline=config.pipeline,
@@ -2581,7 +2581,7 @@ def print_dry_run(
         print(f"  FastQC:  MISSING")
         print(f"    Reason: {fastqc['reason']}")
         print(f"    Fix:    Install fastqc, or set tools.fastqc_bin in config,")
-        print(f"            or create Docker wrapper at shiny-ui/tools/wrappers/fastqc")
+        print(f"            or create Docker wrapper at main/tools/wrappers/fastqc")
 
     print()
 
@@ -2595,7 +2595,7 @@ def print_dry_run(
         print(f"  MultiQC: MISSING")
         print(f"    Reason: {multiqc['reason']}")
         print(f"    Fix:    Install multiqc, or set tools.multiqc_bin in config,")
-        print(f"            or create Docker wrapper at shiny-ui/tools/wrappers/multiqc")
+        print(f"            or create Docker wrapper at main/tools/wrappers/multiqc")
 
     # Pipeline-specific tool check for sr_meta (fastp)
     if config.pipeline == "sr_meta":
@@ -2650,7 +2650,7 @@ def print_dry_run(
                 print(f"    Use --image <tag> to specify one")
             else:
                 print(f"    No local {pipeline_type.upper()} images found.")
-                print(f"    Build with: docker build -f shiny-ui/pipelines/container/dockerfile.{pipeline_type} -t {container_image} shiny-ui/pipelines/container/")
+                print(f"    Build with: docker build -f main/pipelines/container/dockerfile.{pipeline_type} -t {container_image} main/pipelines/container/")
         print(f"    QC tools checked on: HOST environment (should be container)")
     else:
         print(f"  Execution: HOST (--no-container)")

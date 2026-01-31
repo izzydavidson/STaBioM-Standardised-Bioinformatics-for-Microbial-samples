@@ -57,7 +57,7 @@ def find_repo_root(start_path: Optional[Path] = None) -> Path:
     Find the repository root directory by looking for marker files/directories.
 
     Searches upward from start_path (or cwd) for directories containing
-    known project markers like 'shiny-ui', 'stabiom_cli', etc.
+    known project markers like 'main', 'cli', etc.
     """
     if start_path is None:
         start_path = Path.cwd()
@@ -65,7 +65,7 @@ def find_repo_root(start_path: Optional[Path] = None) -> Path:
     start_path = Path(start_path).resolve()
 
     # If we're already in the repo root
-    markers = ["shiny-ui", "stabiom_cli"]
+    markers = ["main", "cli"]
 
     current = start_path
     for _ in range(10):  # Limit search depth
@@ -74,8 +74,8 @@ def find_repo_root(start_path: Optional[Path] = None) -> Path:
         if has_markers:
             return current
 
-        # Check if shiny-ui is a subdirectory indicator
-        if (current / "shiny-ui").exists() and (current / "shiny-ui" / "pipelines").exists():
+        # Check if main is a subdirectory indicator
+        if (current / "main").exists() and (current / "main" / "pipelines").exists():
             return current
 
         # Move up one directory
@@ -85,29 +85,29 @@ def find_repo_root(start_path: Optional[Path] = None) -> Path:
         current = parent
 
     # Fallback: try to infer from known paths
-    # If we're somewhere in the stabiom_cli directory
-    if "stabiom_cli" in str(start_path):
+    # If we're somewhere in the cli directory
+    if "cli" in str(start_path):
         parts = start_path.parts
         for i, part in enumerate(parts):
-            if part == "stabiom_cli":
+            if part == "cli":
                 return Path(*parts[:i])
 
-    # If we're somewhere in the shiny-ui directory
-    if "shiny-ui" in str(start_path):
+    # If we're somewhere in the main directory
+    if "main" in str(start_path):
         parts = start_path.parts
         for i, part in enumerate(parts):
-            if part == "shiny-ui":
+            if part == "main":
                 return Path(*parts[:i])
 
     # Last resort: return current working directory
     return Path.cwd()
 
 
-def get_shiny_ui_root(repo_root: Optional[Path] = None) -> Path:
-    """Get the shiny-ui directory path."""
+def get_main_root(repo_root: Optional[Path] = None) -> Path:
+    """Get the main directory path."""
     if repo_root is None:
         repo_root = find_repo_root()
-    return repo_root / "shiny-ui"
+    return repo_root / "main"
 
 
 def list_pipeline_ids(repo_root: Optional[Path] = None) -> List[str]:
@@ -135,7 +135,7 @@ def get_runner_script(repo_root: Optional[Path] = None, pipeline_id: str = "lr_a
         repo_root = find_repo_root()
 
     # The runner script is the pipeline module itself
-    return repo_root / "shiny-ui" / "pipelines" / "modules" / f"{pipeline_id}.sh"
+    return repo_root / "main" / "pipelines" / "modules" / f"{pipeline_id}.sh"
 
 
 def get_pipeline_script(pipeline_id: str, repo_root: Optional[Path] = None) -> Optional[Path]:
@@ -146,7 +146,7 @@ def get_pipeline_script(pipeline_id: str, repo_root: Optional[Path] = None) -> O
     if not validate_pipeline_id(pipeline_id):
         return None
 
-    script_path = repo_root / "shiny-ui" / "pipelines" / "modules" / f"{pipeline_id}.sh"
+    script_path = repo_root / "main" / "pipelines" / "modules" / f"{pipeline_id}.sh"
     if script_path.exists():
         return script_path
     return None
@@ -156,18 +156,18 @@ def get_config_dir(repo_root: Optional[Path] = None) -> Path:
     """Get the configs directory path."""
     if repo_root is None:
         repo_root = find_repo_root()
-    return repo_root / "shiny-ui" / "configs"
+    return repo_root / "main" / "configs"
 
 
 def get_data_dir(repo_root: Optional[Path] = None) -> Path:
     """Get the data directory path."""
     if repo_root is None:
         repo_root = find_repo_root()
-    return repo_root / "shiny-ui" / "data"
+    return repo_root / "main" / "data"
 
 
 def get_tools_dir(repo_root: Optional[Path] = None) -> Path:
     """Get the tools directory path."""
     if repo_root is None:
         repo_root = find_repo_root()
-    return repo_root / "shiny-ui" / "tools"
+    return repo_root / "main" / "tools"

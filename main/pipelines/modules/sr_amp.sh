@@ -246,6 +246,9 @@ LOGS_DIR="${MODULE_OUT_DIR}/logs"
 STEPS_JSON="${MODULE_OUT_DIR}/steps.json"
 mkdir -p "${FASTQ_STAGE_DIR}" "${REF_STAGE_DIR}" "${META_STAGE_DIR}" "${RESULTS_DIR}" "${LOGS_DIR}"
 
+# Reset steps.json at the start of each run (prevent accumulation from previous runs)
+printf "[]\n" > "${STEPS_JSON}"
+
 STAGED_R1="${FASTQ_STAGE_DIR}/$(basename "${FASTQ_R1_SRC}")"
 STAGED_R2=""
 rm -f "${STAGED_R1}"
@@ -686,7 +689,7 @@ OUTPUT_DIR_HOST="${OUTPUT_DIR}"
 if [[ "${OUTPUT_DIR}" == /work/* ]]; then
   if [[ -z "${REPO_ROOT_HOST}" ]]; then
     echo "ERROR: Need host repo root to mount QIIME2 run dir." >&2
-    echo "       Fix: ensure your config has run.work_dir pointing at a host path (like .../shiny-ui/data/outputs)." >&2
+    echo "       Fix: ensure your config has run.work_dir pointing at a host path (like .../main/data/outputs)." >&2
     exit 3
   fi
   OUTPUT_DIR_HOST="${REPO_ROOT_HOST}${OUTPUT_DIR#/work}"

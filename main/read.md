@@ -75,10 +75,10 @@ Implement/repair a `--dry-run` mode (or a `preflight` command) that:
 Run these after changes and show output:
 
 1) sr_amp dry-run (single-end):
-python3 -m stabiom_cli run -p sr_amp -i shiny-ui/data/test_inputs/ERR10233589_1.fastq.gz -o shiny-ui/data/outputs --run-id sr_amp_dry1 --sample-type vaginal --valencia -v --dry-run
+python3 -m cli run -p sr_amp -i main/data/test_inputs/ERR10233589_1.fastq.gz -o main/data/outputs --run-id sr_amp_dry1 --sample-type vaginal --valencia -v --dry-run
 
 2) sr_amp dry-run (paired-end):
-python3 -m stabiom_cli run -p sr_amp -i shiny-ui/data/test_inputs/ERR10233586_1.fastq.gz shiny-ui/data/test_inputs/ERR10233586_2.fastq.gz -o shiny-ui/data/outputs --run-id sr_amp_dry2 --sample-type vaginal --valencia -v --dry-run
+python3 -m cli run -p sr_amp -i main/data/test_inputs/ERR10233586_1.fastq.gz main/data/test_inputs/ERR10233586_2.fastq.gz -o main/data/outputs --run-id sr_amp_dry2 --sample-type vaginal --valencia -v --dry-run
 
 Expected DRY-RUN output must clearly show:
 - FastQC: FOUND + where

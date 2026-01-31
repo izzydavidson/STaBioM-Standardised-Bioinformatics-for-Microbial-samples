@@ -337,6 +337,9 @@ LOGS_DIR="${MODULE_OUT_DIR}/logs"
 STEPS_JSON="${MODULE_OUT_DIR}/steps.json"
 mkdir -p "${INPUTS_DIR}" "${RESULTS_DIR}" "${LOGS_DIR}"
 
+# Reset steps.json at the start of each run (prevent accumulation from previous runs)
+printf "[]\n" > "${STEPS_JSON}"
+
 FASTQ_STAGE_DIR="${INPUTS_DIR}/fastq"
 FAST5_STAGE_DIR="${INPUTS_DIR}/fast5"
 POD5_STAGE_DIR="${INPUTS_DIR}/pod5"
