@@ -33,9 +33,9 @@ DATABASES = {
     },
     "emu-default": {
         "name": "Emu Default Database",
-        "description": "Default Emu database for full-length 16S classification",
-        "url": "https://gitlab.com/treangenlab/emu/-/raw/master/emu_database.tar.gz",
-        "size_gb": 0.5,
+        "description": "Default Emu database for full-length 16S classification (rrnDB v5.6 + NCBI 16S RefSeq)",
+        "url": "https://osf.io/download/qrbne/",  # emu.tar.gz from OSF
+        "size_gb": 0.1,  # ~12 MB compressed, ~85 MB extracted
         "pipelines": ["lr_amp"],
     },
 }
