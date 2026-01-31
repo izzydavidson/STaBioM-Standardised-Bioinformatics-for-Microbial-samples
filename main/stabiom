@@ -11,7 +11,7 @@ SR_AMP_DEFAULT_CONFIG: Dict[str, Any] = {
   "specimen": "other",
   "sample_type": "other",
   "run": {
-    "work_dir": "/Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/shiny-ui/data/outputs",
+    "work_dir": "/Users/izzydavidson/Desktop/PhD/Projects/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/main/data/outputs",
     "run_id": "",
     "force_overwrite": 1
   },

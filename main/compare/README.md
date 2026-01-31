@@ -14,18 +14,18 @@ The compare module enables comparison of analysis outputs from STaBioM pipelines
 
 ```bash
 # Compare two or more run directories
-python3 -m stabiom_cli compare \
-  --run shiny-ui/data/outputs/run1 \
-  --run shiny-ui/data/outputs/run2 \
+python3 -m cli compare \
+  --run main/data/outputs/run1 \
+  --run main/data/outputs/run2 \
   --rank genus \
   --norm relative \
   --top-n 20 \
-  --outdir shiny-ui/data/outputs \
+  --outdir main/data/outputs \
   --name my_comparison \
   -v
 
 # Compare with manual tables
-python3 -m stabiom_cli compare \
+python3 -m cli compare \
   --table abundance1.tsv \
   --table abundance2.tsv \
   --taxonomy taxonomy.tsv \
