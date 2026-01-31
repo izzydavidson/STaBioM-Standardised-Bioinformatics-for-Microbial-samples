@@ -115,6 +115,9 @@ def get_data_dir() -> Path:
     # Check if running as PyInstaller bundle
     if getattr(sys, 'frozen', False):
         base = Path(sys.executable).parent
+        # PyInstaller 6.x puts data files in _internal/
+        if (base / "_internal" / "main").exists():
+            base = base / "_internal"
     else:
         from cli.discovery import find_repo_root
         base = find_repo_root()
@@ -129,6 +132,9 @@ def get_tools_dir() -> Path:
     # Check if running as PyInstaller bundle
     if getattr(sys, 'frozen', False):
         base = Path(sys.executable).parent
+        # PyInstaller 6.x puts data files in _internal/
+        if (base / "_internal" / "main").exists():
+            base = base / "_internal"
     else:
         from cli.discovery import find_repo_root
         base = find_repo_root()
