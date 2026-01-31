@@ -200,8 +200,8 @@ plot_one_run <- function(run_dir) {
   out_png <- file.path(run_dir, paste0(run_name, "_", rank, "_stacked_top", top_n, ".png"))
   out_pdf <- file.path(run_dir, paste0(run_name, "_", rank, "_stacked_top", top_n, ".pdf"))
   
-  ggsave(out_png, p, width = 14, height = 8, dpi = 300)
-  ggsave(out_pdf, p, width = 14, height = 8)
+  ggsave(out_png, p, width = 14, height = 8, dpi = 300, bg = "white")
+  ggsave(out_pdf, p, width = 14, height = 8, bg = "white")
   
   message("[OK] ", run_name, " -> ", basename(out_png))
   invisible(TRUE)

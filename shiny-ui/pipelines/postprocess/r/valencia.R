@@ -193,7 +193,7 @@ if (!is.na(cst_col)) {
 
   out_png <- file.path(out_dir, "cst_distribution.png")
 
-  png(out_png, width = 600, height = 500, res = 150)
+  png(out_png, width = 600, height = 500, res = 150, bg = "white")
   par(mar = c(6, 4, 3, 1))
 
   colors_to_use <- sapply(as.character(cst_df$CST), function(x) {
@@ -225,7 +225,7 @@ if (!is.na(subcst_col)) {
 
   out_png <- file.path(out_dir, "subcst_distribution.png")
 
-  png(out_png, width = 700, height = 500, res = 150)
+  png(out_png, width = 700, height = 500, res = 150, bg = "white")
   par(mar = c(7, 4, 3, 1))
 
   colors_to_use <- rainbow(nrow(subcst_df), s = 0.7, v = 0.8)
@@ -265,7 +265,7 @@ if (length(sim_cols) > 0 && nrow(valencia_data) > 0) {
     n_samples <- nrow(sim_mat)
     n_csts <- ncol(sim_mat)
 
-    png(out_png, width = max(500, n_csts * 50), height = max(400, n_samples * 30), res = 150)
+    png(out_png, width = max(500, n_csts * 50), height = max(400, n_samples * 30), res = 150, bg = "white")
 
     layout(matrix(c(1, 2), nrow = 1), widths = c(4, 1))
     par(mar = c(8, 10, 3, 1))
@@ -298,7 +298,7 @@ if (length(sim_cols) > 0 && nrow(valencia_data) > 0) {
     # Single sample - create bar chart of similarities
     out_png <- file.path(out_dir, "similarity_scores.png")
 
-    png(out_png, width = 600, height = 400, res = 150)
+    png(out_png, width = 600, height = 400, res = 150, bg = "white")
     par(mar = c(8, 4, 3, 1))
 
     vals <- as.numeric(sim_mat[1, ])
@@ -333,7 +333,7 @@ if (!is.na(score_col)) {
   if (length(scores) > 0) {
     out_png <- file.path(out_dir, "score_distribution.png")
 
-    png(out_png, width = 500, height = 400, res = 150)
+    png(out_png, width = 500, height = 400, res = 150, bg = "white")
     par(mar = c(5, 4, 3, 1))
 
     hist(scores,

@@ -274,6 +274,11 @@ STEPS_JSON="${MODULE_OUT_DIR}/steps.json"
 mkdir -p "${INPUTS_DIR}" "${RESULTS_DIR}" "${LOGS_DIR}"
 
 FASTQ_STAGE_DIR="${INPUTS_DIR}/fastq"
+FAST5_STAGE_DIR="${INPUTS_DIR}/fast5"
+POD5_STAGE_DIR="${INPUTS_DIR}/pod5"
+BAM_STAGE_DIR="${INPUTS_DIR}/bam"
+DEMUX_DIR="${RESULTS_DIR}/demux"
+TRIM_DIR="${RESULTS_DIR}/trim"
 RAW_READS_DIR="${RESULTS_DIR}/raw_reads"
 RAW_FASTQC_DIR="${RESULTS_DIR}/raw_fastqc"
 RAW_MULTIQC_DIR="${RESULTS_DIR}/raw_multiqc"
@@ -286,7 +291,8 @@ VALENCIA_TMP="${RESULTS_DIR}/valencia/tmp"
 VALENCIA_RESULTS="${RESULTS_DIR}/valencia/results"
 
 mkdir -p \
-  "${FASTQ_STAGE_DIR}" "${RAW_READS_DIR}" "${RAW_FASTQC_DIR}" "${RAW_MULTIQC_DIR}" \
+  "${FASTQ_STAGE_DIR}" "${FAST5_STAGE_DIR}" "${POD5_STAGE_DIR}" "${BAM_STAGE_DIR}" \
+  "${DEMUX_DIR}" "${TRIM_DIR}" "${RAW_READS_DIR}" "${RAW_FASTQC_DIR}" "${RAW_MULTIQC_DIR}" \
   "${QFILTER_DIR}" "${LENFILTER_DIR}" \
   "${TAXO_ROOT}" "${EMU_DIR}" "${PRIMARY_TAXO_DIR}" \
   "${VALENCIA_TMP}" "${VALENCIA_RESULTS}"
@@ -308,6 +314,15 @@ TECHNOLOGY="$(echo "${TECHNOLOGY}" | tr '[:lower:]' '[:upper:]')"
 FULL_LENGTH="$(jq_first "${CONFIG_PATH}" '.params.full_length' '.full_length' '.amplicon.full_length' || true)"
 [[ -n "${FULL_LENGTH}" ]] || FULL_LENGTH="1"
 
+# Sequencing technology preset for Emu/minimap2 (map-ont, map-pb, map-hifi, lr:hq)
+SEQ_TYPE="$(jq_first "${CONFIG_PATH}" '.params.seq_type' '.seq_type' '.tools.emu.type' || true)"
+[[ -n "${SEQ_TYPE}" ]] || SEQ_TYPE="map-ont"
+# Validate seq_type
+case "${SEQ_TYPE}" in
+  map-ont|map-pb|map-hifi|lr:hq) ;;
+  *) log_warn "Invalid seq_type '${SEQ_TYPE}', defaulting to map-ont"; SEQ_TYPE="map-ont" ;;
+esac
+
 # Length filter settings for amplicons
 # Full-length 16S: ~1500bp (1300-1700bp range)
 # Partial/unknown: conservative wide window (200-900bp by default)
@@ -326,9 +341,23 @@ QFILTER_ENABLED="$(jq_first "${CONFIG_PATH}" '.tools.qfilter.enabled' '.qfilter.
 QFILTER_MIN_Q="$(jq_first "${CONFIG_PATH}" '.tools.qfilter.min_q' '.qfilter.min_q' '.qfilter_min_q' || true)"
 [[ -n "${QFILTER_MIN_Q}" ]] || QFILTER_MIN_Q="10"
 
-VALENCIA_ENABLED="$(jq_first "${CONFIG_PATH}" '.tools.valencia.enabled' '.valencia.enabled' '.valencia_enabled' || true)"
-[[ -n "${VALENCIA_ENABLED}" ]] || VALENCIA_ENABLED="0"
-VALENCIA_ROOT="$(jq_first "${CONFIG_PATH}" '.tools.valencia.root' '.valencia.root' || true)"
+# VALENCIA config (mirroring sr_amp approach)
+VALENCIA_ENABLED_RAW="$(jq_first "${CONFIG_PATH}" '.valencia.enabled' '.tools.valencia.enabled' '.valencia_enabled' || true)"
+VALENCIA_CENTROIDS_CSV="$(jq_first "${CONFIG_PATH}" '.valencia.centroids_csv' '.tools.valencia.centroids_csv' || true)"
+LR_AMP_SAMPLE_TYPE_RAW="$(jq_first "${CONFIG_PATH}" '.sample_type' '.input.sample_type' '.inputs.sample_type' '.run.sample_type' '.run.sample_type_resolved' || true)"
+
+# Normalize enabled flag (allow: true/false/auto/1/0)
+VALENCIA_ENABLED="auto"
+if [[ -n "${VALENCIA_ENABLED_RAW}" ]]; then
+  case "$(printf "%s" "${VALENCIA_ENABLED_RAW}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')" in
+    1|true|yes|y) VALENCIA_ENABLED="true" ;;
+    0|false|no|n) VALENCIA_ENABLED="false" ;;
+    auto|"") VALENCIA_ENABLED="auto" ;;
+    *) VALENCIA_ENABLED="${VALENCIA_ENABLED_RAW}" ;;
+  esac
+fi
+
+LR_AMP_SAMPLE_TYPE_NORM="$(printf "%s" "${LR_AMP_SAMPLE_TYPE_RAW}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
 
 POSTPROCESS_ENABLED="$(jq_first "${CONFIG_PATH}" '.postprocess.enabled' '.tools.postprocess.enabled' '.postprocess_enabled' || true)"
 [[ -n "${POSTPROCESS_ENABLED}" ]] || POSTPROCESS_ENABLED="1"
@@ -356,11 +385,18 @@ BRACKEN_READLEN="$(jq_first "${CONFIG_PATH}" '.tools.bracken.readlen' '.bracken_
 [[ -n "${BRACKEN_READLEN}" ]] || BRACKEN_READLEN="1500"
 BRACKEN_AVAILABLE="1"
 
+# Dorado/Pod5 settings (used when FAST5 input is provided)
+DORADO_MODEL="$(jq_first "${CONFIG_PATH}" '.tools.dorado.model' '.dorado.model' || true)"
+LIGATION_KIT="$(jq_first "${CONFIG_PATH}" '.tools.dorado.ligation_kit' '.dorado.ligation_kit' || true)"
+BARCODE_KIT="$(jq_first "${CONFIG_PATH}" '.tools.dorado.barcode_kit' '.dorado.barcode_kit' || true)"
+PRIMER_FASTA="$(jq_first "${CONFIG_PATH}" '.tools.dorado.primer_fasta' '.dorado.primer_fasta' || true)"
+
 ############################################
 ##   INPUT RESOLUTION + STAGING           ##
 ############################################
 
 STAGED_FASTQ=""
+STAGED_FAST5_DIR=""
 PER_BARCODE_FASTQ_ROOT=""
 
 case "${INPUT_STYLE}" in
@@ -429,87 +465,129 @@ case "${INPUT_STYLE}" in
     log_info "Staged ${#STAGED_FASTQS[@]} FASTQ(s) to: ${PER_BARCODE_FASTQ_ROOT}"
     STAGED_FASTQ="${STAGED_FASTQS[0]:-}"
     ;;
+  FAST5_DIR|FAST5)
+    FAST5_DIR_SRC="$(jq_first "${CONFIG_PATH}" '.input.fast5_dir' '.inputs.fast5_dir' '.input.fast5' '.inputs.fast5' '.fast5_dir' '.fast5' || true)"
+    [[ -n "${FAST5_DIR_SRC}" ]] || { echo "ERROR: FAST5 selected but no fast5_dir found in config" >&2; exit 2; }
+    # Convert to absolute path for symlink (needed for container execution)
+    if [[ "${FAST5_DIR_SRC}" != /* ]]; then
+      FAST5_DIR_SRC="$(cd "$(dirname "${FAST5_DIR_SRC}")" && pwd)/$(basename "${FAST5_DIR_SRC}")"
+    fi
+    require_dir "${FAST5_DIR_SRC}"
+    STAGED_FAST5_DIR="${FAST5_STAGE_DIR}/fast5"
+    ln -sfn "${FAST5_DIR_SRC}" "${STAGED_FAST5_DIR}"
+    ;;
   *)
-    echo "ERROR: Unsupported input style: ${INPUT_STYLE}. lr_amp only supports FASTQ_SINGLE." >&2
+    echo "ERROR: Unsupported input style: ${INPUT_STYLE}. lr_amp supports FASTQ_SINGLE or FAST5_DIR." >&2
     exit 2
     ;;
 esac
 
 OUTPUTS_JSON="${MODULE_OUT_DIR}/outputs.json"
 
-FASTQS_JSON="[]"
-BARCODES_JSON="[]"
-for i in "${!STAGED_FASTQS[@]}"; do
-  FASTQS_JSON="$(echo "${FASTQS_JSON}" | jq --arg fq "${STAGED_FASTQS[$i]}" '. + [$fq]')"
-  BARCODES_JSON="$(echo "${BARCODES_JSON}" | jq --arg bc "${BARCODE_IDS[$i]}" '. + [$bc]')"
-done
+# Build outputs.json based on input style
+if [[ "${INPUT_STYLE}" == "FASTQ_SINGLE" ]]; then
+  FASTQS_JSON="[]"
+  BARCODES_JSON="[]"
+  for i in "${!STAGED_FASTQS[@]}"; do
+    FASTQS_JSON="$(echo "${FASTQS_JSON}" | jq --arg fq "${STAGED_FASTQS[$i]}" '. + [$fq]')"
+    BARCODES_JSON="$(echo "${BARCODES_JSON}" | jq --arg bc "${BARCODE_IDS[$i]}" '. + [$bc]')"
+  done
 
-jq -n \
-  --arg module_name "${MODULE_NAME}" \
-  --arg pipeline_id "${PIPELINE_ID:-}" \
-  --arg run_id "${RUN_ID:-}" \
-  --arg input_style "${INPUT_STYLE}" \
-  --arg technology "${TECHNOLOGY}" \
-  --argjson full_length "${FULL_LENGTH}" \
-  --arg fastq "${STAGED_FASTQ}" \
-  --arg per_barcode_root "${PER_BARCODE_FASTQ_ROOT}" \
-  --argjson fastq_list "${FASTQS_JSON}" \
-  --argjson barcode_ids "${BARCODES_JSON}" \
-  '{
-    "module": $module_name,
-    "pipeline_id": $pipeline_id,
-    "run_id": $run_id,
-    "run_name": "'"${RUN_NAME}"'",
-    "input_style": $input_style,
-    "technology": $technology,
-    "full_length": $full_length,
-    "inputs": {
-      "fastq": $fastq,
-      "fastq_list": $fastq_list,
-      "barcode_ids": $barcode_ids,
-      "per_barcode_root": $per_barcode_root,
-      "sample_count": ($fastq_list | length)
-    }
-  }' > "${OUTPUTS_JSON}"
+  jq -n \
+    --arg module_name "${MODULE_NAME}" \
+    --arg pipeline_id "${PIPELINE_ID:-}" \
+    --arg run_id "${RUN_ID:-}" \
+    --arg input_style "${INPUT_STYLE}" \
+    --arg technology "${TECHNOLOGY}" \
+    --argjson full_length "${FULL_LENGTH}" \
+    --arg fastq "${STAGED_FASTQ}" \
+    --arg per_barcode_root "${PER_BARCODE_FASTQ_ROOT}" \
+    --argjson fastq_list "${FASTQS_JSON}" \
+    --argjson barcode_ids "${BARCODES_JSON}" \
+    '{
+      "module": $module_name,
+      "pipeline_id": $pipeline_id,
+      "run_id": $run_id,
+      "run_name": "'"${RUN_NAME}"'",
+      "input_style": $input_style,
+      "technology": $technology,
+      "full_length": $full_length,
+      "inputs": {
+        "fastq": $fastq,
+        "fastq_list": $fastq_list,
+        "barcode_ids": $barcode_ids,
+        "per_barcode_root": $per_barcode_root,
+        "sample_count": ($fastq_list | length)
+      }
+    }' > "${OUTPUTS_JSON}"
+else
+  # FAST5_DIR or FAST5 input style
+  jq -n \
+    --arg module_name "${MODULE_NAME}" \
+    --arg pipeline_id "${PIPELINE_ID:-}" \
+    --arg run_id "${RUN_ID:-}" \
+    --arg input_style "${INPUT_STYLE}" \
+    --arg technology "${TECHNOLOGY}" \
+    --argjson full_length "${FULL_LENGTH}" \
+    --arg fast5_dir "${STAGED_FAST5_DIR}" \
+    '{
+      "module": $module_name,
+      "pipeline_id": $pipeline_id,
+      "run_id": $run_id,
+      "run_name": "'"${RUN_NAME}"'",
+      "input_style": $input_style,
+      "technology": $technology,
+      "full_length": $full_length,
+      "inputs": { "fast5_dir": $fast5_dir }
+    }' > "${OUTPUTS_JSON}"
+fi
 
 ############################################
 ##              METRICS                   ##
 ############################################
 METRICS_JSON="${MODULE_OUT_DIR}/metrics.json"
-TOTAL_LINES=0
-TOTAL_READS=0
-SAMPLE_METRICS="[]"
 
-for i in "${!STAGED_FASTQS[@]}"; do
-  staged="${STAGED_FASTQS[$i]}"
-  barcode="${BARCODE_IDS[$i]}"
-  if [[ -f "${staged}" ]]; then
-    lines="$(count_fastq_lines "${staged}")"
-    reads="$(estimate_reads_from_lines "${lines}")"
-    TOTAL_LINES=$((TOTAL_LINES + lines))
-    TOTAL_READS=$((TOTAL_READS + reads))
-    SAMPLE_METRICS="$(echo "${SAMPLE_METRICS}" | jq \
-      --arg barcode "${barcode}" \
-      --arg fastq "${staged}" \
-      --argjson lines "${lines}" \
-      --argjson reads "${reads}" \
-      '. + [{"barcode": $barcode, "fastq": $fastq, "fastq_lines": $lines, "reads_estimate": $reads}]')"
-  fi
-done
+if [[ "${INPUT_STYLE}" == "FASTQ_SINGLE" ]]; then
+  TOTAL_LINES=0
+  TOTAL_READS=0
+  SAMPLE_METRICS="[]"
 
-jq -n \
-  --arg module_name "${MODULE_NAME}" \
-  --argjson total_lines "${TOTAL_LINES}" \
-  --argjson total_reads "${TOTAL_READS}" \
-  --argjson sample_count "${#STAGED_FASTQS[@]}" \
-  --argjson samples "${SAMPLE_METRICS}" \
-  '{
-    "module": $module_name,
-    "sample_count": $sample_count,
-    "total_fastq_lines": $total_lines,
-    "total_reads_estimate": $total_reads,
-    "samples": $samples
-  }' > "${METRICS_JSON}"
+  for i in "${!STAGED_FASTQS[@]}"; do
+    staged="${STAGED_FASTQS[$i]}"
+    barcode="${BARCODE_IDS[$i]}"
+    if [[ -f "${staged}" ]]; then
+      lines="$(count_fastq_lines "${staged}")"
+      reads="$(estimate_reads_from_lines "${lines}")"
+      TOTAL_LINES=$((TOTAL_LINES + lines))
+      TOTAL_READS=$((TOTAL_READS + reads))
+      SAMPLE_METRICS="$(echo "${SAMPLE_METRICS}" | jq \
+        --arg barcode "${barcode}" \
+        --arg fastq "${staged}" \
+        --argjson lines "${lines}" \
+        --argjson reads "${reads}" \
+        '. + [{"barcode": $barcode, "fastq": $fastq, "fastq_lines": $lines, "reads_estimate": $reads}]')"
+    fi
+  done
+
+  jq -n \
+    --arg module_name "${MODULE_NAME}" \
+    --argjson total_lines "${TOTAL_LINES}" \
+    --argjson total_reads "${TOTAL_READS}" \
+    --argjson sample_count "${#STAGED_FASTQS[@]}" \
+    --argjson samples "${SAMPLE_METRICS}" \
+    '{
+      "module": $module_name,
+      "sample_count": $sample_count,
+      "total_fastq_lines": $total_lines,
+      "total_reads_estimate": $total_reads,
+      "samples": $samples
+    }' > "${METRICS_JSON}"
+else
+  jq -n \
+    --arg module_name "${MODULE_NAME}" \
+    --arg note "metrics calculated after basecalling (input_style is FAST5)" \
+    '{ "module": $module_name, "note": $note }' > "${METRICS_JSON}"
+fi
 
 tmp="${OUTPUTS_JSON}.tmp"
 jq --arg metrics_path "${METRICS_JSON}" --slurpfile metrics "${METRICS_JSON}" \
@@ -520,6 +598,9 @@ mv "${tmp}" "${OUTPUTS_JSON}"
 ##     TOOL RESOLUTION (config-aware)     ##
 ############################################
 
+POD5_BIN="$(resolve_tool "${CONFIG_PATH}" '.tools.pod5_bin' 'pod5')"
+DORADO_BIN="$(resolve_tool "${CONFIG_PATH}" '.tools.dorado_bin' 'dorado')"
+SAMTOOLS_BIN="$(resolve_tool "${CONFIG_PATH}" '.tools.samtools_bin' 'samtools')"
 FASTQC_BIN="$(resolve_tool "${CONFIG_PATH}" '.tools.fastqc_bin' 'fastqc')"
 MULTIQC_BIN="$(resolve_tool "${CONFIG_PATH}" '.tools.multiqc_bin' 'multiqc')"
 NANOFILT_BIN="$(resolve_tool "${CONFIG_PATH}" '.tools.nanofilt_bin' 'NanoFilt')"
@@ -598,6 +679,120 @@ check_bracken_available() {
     USE_BRACKEN="0"
     log_warn "Bracken kmer distribution not found at ${kmer_file}; bracken disabled."
   fi
+}
+
+############################################
+##     DORADO BASECALLING FLOW            ##
+## (Used when INPUT_STYLE is FAST5_DIR)   ##
+############################################
+
+convert_fast5_to_pod5() {
+  [[ -n "${STAGED_FAST5_DIR}" ]] || die "No staged FAST5 dir found"
+  check_cmd "${POD5_BIN}"
+  local outpod5="${POD5_STAGE_DIR}/${RUN_NAME}.pod5"
+
+  if [[ -s "${outpod5}" ]]; then
+    log_info "Resume: POD5 exists, skipping: ${outpod5}"
+    echo "${outpod5}"
+    return 0
+  fi
+
+  "${POD5_BIN}" convert fast5 "${STAGED_FAST5_DIR}" -o "${outpod5}"
+  echo "${outpod5}"
+}
+
+dorado_basecall_to_bam() {
+  check_cmd "${DORADO_BIN}"
+  [[ -n "${DORADO_MODEL}" && "${DORADO_MODEL}" != "null" ]] || die "Missing dorado model: set tools.dorado.model"
+  local pod5_path="$1"
+  local outbam="${BAM_STAGE_DIR}/${RUN_NAME}.bam"
+
+  if [[ -s "${outbam}" ]]; then
+    log_info "Resume: BAM exists, skipping basecalling: ${outbam}"
+    echo "${outbam}"
+    return 0
+  fi
+
+  # Download Dorado model if not already present
+  local model_dir="${DORADO_MODEL_DIR:-/opt/dorado/models}"
+  mkdir -p "${model_dir}"
+
+  log_info "Using Dorado model: ${DORADO_MODEL}"
+  log_info "Downloading model if not cached (this may take a while on first run)..."
+
+  "${DORADO_BIN}" download --model "${DORADO_MODEL}" --directory "${model_dir}" 2>&1 | head -20 >&2 || {
+    log_warn "Model download step completed (may have already been cached)"
+  }
+
+  # Run basecaller with explicit model path if downloaded to custom location
+  local model_path="${model_dir}/${DORADO_MODEL}"
+  if [[ -d "${model_path}" ]]; then
+    log_info "Using downloaded model at: ${model_path}"
+    "${DORADO_BIN}" basecaller --device cpu "${model_path}" "${pod5_path}" > "${outbam}"
+  else
+    # Fall back to model name (Dorado will use default cache)
+    "${DORADO_BIN}" basecaller --device cpu "${DORADO_MODEL}" "${pod5_path}" > "${outbam}"
+  fi
+  echo "${outbam}"
+}
+
+dorado_demux_to_per_barcode_bam() {
+  check_cmd "${DORADO_BIN}"
+  local inbam="$1"
+  local outdir="${DEMUX_DIR}/${RUN_NAME}"
+  make_dir "${outdir}"
+
+  if [[ -z "${BARCODE_KIT:-}" || "${BARCODE_KIT}" == "null" ]]; then
+    log_warn "barcode_kit empty; treating as single sample 'barcode00'"
+    cp "${inbam}" "${outdir}/barcode00.bam"
+    echo "${outdir}"
+    return 0
+  fi
+
+  local demux_log="${outdir}/dorado_demux.log"
+  "${DORADO_BIN}" demux --kit-name "${BARCODE_KIT}" --output-dir "${outdir}" "${inbam}" > "${demux_log}" 2>&1 || die "Dorado demux failed. See: ${demux_log}"
+
+  shopt -s nullglob
+  local demux_bams=( "${outdir}"/*.bam "${outdir}"/*/*.bam )
+  [[ ${#demux_bams[@]} -gt 0 ]] || die "Dorado demux produced no BAMs. See: ${demux_log}"
+
+  echo "${outdir}"
+}
+
+dorado_trim_bam_to_fastq_per_barcode() {
+  check_cmd "${DORADO_BIN}"
+  check_cmd "${SAMTOOLS_BIN}"
+
+  local demux_dir="$1"
+  make_dir "${TRIM_DIR}"
+  make_dir "${RAW_READS_DIR}/${RUN_NAME}"
+
+  shopt -s nullglob
+  local any=0
+  for bbam in "${demux_dir}"/*.bam "${demux_dir}"/*/*.bam; do
+    [[ -e "${bbam}" ]] || continue
+    any=1
+
+    local barcode
+    barcode="$(basename "${bbam}" .bam)"
+
+    local trimmed_bam="${TRIM_DIR}/${RUN_NAME}_${barcode}_trimmed.bam"
+    # Note: dorado trim auto-detects adapters/primers. Custom primers can be provided via --primer-sequences.
+    local cmd=( "${DORADO_BIN}" trim "${bbam}" )
+    if [[ -n "${PRIMER_FASTA:-}" && "${PRIMER_FASTA}" != "null" && -s "${PRIMER_FASTA}" ]]; then
+      cmd+=( --primer-sequences "${PRIMER_FASTA}" )
+    fi
+
+    "${cmd[@]}" > "${trimmed_bam}"
+
+    local fqdir="${RAW_READS_DIR}/${RUN_NAME}/${barcode}"
+    make_dir "${fqdir}"
+    local fq="${fqdir}/${barcode}.fastq"
+    "${SAMTOOLS_BIN}" bam2fq "${trimmed_bam}" > "${fq}"
+  done
+
+  [[ "${any}" -eq 1 ]] || die "No demux BAMs found under ${demux_dir}"
+  echo "${RAW_READS_DIR}/${RUN_NAME}"
 }
 
 ############################################
@@ -715,20 +910,23 @@ length_filter_per_barcode() {
 ############################################
 
 emu_classification_per_barcode() {
+  # lr_amp uses ONLY Emu for classification (no Kraken2)
   if [[ "${FULL_LENGTH}" != "1" ]]; then
-    log_info "Skipping Emu (not full-length amplicons)"
+    log_warn "Skipping Emu (not full-length amplicons). Note: lr_amp uses Emu only."
     return 0
   fi
 
   if ! command -v "${EMU_BIN}" >/dev/null 2>&1; then
-    log_warn "Emu not found - skipping Emu classification"
-    return 0
+    log_fail "Emu not found - lr_amp requires Emu for classification"
+    return 1
   fi
 
   if [[ -z "${EMU_DB}" || "${EMU_DB}" == "null" ]]; then
-    log_warn "EMU_DB not set - skipping Emu classification"
-    return 0
+    log_fail "EMU_DB not set - lr_amp requires Emu database"
+    return 1
   fi
+
+  log_info "Using sequencing technology preset: ${SEQ_TYPE}"
 
   local emu_run_dir="${EMU_DIR}/${RUN_NAME}"
   make_dir "${emu_run_dir}"
@@ -746,9 +944,10 @@ emu_classification_per_barcode() {
     local out_dir="${emu_run_dir}/${barcode}"
     make_dir "${out_dir}"
 
-    log "Emu classification: ${fq}"
+    log "Emu classification (--type ${SEQ_TYPE}): ${fq}"
     "${EMU_BIN}" abundance \
       --db "${EMU_DB}" \
+      --type "${SEQ_TYPE}" \
       --threads "${THREADS}" \
       --output-dir "${out_dir}" \
       "${fq}" || log_warn "Emu failed for ${barcode}"
@@ -758,297 +957,465 @@ emu_classification_per_barcode() {
 }
 
 ############################################
-##  KRAKEN2 SECONDARY CLASSIFICATION      ##
+##  KRAKEN2 - DISABLED FOR lr_amp        ##
+##  (lr_amp uses ONLY Emu classification) ##
 ############################################
 
 kraken2_secondary_per_barcode() {
-  if [[ -z "${KRAKEN2_DB}" || "${KRAKEN2_DB}" == "null" ]]; then
-    log_warn "KRAKEN2_DB not set - skipping Kraken2 classification"
-    return 0
-  fi
-
-  if [[ ! -d "${KRAKEN2_DB}" ]]; then
-    log_warn "KRAKEN2_DB directory not found: ${KRAKEN2_DB} - skipping"
-    return 0
-  fi
-
-  if ! command -v "${KRAKEN2_BIN}" >/dev/null 2>&1; then
-    log_warn "Kraken2 not found - skipping taxonomy step"
-    return 0
-  fi
-
-  check_bracken_available
-
-  local input_dir="${PER_BARCODE_FASTQ_ROOT}"
-  make_dir "${TAXO_ROOT}/${RUN_NAME}"
-
-  shopt -s nullglob
-  local fqs=( "${input_dir}"/*/*.fastq.gz "${input_dir}"/*/*.fastq "${input_dir}"/*/*.fq.gz "${input_dir}"/*/*.fq )
-  [[ ${#fqs[@]} -gt 0 ]] || { log_warn "No FASTQ files found for Kraken2"; return 0; }
-
-  for fq in "${fqs[@]}"; do
-    local sample_id
-    sample_id="$(basename "$(dirname "${fq}")")"
-
-    make_dir "${TAXO_ROOT}/${RUN_NAME}/${sample_id}"
-    local bout="${TAXO_ROOT}/${RUN_NAME}/${sample_id}"
-
-    local conf mhg do_bracken
-    do_bracken=0
-
-    if is_vaginal_barcode "${sample_id}"; then
-      conf="${KRAKEN_CONF_VAGINAL}"
-      mhg="${KRAKEN_MHG_VAGINAL}"
-      log_info "Sample ${sample_id} flagged as vaginal."
-      if [[ "${BRACKEN_AVAILABLE}" -eq 1 && "${USE_BRACKEN}" -eq 1 ]]; then
-        do_bracken=1
-      fi
-    else
-      conf="${KRAKEN_CONF_NONVAGINAL}"
-      mhg="${KRAKEN_MHG_NONVAGINAL}"
-      log_info "Sample ${sample_id} treated as non-vaginal ($(get_site_for_barcode "${sample_id}"))."
-      if [[ "${BRACKEN_AVAILABLE}" -eq 1 && "${USE_BRACKEN}" -eq 1 ]]; then
-        do_bracken=1
-      fi
-    fi
-
-    log "Kraken2 (${sample_id}) --confidence ${conf}, --minimum-hit-groups ${mhg}"
-    "${KRAKEN2_BIN}" \
-      --db "${KRAKEN2_DB}" \
-      --threads "${THREADS}" \
-      --memory-mapping \
-      --use-names \
-      --confidence "${conf}" \
-      --minimum-hit-groups "${mhg}" \
-      --report "${bout}/${sample_id}.kreport" \
-      --output "${bout}/${sample_id}.kraken2" \
-      "${fq}"
-
-    if [[ "${do_bracken}" -eq 1 ]]; then
-      log "Bracken (${sample_id}), readlen=${BRACKEN_READLEN}"
-      "${BRACKEN_BIN}" \
-        -d "${KRAKEN2_DB}" \
-        -i "${bout}/${sample_id}.kreport" \
-        -o "${bout}/${sample_id}.bracken" \
-        -w "${bout}/${sample_id}.breport" \
-        -r "${BRACKEN_READLEN}" \
-        -l S || log_warn "Bracken failed for ${sample_id}"
-    fi
-  done
+  # lr_amp uses ONLY Emu for taxonomy classification
+  # Kraken2/Bracken are disabled - use lr_meta for Kraken2-based workflows
+  log_info "Kraken2 disabled for lr_amp (Emu-only pipeline)"
+  return 0
 }
 
 ############################################
-##       VALENCIA (vaginal only)          ##
+##       VALENCIA (vaginal samples)       ##
 ############################################
 
-valencia_from_taxonomy() {
-  [[ "${VALENCIA_ENABLED}" -eq 1 ]] || { log_warn "Skipping VALENCIA (valencia_enabled=0)"; return 0; }
-  [[ -n "${VALENCIA_ROOT}" && "${VALENCIA_ROOT}" != "null" ]] || { log_warn "Skipping VALENCIA (valencia.root not set)"; return 0; }
+# VALENCIA runs inline Python (no external Valencia.py dependency)
+# This mirrors the sr_amp approach for consistency across all pipelines
 
-  make_dir "${VALENCIA_TMP}"
-  make_dir "${VALENCIA_RESULTS}"
-  make_dir "${VALENCIA_ROOT}"
+run_valencia() {
+  # lr_amp uses Emu outputs for VALENCIA (not Kraken2 kreports)
+  local emu_run_dir="${EMU_DIR}/${RUN_NAME}"
 
-  local val_repo="${VALENCIA_ROOT}/VALENCIA"
-  if [[ ! -d "${val_repo}" ]]; then
-    if [[ -n "${GIT_BIN}" ]] && command -v "${GIT_BIN}" >/dev/null 2>&1; then
-      log_info "Cloning VALENCIA repo into ${val_repo}"
-      "${GIT_BIN}" clone https://github.com/ravel-lab/VALENCIA.git "${val_repo}" || { log_warn "VALENCIA clone failed; skipping"; return 0; }
-    else
-      log_warn "git not found and VALENCIA repo missing; skipping VALENCIA"
-      return 0
+  # Determine if VALENCIA should run
+  VALENCIA_SHOULD_RUN="no"
+  if [[ "${VALENCIA_ENABLED}" == "true" ]]; then
+    VALENCIA_SHOULD_RUN="yes"
+  elif [[ "${VALENCIA_ENABLED}" == "auto" ]]; then
+    if [[ "${LR_AMP_SAMPLE_TYPE_NORM}" == "vaginal" ]]; then
+      VALENCIA_SHOULD_RUN="yes"
     fi
   fi
 
-  local REF="${val_repo}/CST_centroids_012920.csv"
-  local VALENCIA_PY="${val_repo}/Valencia.py"
-  [[ -s "${REF}" ]] || { log_warn "VALENCIA centroid CSV missing; skipping"; return 0; }
-  [[ -s "${VALENCIA_PY}" ]] || { log_warn "Valencia.py missing; skipping"; return 0; }
-
-  local VALENCIA_COMBINED="${VALENCIA_TMP}/${RUN_NAME}_valencia_input.csv"
-  local REP_HELPER="${VALENCIA_TMP}/report_to_valencia_ref.py"
-
-  cat > "${REP_HELPER}" << 'PYCODE'
-#!/usr/bin/env python3
-import csv, sys, re, os
-
-def norm(s: str) -> str:
-    s = (s or "").strip().lower()
-    s = s.replace(" ", "_")
-    s = re.sub(r"[^a-z0-9_]+", "_", s)
-    s = re.sub(r"_+", "_", s).strip("_")
-    return s
-
-def read_ref_taxa(ref_path: str):
-    with open(ref_path, "r", newline="") as f:
-        reader = csv.reader(f)
-        header = next(reader, None)
-        if not header:
-            raise RuntimeError("Reference centroid file has no header")
-    if len(header) >= 2 and header[0].strip().lower() == "sampleid" and header[1].strip().lower() == "read_count":
-        taxa = header[2:]
-    else:
-        taxa = header[1:]
-    taxa_norm_map = {norm(t): t for t in taxa}
-    return taxa, taxa_norm_map
-
-def parse_breport(path: str):
-    abund = {}
-    with open(path, "r", newline="") as f:
-        reader = csv.reader(f, delimiter="\t")
-        for row in reader:
-            if not row:
-                continue
-            name = (row[0] or "").strip()
-            if not name:
-                continue
-            try:
-                frac = float(row[-1])
-            except Exception:
-                continue
-            if frac < 0:
-                continue
-            abund[name] = abund.get(name, 0.0) + frac
-    return abund
-
-def parse_kreport(path: str):
-    abund = {}
-    with open(path, "r", newline="") as f:
-        reader = csv.reader(f, delimiter="\t")
-        for row in reader:
-            if len(row) < 6:
-                continue
-            rank = (row[3] or "").strip()
-            if rank != "S":
-                continue
-            name = (row[5] or "").strip()
-            if not name:
-                continue
-            try:
-                pct = float((row[0] or "0").strip())
-            except Exception:
-                pct = 0.0
-            if pct < 0:
-                continue
-            abund[name] = abund.get(name, 0.0) + (pct / 100.0)
-    return abund
-
-def build_row(sample_id: str, abund_raw: dict, taxa: list, taxa_norm_map: dict, read_count: int = 1):
-    matched = {t: 0.0 for t in taxa}
-    obs_norm = {}
-    for n, v in abund_raw.items():
-        key = norm(n)
-        if not key:
-            continue
-        obs_norm[key] = obs_norm.get(key, 0.0) + float(v)
-    for key_norm, canonical in taxa_norm_map.items():
-        if key_norm in obs_norm:
-            matched[canonical] = obs_norm[key_norm]
-    total = sum(matched.values())
-    if total > 0:
-        for k in matched:
-            matched[k] = matched[k] / total
-    row = {"sampleID": sample_id, "read_count": int(read_count)}
-    row.update(matched)
-    return row
-
-def main():
-    if len(sys.argv) != 6:
-        sys.stderr.write("Usage: report_to_valencia_ref.py MODE(breport|kreport) IN.report SAMPLE_ID REF.csv OUT.csv\n")
-        sys.exit(1)
-    mode, in_path, sample_id, ref_path, out_path = sys.argv[1:]
-    if not os.path.exists(in_path):
-        sys.stderr.write(f"Input not found: {in_path}\n")
-        sys.exit(2)
-    taxa, taxa_norm_map = read_ref_taxa(ref_path)
-    if mode == "breport":
-        abund_raw = parse_breport(in_path)
-    elif mode == "kreport":
-        abund_raw = parse_kreport(in_path)
-    else:
-        sys.stderr.write("MODE must be 'breport' or 'kreport'\n")
-        sys.exit(3)
-    row = build_row(sample_id, abund_raw, taxa, taxa_norm_map, read_count=1)
-    fieldnames = ["sampleID", "read_count"] + taxa
-    with open(out_path, "w", newline="") as out_f:
-        w = csv.DictWriter(out_f, fieldnames=fieldnames)
-        w.writeheader()
-        w.writerow(row)
-
-if __name__ == "__main__":
-    main()
-PYCODE
-  chmod +x "${REP_HELPER}"
-
-  : > "${VALENCIA_COMBINED}"
-  local header_written=0
-  local any_rows=0
-
-  shopt -s nullglob
-
-  local breps=( "${TAXO_ROOT}/${RUN_NAME}"/*/*.breport )
-  for brep in "${breps[@]}"; do
-    local sample_id
-    sample_id="$(basename "$(dirname "${brep}")")"
-    is_vaginal_barcode "${sample_id}" || continue
-
-    local one_row_csv="${VALENCIA_TMP}/${sample_id}.${RUN_NAME}.valencia.ref.csv"
-    log "VALENCIA prep (Bracken): ${brep} -> ${one_row_csv}"
-
-    python3 "${REP_HELPER}" "breport" "${brep}" "${sample_id}" "${REF}" "${one_row_csv}" || continue
-
-    if [[ "${header_written}" -eq 0 ]]; then
-      cat "${one_row_csv}" >> "${VALENCIA_COMBINED}"
-      header_written=1
-    else
-      tail -n +2 "${one_row_csv}" >> "${VALENCIA_COMBINED}"
-    fi
-    any_rows=1
-  done
-
-  if [[ "${any_rows}" -eq 0 ]]; then
-    local kreps=( "${TAXO_ROOT}/${RUN_NAME}"/*/*.kreport )
-    for krep in "${kreps[@]}"; do
-      local sample_id
-      sample_id="$(basename "$(dirname "${krep}")")"
-      is_vaginal_barcode "${sample_id}" || continue
-
-      local one_row_csv="${VALENCIA_TMP}/${sample_id}.${RUN_NAME}.valencia.ref.csv"
-      log "VALENCIA prep (Kraken fallback): ${krep} -> ${one_row_csv}"
-
-      python3 "${REP_HELPER}" "kreport" "${krep}" "${sample_id}" "${REF}" "${one_row_csv}" || continue
-
-      if [[ "${header_written}" -eq 0 ]]; then
-        cat "${one_row_csv}" >> "${VALENCIA_COMBINED}"
-        header_written=1
-      else
-        tail -n +2 "${one_row_csv}" >> "${VALENCIA_COMBINED}"
-      fi
-      any_rows=1
-    done
-  fi
-
-  if [[ "${any_rows}" -eq 0 ]]; then
-    log_warn "No vaginal .breport or .kreport inputs found — skipping VALENCIA"
+  if [[ "${VALENCIA_SHOULD_RUN}" != "yes" ]]; then
+    local started ended
+    started="$(iso_now)"; ended="$(iso_now)"
+    steps_append "${STEPS_JSON}" "valencia" "skipped" "VALENCIA skipped (enabled=${VALENCIA_ENABLED}, sample_type=${LR_AMP_SAMPLE_TYPE_RAW:-})" "" "" "0" "${started}" "${ended}"
     return 0
   fi
 
-  cp "${VALENCIA_COMBINED}" "${VALENCIA_RESULTS}/${RUN_NAME}_valencia_input.csv" || return 0
+  # Check for Emu output files (not kreports - lr_amp is Emu-only)
+  if [[ ! -d "${emu_run_dir}" ]]; then
+    local started ended
+    started="$(iso_now)"; ended="$(iso_now)"
+    steps_append "${STEPS_JSON}" "valencia" "skipped" "VALENCIA skipped - no Emu results at ${emu_run_dir}" "" "" "0" "${started}" "${ended}"
+    return 0
+  fi
 
-  log_info "Running VALENCIA on: ${VALENCIA_COMBINED}"
+  # Check centroids CSV
+  if [[ -z "${VALENCIA_CENTROIDS_CSV}" || "${VALENCIA_CENTROIDS_CSV}" == "null" || ! -s "${VALENCIA_CENTROIDS_CSV}" ]]; then
+    local started ended
+    started="$(iso_now)"; ended="$(iso_now)"
+    steps_append "${STEPS_JSON}" "valencia" "failed" "VALENCIA enabled but centroids_csv missing. Set --valencia-centroids PATH" "" "" "2" "${started}" "${ended}"
+    log_warn "VALENCIA enabled but centroids CSV missing. Use --valencia-centroids to specify path."
+    return 0
+  fi
 
-  local out_prefix="${VALENCIA_RESULTS}/${RUN_NAME}_valencia_out"
-  local plot_prefix="${VALENCIA_RESULTS}/${RUN_NAME}_valencia_plot"
-  local debug_log="${VALENCIA_RESULTS}/${RUN_NAME}_valencia_debug.log"
+  # Setup output directories
+  VALENCIA_DIR="${RESULTS_DIR}/valencia"
+  VALENCIA_LOG="${LOGS_DIR}/valencia.log"
+  VALENCIA_PLOTS_DIR="${VALENCIA_DIR}/plots"
+  mkdir -p "${VALENCIA_DIR}" "${VALENCIA_PLOTS_DIR}"
 
-  python3 "${VALENCIA_PY}" \
-    -ref "${REF}" \
-    -i "${VALENCIA_COMBINED}" \
-    -o "${out_prefix}" \
-    -p "${plot_prefix}" \
-    >"${debug_log}" 2>&1 || { log_warn "VALENCIA failed. See: ${debug_log}"; return 0; }
+  VALENCIA_INPUT_CSV="${VALENCIA_DIR}/taxon_table_emu.csv"
+  VALENCIA_OUTPUT_CSV="${VALENCIA_DIR}/output.csv"
+  VALENCIA_ASSIGNMENTS_CSV="${VALENCIA_DIR}/valencia_assignments.csv"
 
-  log_info "VALENCIA outputs written to: ${VALENCIA_RESULTS}"
+  log_info "Running VALENCIA classification (from Emu outputs)..."
+  log_info "  Centroids: ${VALENCIA_CENTROIDS_CSV}"
+  log_info "  Emu dir: ${emu_run_dir}"
+
+  local started ended ec
+  started="$(iso_now)"
+  set +e
+  python3 - "${VALENCIA_CENTROIDS_CSV}" "${emu_run_dir}" "${VALENCIA_DIR}" "${VALENCIA_PLOTS_DIR}" >>"${VALENCIA_LOG}" 2>&1 <<'VALENCIA_PY'
+import sys, os, re, csv, math
+from pathlib import Path
+
+centroids_csv, emu_run_dir, out_dir, plots_dir = sys.argv[1:]
+os.makedirs(out_dir, exist_ok=True)
+os.makedirs(plots_dir, exist_ok=True)
+
+# -----------------------------
+# Helpers: taxa name normalization (match VALENCIA centroids format)
+# -----------------------------
+bc_focal = {'Lactobacillus','Prevotella','Gardnerella','Atopobium','Sneathia'}
+
+def norm_taxa_name(name: str) -> str:
+    """Normalize taxa name to match VALENCIA centroids format."""
+    name = (name or "").strip()
+    name = name.lstrip()
+    name = name.replace(" ", "_")
+    return name
+
+taxa_fixes = {
+    'g_Gardnerella': 'Gardnerella_vaginalis',
+    'Lactobacillus_acidophilus/casei/crispatus/gallinarum': 'Lactobacillus_crispatus',
+    'Lactobacillus_fornicalis/jensenii': 'Lactobacillus_jensenii',
+    'g_Escherichia/Shigella': 'g_Escherichia.Shigella',
+    'Lactobacillus_gasseri/johnsonii': 'Lactobacillus_gasseri'
+}
+
+def apply_taxa_fixes(name: str) -> str:
+    return taxa_fixes.get(name, name)
+
+# -----------------------------
+# Parse Emu rel-abundance TSV files
+# -----------------------------
+def parse_emu_abundance(path: str):
+    """Parse Emu relative abundance TSV, return dict of taxa -> abundance (fraction)."""
+    taxa_abundance = {}
+    total_abundance = 0.0
+
+    with open(path, "r", encoding="utf-8", errors="replace") as f:
+        reader = csv.DictReader(f, delimiter='\t')
+        for row in reader:
+            # Emu TSV columns: tax_id, abundance, species, genus, family, ...
+            abundance_str = row.get("abundance", "0")
+            species = row.get("species", "").strip()
+            genus = row.get("genus", "").strip()
+
+            try:
+                abundance = float(abundance_str)
+            except (ValueError, TypeError):
+                continue
+
+            if abundance <= 0:
+                continue
+
+            # Build taxa name for VALENCIA matching
+            # Prefer species if available, otherwise use genus
+            if species and species.lower() not in ("", "nan", "none"):
+                # Format: Genus_species
+                if genus and genus.lower() not in ("", "nan", "none"):
+                    taxa_name = f"{genus}_{species}".replace(" ", "_")
+                else:
+                    taxa_name = species.replace(" ", "_")
+            elif genus and genus.lower() not in ("", "nan", "none"):
+                taxa_name = f"g_{genus}".replace(" ", "_")
+            else:
+                continue
+
+            taxa_name = norm_taxa_name(taxa_name)
+            taxa_abundance[taxa_name] = taxa_abundance.get(taxa_name, 0.0) + abundance
+            total_abundance += abundance
+
+    return taxa_abundance, total_abundance
+
+# Find all Emu rel-abundance TSV files
+emu_path = Path(emu_run_dir)
+emu_files = list(emu_path.glob("*/*_rel-abundance.tsv"))
+
+if not emu_files:
+    print(f"WARNING: No Emu rel-abundance files found in {emu_run_dir}")
+    sys.exit(0)
+
+print(f"Found {len(emu_files)} Emu abundance file(s)")
+
+# Build sample data from Emu outputs
+samples_data = []
+all_taxa = set()
+
+for emu_file in emu_files:
+    sample_id = emu_file.parent.name
+    taxa_abundance, total_abundance = parse_emu_abundance(emu_file)
+
+    if not taxa_abundance:
+        print(f"  Skipping {sample_id}: no taxa found")
+        continue
+
+    samples_data.append({
+        "sample_id": sample_id,
+        "taxa_abundance": taxa_abundance,
+        "total_abundance": total_abundance
+    })
+    all_taxa.update(taxa_abundance.keys())
+    print(f"  Parsed {sample_id}: {len(taxa_abundance)} taxa, total_abund={total_abundance:.4f}")
+
+if not samples_data:
+    print("WARNING: No valid samples found for VALENCIA")
+    sys.exit(0)
+
+# -----------------------------
+# Load centroids CSV
+# -----------------------------
+centroid_rows = []
+with open(centroids_csv, "r", encoding="utf-8", errors="replace", newline="") as f:
+    reader = csv.DictReader(f)
+    if not reader.fieldnames:
+        raise SystemExit("ERROR: centroids CSV appears empty")
+    fields = list(reader.fieldnames)
+
+    if "sub_CST" not in fields and "subCST" in fields:
+        fields = ["sub_CST" if x == "subCST" else x for x in fields]
+
+    if "sub_CST" not in fields:
+        raise SystemExit("ERROR: centroids CSV missing 'sub_CST' column")
+
+    for row in reader:
+        centroid_rows.append(row)
+
+if not centroid_rows:
+    raise SystemExit("ERROR: centroids CSV has no rows")
+
+ignore_cols = {"sampleID", "read_count", "sub_CST", "subCST"}
+centroid_taxa_cols = [c for c in centroid_rows[0].keys() if c not in ignore_cols]
+
+print(f"Loaded {len(centroid_rows)} centroids with {len(centroid_taxa_cols)} taxa columns")
+
+centroids = {}
+for row in centroid_rows:
+    label = (row.get("sub_CST") or row.get("subCST") or "").strip()
+    if not label:
+        continue
+    vec = []
+    for c in centroid_taxa_cols:
+        try:
+            vec.append(float(row.get(c, 0) or 0))
+        except Exception:
+            vec.append(0.0)
+    centroids[label] = vec
+
+CSTs = ['I-A','I-B','II','III-A','III-B','IV-A','IV-B','IV-C0','IV-C1','IV-C2','IV-C3','IV-C4','V']
+
+# -----------------------------
+# Build taxa mapping from Emu names to centroid names
+# -----------------------------
+def normalize_for_matching(s: str) -> str:
+    s = (s or "").strip().lower()
+    s = s.replace(" ", "_").replace("-", "_").replace(".", "_")
+    s = re.sub(r"[^a-z0-9_]", "", s)
+    s = re.sub(r"_+", "_", s).strip("_")
+    return s
+
+centroid_taxa_norm = {normalize_for_matching(t): t for t in centroid_taxa_cols}
+
+# -----------------------------
+# Write input CSV (sample x taxa abundances)
+# -----------------------------
+taxon_table_csv = os.path.join(out_dir, "taxon_table_emu.csv")
+
+with open(taxon_table_csv, "w", encoding="utf-8", newline="") as out:
+    w = csv.writer(out)
+    w.writerow(["sampleID", "total_abundance", *centroid_taxa_cols])
+
+    for sample in samples_data:
+        sid = sample["sample_id"]
+        total = sample["total_abundance"]
+        taxa_abundance = sample["taxa_abundance"]
+
+        row_abund = {t: 0.0 for t in centroid_taxa_cols}
+        for emu_taxa, abund in taxa_abundance.items():
+            emu_norm = normalize_for_matching(emu_taxa)
+            if emu_norm in centroid_taxa_norm:
+                canonical = centroid_taxa_norm[emu_norm]
+                row_abund[canonical] += abund
+
+        row = [sid, f"{total:.6f}"]
+        row.extend([f"{row_abund.get(t, 0.0):.6f}" for t in centroid_taxa_cols])
+        w.writerow(row)
+
+print(f"OK: VALENCIA input -> {taxon_table_csv}")
+
+# -----------------------------
+# Yue-Clayton similarity function
+# -----------------------------
+def yue_similarity(obs_vec, med_vec):
+    product = 0.0
+    diff_sq = 0.0
+    for o, m in zip(obs_vec, med_vec):
+        product += (m * o)
+        d = (m - o)
+        diff_sq += (d * d)
+    denom = diff_sq + product
+    return (product / denom) if denom != 0 else 0.0
+
+# -----------------------------
+# Run VALENCIA classification
+# -----------------------------
+out_rows = []
+
+for sample in samples_data:
+    sid = sample["sample_id"]
+    total = sample["total_abundance"]
+    taxa_abundance = sample["taxa_abundance"]
+
+    row_abund = {t: 0.0 for t in centroid_taxa_cols}
+    for emu_taxa, abund in taxa_abundance.items():
+        emu_norm = normalize_for_matching(emu_taxa)
+        if emu_norm in centroid_taxa_norm:
+            canonical = centroid_taxa_norm[emu_norm]
+            row_abund[canonical] += abund
+
+    # Build observation vector (already relative abundances from Emu)
+    obs_vec = []
+    total_matched = sum(row_abund.values())
+    if total_matched > 0:
+        for t in centroid_taxa_cols:
+            obs_vec.append(float(row_abund.get(t, 0.0)) / float(total_matched))
+    else:
+        obs_vec = [0.0 for _ in centroid_taxa_cols]
+
+    sims = {}
+    for cst in CSTs:
+        if cst in centroids:
+            sims[cst] = yue_similarity(obs_vec, centroids[cst])
+        else:
+            sims[cst] = float("nan")
+
+    best_cst = None
+    best_score = -1.0
+    for cst in CSTs:
+        v = sims.get(cst)
+        if v is None or (isinstance(v, float) and math.isnan(v)):
+            continue
+        if v > best_score:
+            best_score = v
+            best_cst = cst
+
+    subcst = best_cst or ""
+    score = best_score if best_cst else float("nan")
+
+    cst_group = subcst
+    if subcst in ("I-A", "I-B"):
+        cst_group = "I"
+    elif subcst in ("III-A", "III-B"):
+        cst_group = "III"
+    elif subcst in ("IV-C0", "IV-C1", "IV-C2", "IV-C3", "IV-C4"):
+        cst_group = "IV-C"
+
+    out_row = {"sampleID": sid, "total_abundance": f"{total:.6f}"}
+    for t in centroid_taxa_cols:
+        out_row[t] = f"{row_abund.get(t, 0.0):.6f}"
+    for cst in CSTs:
+        out_row[f"{cst}_sim"] = sims.get(cst)
+    out_row["subCST"] = subcst
+    out_row["score"] = score
+    out_row["CST"] = cst_group
+    out_rows.append(out_row)
+
+# -----------------------------
+# Write output CSVs
+# -----------------------------
+def write_output_csv(path):
+    if not out_rows:
+        raise SystemExit("ERROR: No VALENCIA output rows to write")
+    sim_cols = [f"{c}_sim" for c in CSTs]
+    fieldnames = ["sampleID", "total_abundance", *centroid_taxa_cols, *sim_cols, "subCST", "score", "CST"]
+    with open(path, "w", encoding="utf-8", newline="") as out:
+        w = csv.DictWriter(out, fieldnames=fieldnames)
+        w.writeheader()
+        for r in out_rows:
+            w.writerow(r)
+
+out_csv = os.path.join(out_dir, "output.csv")
+compat_csv = os.path.join(out_dir, "valencia_assignments.csv")
+write_output_csv(out_csv)
+write_output_csv(compat_csv)
+
+print(f"OK: VALENCIA output -> {out_csv}")
+
+# -----------------------------
+# Generate SVG similarity plots
+# -----------------------------
+def svg_barplot(sample_id: str, title: str, values: list, labels: list, out_path: str):
+    w = 900
+    h = 360
+    pad_l = 90
+    pad_r = 20
+    pad_t = 40
+    pad_b = 40
+    inner_w = w - pad_l - pad_r
+    inner_h = h - pad_t - pad_b
+
+    vals = []
+    for v in values:
+        if v is None or (isinstance(v, float) and math.isnan(v)):
+            vals.append(0.0)
+        else:
+            try:
+                vals.append(float(v))
+            except Exception:
+                vals.append(0.0)
+
+    max_v = max(vals) if vals else 1.0
+    max_v = max(max_v, 1e-9)
+
+    n = len(vals)
+    if n == 0:
+        return
+
+    bar_gap = 6
+    bar_w = max(2, int((inner_w - (n-1)*bar_gap) / n))
+
+    esc = lambda s: (s or "").replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace('"',"&quot;")
+    parts = []
+    parts.append(f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}">')
+    parts.append(f'<rect x="0" y="0" width="{w}" height="{h}" fill="white"/>')
+    parts.append(f'<text x="{pad_l}" y="24" font-family="Arial" font-size="16" fill="black">{esc(title)}</text>')
+    parts.append(f'<line x1="{pad_l}" y1="{pad_t+inner_h}" x2="{pad_l+inner_w}" y2="{pad_t+inner_h}" stroke="black" stroke-width="1"/>')
+
+    x = pad_l
+    for i, (lab, v) in enumerate(zip(labels, vals)):
+        bh = int((v / max_v) * inner_h)
+        y = pad_t + inner_h - bh
+        parts.append(f'<rect x="{x}" y="{y}" width="{bar_w}" height="{bh}" fill="#444"/>')
+        lx = x + bar_w/2
+        parts.append(f'<text x="{lx}" y="{pad_t+inner_h+14}" font-family="Arial" font-size="10" fill="black" text-anchor="middle">{esc(lab)}</text>')
+        x += bar_w + bar_gap
+
+    parts.append(f'<text x="{pad_l}" y="{pad_t+inner_h+28}" font-family="Arial" font-size="10" fill="black">0</text>')
+    parts.append(f'<text x="{pad_l}" y="{pad_t+10}" font-family="Arial" font-size="10" fill="black">{max_v:.3f}</text>')
+    parts.append('</svg>')
+
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(parts))
+
+for r in out_rows:
+    sid = r.get("sampleID", "")
+    sims = [r.get(f"{cst}_sim") for cst in CSTs]
+    title = f"VALENCIA similarities for {sid} (subCST={r.get('subCST','')}, CST={r.get('CST','')})"
+    out_path = os.path.join(plots_dir, f"{sid}_valencia_similarity.svg")
+    svg_barplot(sid, title, sims, CSTs, out_path)
+
+print(f"OK: VALENCIA plots -> {plots_dir}")
+print("VALENCIA classification complete")
+VALENCIA_PY
+  ec=$?
+  set -e
+  ended="$(iso_now)"
+
+  if [[ $ec -ne 0 ]]; then
+    steps_append "${STEPS_JSON}" "valencia" "failed" "VALENCIA classification failed (see logs/valencia.log)" "python3" "VALENCIA inline" "${ec}" "${started}" "${ended}"
+    log_warn "VALENCIA failed. See: ${VALENCIA_LOG}"
+  else
+    steps_append "${STEPS_JSON}" "valencia" "succeeded" "VALENCIA produced output.csv and plots" "python3" "VALENCIA inline" "0" "${started}" "${ended}"
+    log_info "VALENCIA completed successfully"
+
+    # Update outputs.json with valencia paths
+    local tmp="${OUTPUTS_JSON}.tmp"
+    jq --arg valencia_dir "${VALENCIA_DIR}" \
+       --arg valencia_log "${VALENCIA_LOG}" \
+       --arg valencia_centroids_csv "${VALENCIA_CENTROIDS_CSV}" \
+       --arg valencia_input_csv "${VALENCIA_INPUT_CSV}" \
+       --arg valencia_output_csv "${VALENCIA_OUTPUT_CSV}" \
+       --arg valencia_assignments_csv "${VALENCIA_ASSIGNMENTS_CSV}" \
+       --arg valencia_plots_dir "${VALENCIA_PLOTS_DIR}" \
+       '. + {
+          valencia: {
+            dir: $valencia_dir,
+            log: $valencia_log,
+            centroids_csv: ($valencia_centroids_csv | select(length>0) // null),
+            input_csv: ($valencia_input_csv | select(length>0) // null),
+            output_csv: ($valencia_output_csv | select(length>0) // null),
+            assignments_csv: ($valencia_assignments_csv | select(length>0) // null),
+            plots_dir: ($valencia_plots_dir | select(length>0) // null)
+          }
+        }' "${OUTPUTS_JSON}" > "${tmp}"
+    mv "${tmp}" "${OUTPUTS_JSON}"
+  fi
 }
 
 ############################################
@@ -1058,9 +1425,10 @@ PYCODE
 run_postprocess() {
   [[ "${POSTPROCESS_ENABLED}" == "1" ]] || { log_warn "Skipping postprocess (postprocess.enabled=0)"; return 0; }
 
-  local taxo_run_dir="${TAXO_ROOT}/${RUN_NAME}"
-  if [[ ! -d "${taxo_run_dir}" ]]; then
-    log_warn "Skipping postprocess - no taxonomy results found at ${taxo_run_dir}"
+  # lr_amp uses ONLY Emu - check for Emu outputs (not Kraken2)
+  local emu_run_dir="${EMU_DIR}/${RUN_NAME}"
+  if [[ ! -d "${emu_run_dir}" ]]; then
+    log_warn "Skipping postprocess - no Emu results found at ${emu_run_dir}"
     return 0
   fi
 
@@ -1069,7 +1437,7 @@ run_postprocess() {
   local final_dir="${MODULE_OUT_DIR}/final"
   mkdir -p "${postprocess_dir}" "${final_dir}" "${final_dir}/plots" "${final_dir}/tables" "${final_dir}/valencia"
 
-  python3 - "${taxo_run_dir}" "${postprocess_dir}" "${final_dir}" "${VALENCIA_RESULTS}" "${EMU_DIR}/${RUN_NAME}" "${postprocess_log}" "${RUN_NAME}" "${MODULE_NAME}" <<'PY'
+  python3 - "${emu_run_dir}" "${postprocess_dir}" "${final_dir}" "${VALENCIA_DIR:-}" "${postprocess_log}" "${RUN_NAME}" "${MODULE_NAME}" <<'PY'
 import os
 import sys
 import csv
@@ -1078,14 +1446,14 @@ import shutil
 from pathlib import Path
 from collections import defaultdict
 
-taxo_run_dir = Path(sys.argv[1])
+emu_dir = Path(sys.argv[1])
 postprocess_dir = Path(sys.argv[2])
 final_dir = Path(sys.argv[3])
-valencia_dir = Path(sys.argv[4])
-emu_dir = Path(sys.argv[5])
-log_path = Path(sys.argv[6])
-run_name = sys.argv[7]
-module_name = sys.argv[8]
+valencia_dir_str = sys.argv[4]
+valencia_dir = Path(valencia_dir_str) if valencia_dir_str else None
+log_path = Path(sys.argv[5])
+run_name = sys.argv[6]
+module_name = sys.argv[7]
 
 def log(msg):
     with open(log_path, "a", encoding="utf-8") as f:
@@ -1093,70 +1461,85 @@ def log(msg):
     print(msg)
 
 log(f"[postprocess] Starting postprocessing for {module_name} run: {run_name}")
+log(f"[postprocess] lr_amp uses Emu-only (no Kraken2)")
 
-def parse_kreport(path):
-    rows_by_rank = defaultdict(list)
-    total_reads = 0
+# Parse Emu rel-abundance TSV files
+def parse_emu_abundance(path):
+    """Parse Emu TSV file and return species/genus data."""
+    species_data = []
+    genus_data = []
+
     with open(path, "r", encoding="utf-8", errors="replace") as f:
-        for line in f:
-            parts = line.strip().split("\t")
-            if len(parts) < 6:
-                continue
+        reader = csv.DictReader(f, delimiter='\t')
+        for row in reader:
             try:
-                pct = float(parts[0])
-                clade_reads = int(parts[1])
-                taxon_reads = int(parts[2])
-                rank = parts[3].strip()
-                taxid = parts[4].strip()
-                name = parts[5].strip()
-                if rank == "U":
-                    continue
-                if rank == "R":
-                    total_reads = clade_reads
-                    continue
-                rows_by_rank[rank].append({
-                    "taxid": taxid, "name": name,
-                    "clade_reads": clade_reads, "taxon_reads": taxon_reads, "pct": pct
-                })
-            except (ValueError, IndexError):
+                abundance = float(row.get("abundance", 0))
+            except (ValueError, TypeError):
                 continue
-    return rows_by_rank, total_reads
 
-reports = list(taxo_run_dir.glob("*/*.kreport"))
-if not reports:
-    log("[postprocess] No kraken2 reports found, skipping summarization")
-    sys.exit(0)
+            if abundance <= 0:
+                continue
 
-log(f"[postprocess] Found {len(reports)} kraken2 report(s)")
+            tax_id = row.get("tax_id", "")
+            species = row.get("species", "").strip()
+            genus = row.get("genus", "").strip()
+
+            if species and species.lower() not in ("", "nan", "none"):
+                species_data.append({
+                    "taxid": tax_id,
+                    "species": species,
+                    "abundance": abundance
+                })
+
+            if genus and genus.lower() not in ("", "nan", "none"):
+                genus_data.append({
+                    "taxid": tax_id,
+                    "genus": genus,
+                    "abundance": abundance
+                })
+
+    return species_data, genus_data
+
+# Find all Emu abundance files
+emu_files = list(emu_dir.glob("*/*_rel-abundance.tsv"))
+if not emu_files:
+    log("[postprocess] No Emu rel-abundance files found")
+    # Still continue to copy any existing files
+
+log(f"[postprocess] Found {len(emu_files)} Emu abundance file(s)")
 
 all_species = []
 all_genus = []
 
-for report_path in reports:
-    barcode = report_path.parent.name
-    rows_by_rank, total_reads = parse_kreport(report_path)
-    for row in rows_by_rank.get("S", []):
-        frac = row["clade_reads"] / total_reads if total_reads > 0 else 0
+for emu_file in emu_files:
+    barcode = emu_file.parent.name
+    species_data, genus_data = parse_emu_abundance(emu_file)
+
+    for row in species_data:
         all_species.append({
-            "sample_id": barcode, "taxid": row["taxid"], "species": row["name"],
-            "reads": row["clade_reads"], "fraction": frac
+            "sample_id": barcode,
+            "taxid": row["taxid"],
+            "species": row["species"],
+            "abundance": row["abundance"]
         })
-    for row in rows_by_rank.get("G", []):
-        frac = row["clade_reads"] / total_reads if total_reads > 0 else 0
+
+    for row in genus_data:
         all_genus.append({
-            "sample_id": barcode, "taxid": row["taxid"], "genus": row["name"],
-            "reads": row["clade_reads"], "fraction": frac
+            "sample_id": barcode,
+            "taxid": row["taxid"],
+            "genus": row["genus"],
+            "abundance": row["abundance"]
         })
 
 def write_tidy_csv(path, rows, taxon_col):
     with open(path, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=["sample_id", "taxid", taxon_col, "reads", "fraction"])
+        w = csv.DictWriter(f, fieldnames=["sample_id", "taxid", taxon_col, "abundance"])
         w.writeheader()
         for r in rows:
             w.writerow(r)
 
-species_tidy = postprocess_dir / "kraken_species_tidy.csv"
-genus_tidy = postprocess_dir / "kraken_genus_tidy.csv"
+species_tidy = postprocess_dir / "emu_species_tidy.csv"
+genus_tidy = postprocess_dir / "emu_genus_tidy.csv"
 
 if all_species:
     write_tidy_csv(species_tidy, all_species, "species")
@@ -1166,39 +1549,51 @@ if all_genus:
     write_tidy_csv(genus_tidy, all_genus, "genus")
     log(f"[postprocess] Wrote genus tidy CSV: {genus_tidy}")
 
-log("[postprocess] Tidy CSVs ready for HOST-side R postprocessing")
+log("[postprocess] Emu tidy CSVs ready")
 
 tables_dir = final_dir / "tables"
-for report in reports:
-    dest_name = f"{report.parent.name}_{report.name}"
-    shutil.copy2(report, tables_dir / dest_name)
-    log(f"[postprocess] Copied {dest_name} to final/tables/")
+tables_dir.mkdir(exist_ok=True)
 
-if species_tidy.exists():
-    shutil.copy2(species_tidy, tables_dir / "kraken_species_tidy.csv")
-if genus_tidy.exists():
-    shutil.copy2(genus_tidy, tables_dir / "kraken_genus_tidy.csv")
-
+# Copy Emu abundance files to tables
 if emu_dir.exists():
     for bc_dir in emu_dir.iterdir():
         if bc_dir.is_dir():
             for f in bc_dir.glob("*_rel-abundance*.tsv"):
-                shutil.copy2(f, tables_dir / f"{bc_dir.name}_{f.name}")
-                log(f"[postprocess] Copied Emu: {bc_dir.name}_{f.name}")
+                dest_name = f"{bc_dir.name}_{f.name}"
+                shutil.copy2(f, tables_dir / dest_name)
+                log(f"[postprocess] Copied Emu: {dest_name}")
 
+# Copy tidy CSVs to tables
+if species_tidy.exists():
+    shutil.copy2(species_tidy, tables_dir / "emu_species_tidy.csv")
+if genus_tidy.exists():
+    shutil.copy2(genus_tidy, tables_dir / "emu_genus_tidy.csv")
+
+# Copy VALENCIA outputs if available
 valencia_final = final_dir / "valencia"
-if valencia_dir.exists() and any(valencia_dir.glob("*")):
-    for f in valencia_dir.glob("*_valencia*.csv"):
+valencia_final.mkdir(exist_ok=True)
+
+if valencia_dir and valencia_dir.exists() and any(valencia_dir.glob("*")):
+    for f in valencia_dir.glob("*.csv"):
         shutil.copy2(f, valencia_final / f.name)
         log(f"[postprocess] Copied VALENCIA: {f.name}")
-    for f in valencia_dir.glob("*.png"):
+    for f in valencia_dir.glob("*.svg"):
         shutil.copy2(f, valencia_final / f.name)
         log(f"[postprocess] Copied VALENCIA plot: {f.name}")
+    # Also check plots subdirectory
+    plots_subdir = valencia_dir / "plots"
+    if plots_subdir.exists():
+        for f in plots_subdir.glob("*.svg"):
+            shutil.copy2(f, valencia_final / f.name)
+            log(f"[postprocess] Copied VALENCIA plot: {f.name}")
 
 plots_dir = final_dir / "plots"
+plots_dir.mkdir(exist_ok=True)
+
 manifest = {
     "module": module_name,
     "run_name": run_name,
+    "classifier": "emu",  # lr_amp is Emu-only
     "outputs": {
         "tables": sorted([f.name for f in tables_dir.glob("*")]) if tables_dir.exists() else [],
         "plots": sorted([f.name for f in plots_dir.glob("*.png")]) if plots_dir.exists() else [],
@@ -1220,15 +1615,112 @@ PY
 ############################################
 
 main() {
-  load_barcode_site_map "${SAMPLE_SHEET}"
-
-  log_info "=== lr_amp Pipeline ==="
+  log_info "=== lr_amp Pipeline (Emu-only) ==="
   log_info "Technology: ${TECHNOLOGY}"
+  log_info "Seq type (minimap2 preset): ${SEQ_TYPE}"
   log_info "Full-length: ${FULL_LENGTH}"
-  log_info "Samples: ${#BARCODE_IDS[@]}"
+  log_info "Input style: ${INPUT_STYLE}"
 
   local started ended ec
 
+  # If FAST5 input, run basecalling pipeline first
+  if [[ "${INPUT_STYLE}" == "FAST5_DIR" || "${INPUT_STYLE}" == "FAST5" ]]; then
+    log_info "FAST5 input detected - running basecalling pipeline..."
+
+    # Step 1: Convert FAST5 to POD5
+    started="$(iso_now)"
+    set +e
+    local pod5_file
+    pod5_file="$(convert_fast5_to_pod5)"
+    ec=$?
+    set -e
+    ended="$(iso_now)"
+    if [[ $ec -ne 0 || -z "${pod5_file}" ]]; then
+      steps_append "${STEPS_JSON}" "fast5_to_pod5" "failed" "FAST5 to POD5 conversion failed" "${POD5_BIN}" "pod5 convert" "${ec}" "${started}" "${ended}"
+      die "FAST5 to POD5 conversion failed"
+    fi
+    steps_append "${STEPS_JSON}" "fast5_to_pod5" "succeeded" "FAST5 to POD5 conversion completed" "${POD5_BIN}" "pod5 convert" "${ec}" "${started}" "${ended}"
+    log_ok "POD5 conversion complete: ${pod5_file}"
+
+    # Step 2: Dorado basecalling
+    started="$(iso_now)"
+    set +e
+    local bam_file
+    bam_file="$(dorado_basecall_to_bam "${pod5_file}")"
+    ec=$?
+    set -e
+    ended="$(iso_now)"
+    if [[ $ec -ne 0 || -z "${bam_file}" ]]; then
+      steps_append "${STEPS_JSON}" "dorado_basecall" "failed" "Dorado basecalling failed" "${DORADO_BIN}" "dorado basecaller" "${ec}" "${started}" "${ended}"
+      die "Dorado basecalling failed"
+    fi
+    steps_append "${STEPS_JSON}" "dorado_basecall" "succeeded" "Dorado basecalling completed" "${DORADO_BIN}" "dorado basecaller" "${ec}" "${started}" "${ended}"
+    log_ok "Basecalling complete: ${bam_file}"
+
+    # Step 3: Dorado demux
+    started="$(iso_now)"
+    set +e
+    local demux_dir
+    demux_dir="$(dorado_demux_to_per_barcode_bam "${bam_file}")"
+    ec=$?
+    set -e
+    ended="$(iso_now)"
+    if [[ $ec -ne 0 || -z "${demux_dir}" ]]; then
+      steps_append "${STEPS_JSON}" "dorado_demux" "failed" "Dorado demux failed" "${DORADO_BIN}" "dorado demux" "${ec}" "${started}" "${ended}"
+      die "Dorado demux failed"
+    fi
+    steps_append "${STEPS_JSON}" "dorado_demux" "succeeded" "Dorado demux completed" "${DORADO_BIN}" "dorado demux" "${ec}" "${started}" "${ended}"
+    log_ok "Demux complete: ${demux_dir}"
+
+    # Step 4: Dorado trim + BAM to FASTQ
+    started="$(iso_now)"
+    set +e
+    PER_BARCODE_FASTQ_ROOT="$(dorado_trim_bam_to_fastq_per_barcode "${demux_dir}")"
+    ec=$?
+    set -e
+    ended="$(iso_now)"
+    if [[ $ec -ne 0 || -z "${PER_BARCODE_FASTQ_ROOT}" ]]; then
+      steps_append "${STEPS_JSON}" "dorado_trim_bam2fq" "failed" "Dorado trim + BAM to FASTQ failed" "${DORADO_BIN}" "dorado trim + samtools bam2fq" "${ec}" "${started}" "${ended}"
+      die "Dorado trim + BAM to FASTQ failed"
+    fi
+    steps_append "${STEPS_JSON}" "dorado_trim_bam2fq" "succeeded" "Dorado trim + BAM to FASTQ completed" "${DORADO_BIN}" "dorado trim + samtools bam2fq" "${ec}" "${started}" "${ended}"
+    log_ok "Trim + bam2fq complete: ${PER_BARCODE_FASTQ_ROOT}"
+
+    # Discover barcode IDs from the generated FASTQs
+    BARCODE_IDS=()
+    shopt -s nullglob
+    for bc_dir in "${PER_BARCODE_FASTQ_ROOT}"/*/; do
+      [[ -d "${bc_dir}" ]] || continue
+      local bc_name
+      bc_name="$(basename "${bc_dir}")"
+      BARCODE_IDS+=("${bc_name}")
+    done
+    shopt -u nullglob
+    log_info "Discovered ${#BARCODE_IDS[@]} barcodes from basecalling"
+
+    # Update outputs.json with basecalling results
+    tmp="${OUTPUTS_JSON}.tmp"
+    jq --arg per_barcode_root "${PER_BARCODE_FASTQ_ROOT}" \
+       --arg pod5_file "${pod5_file}" \
+       --arg bam_file "${bam_file}" \
+       --arg demux_dir "${demux_dir}" \
+       '. + {
+          "basecalling": {
+            "pod5_file": $pod5_file,
+            "bam_file": $bam_file,
+            "demux_dir": $demux_dir
+          },
+          "inputs": (.inputs + { "per_barcode_root": $per_barcode_root })
+        }' "${OUTPUTS_JSON}" > "${tmp}"
+    mv "${tmp}" "${OUTPUTS_JSON}"
+  else
+    log_info "Samples: ${#BARCODE_IDS[@]}"
+  fi
+
+  # Load barcode site map (must be after barcode IDs are discovered for FAST5 input)
+  load_barcode_site_map "${SAMPLE_SHEET}"
+
+  # Now continue with QC and taxonomy steps
   started="$(iso_now)"
   set +e
   qc_raw_per_barcode_fastq
@@ -1279,30 +1771,14 @@ main() {
     steps_append "${STEPS_JSON}" "emu_primary" "skipped" "Emu classification skipped" "${EMU_BIN}" "emu abundance" "${ec}" "${started}" "${ended}"
   fi
 
+  # Kraken2 is disabled for lr_amp (Emu-only pipeline)
   started="$(iso_now)"
-  set +e
-  kraken2_secondary_per_barcode
-  ec=$?
-  set -e
+  kraken2_secondary_per_barcode  # This is now a no-op that logs "disabled"
   ended="$(iso_now)"
-  if [[ $ec -eq 0 ]]; then
-    steps_append "${STEPS_JSON}" "taxonomy" "succeeded" "kraken2 (+ bracken) completed" "${KRAKEN2_BIN}" "kraken2" "${ec}" "${started}" "${ended}"
-  else
-    steps_append "${STEPS_JSON}" "taxonomy" "failed" "taxonomy failed" "${KRAKEN2_BIN}" "kraken2" "${ec}" "${started}" "${ended}"
-    exit $ec
-  fi
+  steps_append "${STEPS_JSON}" "taxonomy_kraken2" "skipped" "Kraken2 disabled for lr_amp (Emu-only)" "" "" "0" "${started}" "${ended}"
 
-  started="$(iso_now)"
-  set +e
-  valencia_from_taxonomy
-  ec=$?
-  set -e
-  ended="$(iso_now)"
-  if [[ $ec -eq 0 ]]; then
-    steps_append "${STEPS_JSON}" "valencia" "succeeded" "valencia completed or skipped" "python3" "Valencia.py" "${ec}" "${started}" "${ended}"
-  else
-    steps_append "${STEPS_JSON}" "valencia" "failed" "valencia failed" "python3" "Valencia.py" "${ec}" "${started}" "${ended}"
-  fi
+  # Run VALENCIA (inline Python, mirrors sr_amp approach)
+  run_valencia
 
   local postprocess_dir="${RESULTS_DIR}/postprocess"
   local postprocess_log="${LOGS_DIR}/postprocess.log"
@@ -1320,39 +1796,38 @@ main() {
     steps_append "${STEPS_JSON}" "postprocess" "failed" "postprocess failed" "python3" "python3 postprocess" "${ec}" "${started}" "${ended}"
   fi
 
-  local taxo_run_dir="${TAXO_ROOT}/${RUN_NAME}"
-  local kraken2_reports_json="[]"
-  if [[ -d "${taxo_run_dir}" ]]; then
+  # lr_amp is Emu-only - collect Emu outputs
+  local emu_run_dir="${EMU_DIR}/${RUN_NAME}"
+  local emu_files_json="[]"
+  if [[ -d "${emu_run_dir}" ]]; then
     shopt -s nullglob
-    local kreport_files=( "${taxo_run_dir}"/*/*.kreport )
+    local emu_abundance_files=( "${emu_run_dir}"/*/*_rel-abundance.tsv )
     shopt -u nullglob
-    if [[ ${#kreport_files[@]} -gt 0 ]]; then
-      kraken2_reports_json="$(printf '%s\n' "${kreport_files[@]}" | jq -R . | jq -s .)"
+    if [[ ${#emu_abundance_files[@]} -gt 0 ]]; then
+      emu_files_json="$(printf '%s\n' "${emu_abundance_files[@]}" | jq -R . | jq -s .)"
     fi
   fi
 
   tmp="${OUTPUTS_JSON}.tmp"
   jq --arg steps_path "${STEPS_JSON}" \
      --arg results_dir "${RESULTS_DIR}" \
-     --arg taxo_root "${TAXO_ROOT}" \
-     --arg taxo_run_dir "${taxo_run_dir}" \
-     --arg emu_dir "${EMU_DIR}/${RUN_NAME}" \
-     --arg valencia_results "${VALENCIA_RESULTS}" \
+     --arg emu_dir "${emu_run_dir}" \
+     --arg seq_type "${SEQ_TYPE}" \
+     --arg valencia_dir "${VALENCIA_DIR:-}" \
      --arg postprocess_dir "${postprocess_dir}" \
      --arg postprocess_log "${postprocess_log}" \
      --arg final_dir "${final_dir}" \
-     --argjson kraken2_reports "${kraken2_reports_json}" \
+     --argjson emu_files "${emu_files_json}" \
      '. + {
         "steps_path":$steps_path,
         "results_dir":$results_dir,
-        "taxonomy_root":$taxo_root,
-        "taxonomy_run_dir":$taxo_run_dir,
-        "emu_dir":$emu_dir,
-        "kraken2": {
-          "reports": $kraken2_reports,
-          "results_dir": $taxo_run_dir
+        "classifier": "emu",
+        "seq_type": $seq_type,
+        "emu": {
+          "dir": $emu_dir,
+          "abundance_files": $emu_files
         },
-        "valencia_results":$valencia_results,
+        "valencia_dir":$valencia_dir,
         "postprocess":{"dir":$postprocess_dir, "log":$postprocess_log},
         "final_dir":$final_dir
       }' "${OUTPUTS_JSON}" > "${tmp}"
@@ -1366,13 +1841,20 @@ main() {
 
 main "$@"
 
-echo "[${MODULE_NAME}] Step staging complete"
+echo "[${MODULE_NAME}] Step staging complete (Emu-only pipeline)"
+if [[ "${INPUT_STYLE}" == "FAST5_DIR" || "${INPUT_STYLE}" == "FAST5" ]]; then
+  print_step_status "${STEPS_JSON}" "fast5_to_pod5"
+  print_step_status "${STEPS_JSON}" "dorado_basecall"
+  print_step_status "${STEPS_JSON}" "dorado_demux"
+  print_step_status "${STEPS_JSON}" "dorado_trim_bam2fq"
+fi
 print_step_status "${STEPS_JSON}" "raw_fastqc_multiqc"
 print_step_status "${STEPS_JSON}" "qfilter"
 print_step_status "${STEPS_JSON}" "length_filter"
 print_step_status "${STEPS_JSON}" "emu_primary"
-print_step_status "${STEPS_JSON}" "taxonomy"
+print_step_status "${STEPS_JSON}" "taxonomy_kraken2"
 print_step_status "${STEPS_JSON}" "valencia"
 print_step_status "${STEPS_JSON}" "postprocess"
+echo "[${MODULE_NAME}] seq_type: ${SEQ_TYPE}"
 echo "[${MODULE_NAME}] outputs.json: ${OUTPUTS_JSON}"
 echo "[${MODULE_NAME}] final outputs: ${MODULE_OUT_DIR}/final"

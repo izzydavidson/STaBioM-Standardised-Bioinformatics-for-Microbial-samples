@@ -74,28 +74,50 @@ print(module_dir, run_dir)
 PY
 )"
 
-# Container path translation: /work/ -> actual repo root
-# This is needed because lr_meta runs in a container and writes /work/ paths
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+# Container path translation: /work/ -> actual host path
+# This is needed because modules run in a container and write /work/ paths
+# We derive the correct base path from the outputs.json location
 
 # Create a translated outputs.json for R scripts to use
 TRANSLATED_OUTPUTS_JSON="${MODULE_DIR}/outputs.host.json"
-python3 - "${OUTPUTS_JSON}" "${TRANSLATED_OUTPUTS_JSON}" "${REPO_ROOT}" <<'PY'
+python3 - "${OUTPUTS_JSON}" "${TRANSLATED_OUTPUTS_JSON}" "${MODULE_DIR}" "${RUN_DIR}" <<'PY'
 import json, sys, os, re
 
 outputs_path = sys.argv[1]
 translated_path = sys.argv[2]
-repo_root = sys.argv[3]
+module_dir = sys.argv[3]
+run_dir = sys.argv[4]
 
 with open(outputs_path, "r", encoding="utf-8") as f:
     data = json.load(f)
 
+# Detect the run_id and module_name from the path or outputs.json
+run_id = data.get("run_id", os.path.basename(run_dir))
+module_name = data.get("module_name", os.path.basename(module_dir))
+
 def translate_path(val):
-    """Translate /work/ paths to host paths."""
+    """Translate /work/ paths to host paths based on actual file locations."""
     if isinstance(val, str):
-        # Replace /work/ with repo_root
         if val.startswith("/work/"):
-            return repo_root + val[5:]  # Remove /work, keep the rest
+            # Extract the relative path after /work/outputs/<run_id>/<module>/
+            # Pattern: /work/outputs/<run_id>/<module>/...
+            pattern = rf"^/work/outputs/{re.escape(run_id)}/{re.escape(module_name)}/"
+            match = re.match(pattern, val)
+            if match:
+                # Replace with module_dir + relative path
+                relative = val[match.end():]
+                return os.path.join(module_dir, relative)
+
+            # Fallback: replace /work/outputs/<run_id>/ with run_dir
+            pattern2 = rf"^/work/outputs/{re.escape(run_id)}/"
+            match2 = re.match(pattern2, val)
+            if match2:
+                relative = val[match2.end():]
+                return os.path.join(run_dir, relative)
+
+            # Last resort: just replace /work/ with parent of run_dir
+            parent = os.path.dirname(run_dir)
+            return parent + val[5:]  # Remove /work, keep /outputs/...
         return val
     elif isinstance(val, dict):
         return {k: translate_path(v) for k, v in val.items()}
@@ -108,7 +130,9 @@ translated = translate_path(data)
 with open(translated_path, "w", encoding="utf-8") as f:
     json.dump(translated, f, indent=2, ensure_ascii=False)
 
-print(f"[r_postprocess] Translated container paths (/work/ -> {repo_root})")
+print(f"[r_postprocess] Translated container paths to host paths")
+print(f"[r_postprocess]   run_dir: {run_dir}")
+print(f"[r_postprocess]   module_dir: {module_dir}")
 PY
 
 # Use translated outputs.json for R scripts
@@ -315,9 +339,36 @@ run_r_step() {
     return 1
   fi
 
-  steps_append "${STEPS_JSON}" "r_postprocess_${step_name}" "succeeded" "R postprocess step completed" "${RSCRIPT_BIN}" "Rscript ${step_name}.R" "0" "${started}" "${ended}"
+  # Verify that expected output files were created
+  local output_count=0
+  local expected_outputs=""
+
+  if [[ "${output_type}" == "plot" ]]; then
+    # Check for PNG files created by this step
+    shopt -s nullglob
+    local step_outputs=( "${step_out_dir}"/*.png )
+    shopt -u nullglob
+    output_count=${#step_outputs[@]}
+    expected_outputs="*.png files"
+  elif [[ "${output_type}" == "table" ]]; then
+    # Check for CSV/TSV files
+    shopt -s nullglob
+    local step_outputs=( "${step_out_dir}"/*.csv "${step_out_dir}"/*.tsv )
+    shopt -u nullglob
+    output_count=${#step_outputs[@]}
+    expected_outputs="*.csv/*.tsv files"
+  fi
+
+  if [[ ${output_count} -eq 0 ]]; then
+    # R script succeeded but produced no output - this is OK (no data to plot)
+    steps_append "${STEPS_JSON}" "r_postprocess_${step_name}" "succeeded" "R script completed (no output generated - possibly no data)" "${RSCRIPT_BIN}" "Rscript ${step_name}.R" "0" "${started}" "${ended}"
+    echo "[r_postprocess] ${step_name}: succeeded (no output generated - check if input data exists)"
+  else
+    steps_append "${STEPS_JSON}" "r_postprocess_${step_name}" "succeeded" "R postprocess step completed (${output_count} files)" "${RSCRIPT_BIN}" "Rscript ${step_name}.R" "0" "${started}" "${ended}"
+    echo "[r_postprocess] ${step_name}: succeeded (${output_count} ${expected_outputs})"
+  fi
+
   STEPS_SUCCEEDED=$((STEPS_SUCCEEDED + 1))
-  echo "[r_postprocess] ${step_name}: succeeded"
   return 0
 }
 
@@ -375,30 +426,51 @@ else
   echo "[r_postprocess] valencia: skipped (not enabled)"
 fi
 
-# Copy existing module outputs to standardized location
-echo "[r_postprocess] Consolidating outputs to results/"
+# Consolidate outputs: copy from results/plots/ to final/plots/ and vice versa
+echo "[r_postprocess] Consolidating outputs..."
 
-# Sync generated plots from results/plots/ back to module final/plots/
-# This ensures final/plots/ is populated for consumers who expect the legacy location
 FINAL_DIR="${MODULE_DIR}/final"
 FINAL_PLOTS_DIR="${FINAL_DIR}/plots"
-if [[ -d "${RESULTS_PLOTS_DIR}" ]]; then
-  mkdir -p "${FINAL_PLOTS_DIR}"
-  shopt -s nullglob
-  plot_files=( "${RESULTS_PLOTS_DIR}"/*.png "${RESULTS_PLOTS_DIR}"/*.pdf "${RESULTS_PLOTS_DIR}"/*.csv )
-  shopt -u nullglob
-  # Guard against empty array under set -u
-  if [[ ${#plot_files[@]} -gt 0 ]]; then
-    for pf in "${plot_files[@]}"; do
-      cp -f "${pf}" "${FINAL_PLOTS_DIR}/"
-      echo "[r_postprocess] Synced $(basename "${pf}") to final/plots/"
-    done
-    echo "[r_postprocess] Synced ${#plot_files[@]} plot file(s) to final/plots/"
-  else
-    echo "[r_postprocess] No plot files found in results/plots/ to sync to final/"
-  fi
+FINAL_TABLES_DIR="${FINAL_DIR}/tables"
+
+mkdir -p "${FINAL_PLOTS_DIR}" "${FINAL_TABLES_DIR}"
+
+# Count R-generated plots in results/plots/
+shopt -s nullglob
+r_plot_files=( "${RESULTS_PLOTS_DIR}"/*.png "${RESULTS_PLOTS_DIR}"/*.pdf )
+shopt -u nullglob
+R_PLOTS_COUNT=${#r_plot_files[@]}
+
+# Count module-generated plots already in final/plots/
+shopt -s nullglob
+module_plot_files=( "${FINAL_PLOTS_DIR}"/*.png "${FINAL_PLOTS_DIR}"/*.pdf )
+shopt -u nullglob
+MODULE_PLOTS_COUNT=${#module_plot_files[@]}
+
+echo "[r_postprocess] R-generated plots in results/plots/: ${R_PLOTS_COUNT}"
+echo "[r_postprocess] Module plots already in final/plots/: ${MODULE_PLOTS_COUNT}"
+
+# Sync R-generated plots FROM results/plots/ TO final/plots/
+if [[ ${R_PLOTS_COUNT} -gt 0 ]]; then
+  for pf in "${r_plot_files[@]}"; do
+    cp -f "${pf}" "${FINAL_PLOTS_DIR}/"
+    echo "[r_postprocess] Synced $(basename "${pf}") -> final/plots/"
+  done
+  echo "[r_postprocess] Synced ${R_PLOTS_COUNT} R-generated plot(s) to final/plots/"
 else
-  echo "[r_postprocess] results/plots/ not found, skipping sync to final/"
+  echo "[r_postprocess] No R-generated plots to sync to final/"
+fi
+
+# Also sync module plots FROM final/plots/ TO results/plots/ for unified results/ view
+if [[ ${MODULE_PLOTS_COUNT} -gt 0 ]]; then
+  for pf in "${module_plot_files[@]}"; do
+    base="$(basename "${pf}")"
+    # Only copy if not already in results/plots/
+    if [[ ! -f "${RESULTS_PLOTS_DIR}/${base}" ]]; then
+      cp -f "${pf}" "${RESULTS_PLOTS_DIR}/"
+      echo "[r_postprocess] Synced ${base} -> results/plots/ (from final)"
+    fi
+  done
 fi
 
 # Copy tidy CSVs from module postprocess if they exist
@@ -477,7 +549,81 @@ if final_dir.exists():
                     print(f"[r_postprocess] Copied final/valencia/{f.name} to results/valencia/")
 PY
 
-# Write manifest.json
+# Copy QC reports (FastQC/MultiQC) to final/qc/ and results/qc/ if enabled
+QC_IN_FINAL="$(jq_get_int "${CONFIG_PATH}" '.output.qc_in_final' '1')"
+if [[ "${QC_IN_FINAL}" == "1" ]]; then
+  echo "[r_postprocess] Copying QC reports to final/qc/ and results/qc/..."
+  FINAL_QC_DIR="${FINAL_DIR}/qc"
+  RESULTS_QC_DIR="${RESULTS_DIR}/qc"
+  mkdir -p "${FINAL_QC_DIR}" "${RESULTS_QC_DIR}"
+
+  python3 - "${RUN_DIR}" "${FINAL_QC_DIR}" "${RESULTS_QC_DIR}" <<'PY'
+import sys
+import shutil
+from pathlib import Path
+
+run_dir = Path(sys.argv[1])
+final_qc_dir = Path(sys.argv[2])
+results_qc_dir = Path(sys.argv[3])
+
+# Find all FastQC and MultiQC HTML reports
+qc_count = 0
+
+# Search patterns for QC directories (both module-level and results-level)
+search_roots = [run_dir]
+
+for search_root in search_roots:
+    # Look for raw_multiqc directories (lr_meta pattern)
+    for multiqc_dir in search_root.rglob("raw_multiqc"):
+        if multiqc_dir.is_dir():
+            for html_file in multiqc_dir.glob("*.html"):
+                shutil.copy2(html_file, final_qc_dir / html_file.name)
+                shutil.copy2(html_file, results_qc_dir / html_file.name)
+                print(f"[r_postprocess] Copied {html_file.name} from raw_multiqc/ to qc/")
+                qc_count += 1
+
+    # Look for multiqc directories (sr_amp/sr_meta pattern)
+    for multiqc_dir in search_root.rglob("multiqc"):
+        if multiqc_dir.is_dir() and multiqc_dir.name == "multiqc":
+            for html_file in multiqc_dir.glob("*.html"):
+                dst_name = html_file.name
+                # Avoid duplicates
+                if not (final_qc_dir / dst_name).exists():
+                    shutil.copy2(html_file, final_qc_dir / dst_name)
+                    shutil.copy2(html_file, results_qc_dir / dst_name)
+                    print(f"[r_postprocess] Copied {dst_name} from multiqc/ to qc/")
+                    qc_count += 1
+
+    # Look for raw_fastqc directories (lr_meta pattern)
+    for fastqc_dir in search_root.rglob("raw_fastqc"):
+        if fastqc_dir.is_dir():
+            for html_file in fastqc_dir.glob("*.html"):
+                shutil.copy2(html_file, final_qc_dir / html_file.name)
+                shutil.copy2(html_file, results_qc_dir / html_file.name)
+                print(f"[r_postprocess] Copied {html_file.name} from raw_fastqc/ to qc/")
+                qc_count += 1
+
+    # Look for fastp reports directory
+    for fastp_dir in search_root.rglob("fastp"):
+        reports_dir = fastp_dir / "reports"
+        if reports_dir.is_dir():
+            for html_file in reports_dir.glob("*.html"):
+                dst_name = html_file.name
+                if not (final_qc_dir / dst_name).exists():
+                    shutil.copy2(html_file, final_qc_dir / dst_name)
+                    shutil.copy2(html_file, results_qc_dir / dst_name)
+                    print(f"[r_postprocess] Copied {dst_name} from fastp/reports/ to qc/")
+                    qc_count += 1
+
+if qc_count == 0:
+    print("[r_postprocess] No QC reports found to copy")
+else:
+    print(f"[r_postprocess] Copied {qc_count} QC report(s) to qc/")
+PY
+fi
+
+# Write manifest.json for results/ directory
+# This manifest reflects what's in results/ AFTER syncing
 python3 - "${RESULTS_DIR}" "${MODULE_NAME}" "${R_OUTPUTS_JSON}" <<'PY'
 import json, sys, os
 from pathlib import Path
@@ -489,11 +635,32 @@ outputs_json_path = sys.argv[3]
 plots_dir = results_dir / "plots"
 tables_dir = results_dir / "tables"
 valencia_dir = results_dir / "valencia"
+qc_dir = results_dir / "qc"
 
-# Collect files
-plots = sorted([f.name for f in plots_dir.glob("*") if f.is_file()]) if plots_dir.exists() else []
-tables = sorted([f.name for f in tables_dir.glob("*") if f.is_file()]) if tables_dir.exists() else []
+# Collect files (only PNG/PDF for plots, CSV/TSV for tables)
+plots = []
+if plots_dir.exists():
+    for f in plots_dir.iterdir():
+        if f.is_file() and f.suffix.lower() in ('.png', '.pdf'):
+            plots.append(f.name)
+plots = sorted(plots)
+
+tables = []
+if tables_dir.exists():
+    for f in tables_dir.iterdir():
+        if f.is_file() and f.suffix.lower() in ('.csv', '.tsv', '.kreport'):
+            tables.append(f.name)
+tables = sorted(tables)
+
 valencia = sorted([f.name for f in valencia_dir.glob("*") if f.is_file()]) if valencia_dir.exists() else []
+
+# Collect QC files (HTML reports)
+qc = []
+if qc_dir.exists():
+    for f in qc_dir.iterdir():
+        if f.is_file() and f.suffix.lower() in ('.html',):
+            qc.append(f.name)
+qc = sorted(qc)
 
 # Load run_name from outputs.json if available
 run_name = ""
@@ -511,14 +678,17 @@ manifest = {
     "outputs": {
         "plots": plots,
         "tables": tables,
-        "valencia": valencia
+        "valencia": valencia,
+        "qc": qc
     },
     "summary": {
         "plots_count": len(plots),
         "tables_count": len(tables),
         "valencia_count": len(valencia),
+        "qc_count": len(qc),
         "has_kraken2": any("kraken" in t.lower() or "kreport" in t.lower() for t in tables),
-        "has_valencia": len(valencia) > 0
+        "has_valencia": len(valencia) > 0,
+        "has_qc": len(qc) > 0
     }
 }
 
@@ -526,8 +696,7 @@ manifest_path = results_dir / "manifest.json"
 with open(manifest_path, "w") as f:
     json.dump(manifest, f, indent=2)
 
-print(f"[r_postprocess] Wrote manifest: {manifest_path}")
-print(f"[r_postprocess] Summary: {len(plots)} plots, {len(tables)} tables, {len(valencia)} valencia files")
+print(f"[r_postprocess] Wrote results/manifest.json: {len(plots)} plots, {len(tables)} tables, {len(valencia)} valencia files, {len(qc)} qc files")
 PY
 
 # Update final/manifest.json to include synced plots
@@ -555,14 +724,34 @@ if final_manifest_path.exists():
     except:
         pass
 
-# Scan final/plots, final/tables, final/valencia
+# Scan final/plots, final/tables, final/valencia, final/qc (only count actual files)
 plots_dir = final_dir / "plots"
 tables_dir = final_dir / "tables"
 valencia_dir = final_dir / "valencia"
+qc_dir = final_dir / "qc"
 
-plots = sorted([f.name for f in plots_dir.glob("*") if f.is_file()]) if plots_dir.exists() else []
-tables = sorted([f.name for f in tables_dir.glob("*") if f.is_file()]) if tables_dir.exists() else []
+plots = []
+if plots_dir.exists():
+    for f in plots_dir.iterdir():
+        if f.is_file() and f.suffix.lower() in ('.png', '.pdf'):
+            plots.append(f.name)
+plots = sorted(plots)
+
+tables = []
+if tables_dir.exists():
+    for f in tables_dir.iterdir():
+        if f.is_file() and f.suffix.lower() in ('.csv', '.tsv', '.kreport'):
+            tables.append(f.name)
+tables = sorted(tables)
+
 valencia = sorted([f.name for f in valencia_dir.glob("*") if f.is_file()]) if valencia_dir.exists() else []
+
+qc = []
+if qc_dir.exists():
+    for f in qc_dir.iterdir():
+        if f.is_file() and f.suffix.lower() in ('.html',):
+            qc.append(f.name)
+qc = sorted(qc)
 
 # Load run_name from outputs.json if not in manifest
 if not manifest.get("run_name"):
@@ -573,17 +762,24 @@ if not manifest.get("run_name"):
     except:
         pass
 
-# Update manifest
+# Update manifest with accurate counts
 manifest["outputs"] = {
     "tables": tables,
     "plots": plots,
-    "valencia": valencia
+    "valencia": valencia,
+    "qc": qc
+}
+manifest["summary"] = {
+    "plots_count": len(plots),
+    "tables_count": len(tables),
+    "valencia_count": len(valencia),
+    "qc_count": len(qc)
 }
 
 with open(final_manifest_path, "w") as f:
     json.dump(manifest, f, indent=2)
 
-print(f"[r_postprocess] Updated final/manifest.json: {len(plots)} plots, {len(tables)} tables, {len(valencia)} valencia")
+print(f"[r_postprocess] Updated final/manifest.json: {len(plots)} plots, {len(tables)} tables, {len(valencia)} valencia, {len(qc)} qc")
 PY
 
 # Update outputs.json with r_postprocess info
@@ -605,6 +801,7 @@ data["r_postprocess"] = {
     "plots_dir": os.path.join(results_dir, "plots"),
     "tables_dir": os.path.join(results_dir, "tables"),
     "valencia_dir": os.path.join(results_dir, "valencia"),
+    "qc_dir": os.path.join(results_dir, "qc"),
     "manifest": os.path.join(results_dir, "manifest.json"),
     "log_dir": log_dir
 }
@@ -622,5 +819,35 @@ else
   steps_append "${STEPS_JSON}" "r_postprocess" "completed_with_errors" "R postprocessing completed with some step failures" "" "" "${OVERALL_EC}" "${started}" "${ended}"
 fi
 
+# Final summary showing actual file counts
+echo ""
+echo "[r_postprocess] =============================================="
+echo "[r_postprocess] FINAL OUTPUT SUMMARY"
+echo "[r_postprocess] =============================================="
+
+# Count files in results/
+shopt -s nullglob
+results_plots=( "${RESULTS_PLOTS_DIR}"/*.png "${RESULTS_PLOTS_DIR}"/*.pdf )
+results_tables=( "${RESULTS_TABLES_DIR}"/*.csv "${RESULTS_TABLES_DIR}"/*.tsv "${RESULTS_TABLES_DIR}"/*.kreport )
+results_valencia=( "${RESULTS_VALENCIA_DIR}"/* )
+results_qc=( "${RESULTS_DIR}/qc"/*.html )
+shopt -u nullglob
+echo "[r_postprocess] results/plots/:    ${#results_plots[@]} files"
+echo "[r_postprocess] results/tables/:   ${#results_tables[@]} files"
+echo "[r_postprocess] results/valencia/: ${#results_valencia[@]} files"
+echo "[r_postprocess] results/qc/:       ${#results_qc[@]} files"
+
+# Count files in final/
+shopt -s nullglob
+final_plots=( "${FINAL_PLOTS_DIR}"/*.png "${FINAL_PLOTS_DIR}"/*.pdf )
+final_tables=( "${FINAL_TABLES_DIR}"/*.csv "${FINAL_TABLES_DIR}"/*.tsv "${FINAL_TABLES_DIR}"/*.kreport )
+final_valencia_files=( "${FINAL_DIR}/valencia"/* )
+final_qc_files=( "${FINAL_DIR}/qc"/*.html )
+shopt -u nullglob
+echo "[r_postprocess] final/plots/:      ${#final_plots[@]} files"
+echo "[r_postprocess] final/tables/:     ${#final_tables[@]} files"
+echo "[r_postprocess] final/valencia/:   ${#final_valencia_files[@]} files"
+echo "[r_postprocess] final/qc/:         ${#final_qc_files[@]} files"
+echo "[r_postprocess] =============================================="
 echo "[r_postprocess] Complete. Results: ${RESULTS_DIR}"
 exit ${OVERALL_EC}

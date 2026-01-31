@@ -93,6 +93,28 @@ PY
 
 steps_init_if_needed() { local p="$1"; [[ -f "${p}" ]] || printf "[]\n" > "${p}"; }
 
+############################################
+##              COLOURS                   ##
+############################################
+BOLD="\033[1m"
+RESET="\033[0m"
+GREEN="\033[32m"
+RED="\033[31m"
+PURPLE="\033[35m"
+CYAN="\033[36m"
+YELLOW="\033[33m"
+
+log() { echo -e "[$(date '+%F %T')] $*" >&2; }
+log_info() { log "${CYAN}${BOLD}$*${RESET}"; }
+log_warn() { log "${YELLOW}${BOLD}$*${RESET}"; }
+log_ok() { log "${GREEN}${BOLD}$*${RESET}"; }
+log_done() { log "${PURPLE}${BOLD}$*${RESET}"; }
+log_fail() { log "${RED}${BOLD}$*${RESET}"; }
+
+############################################
+##          STEP TRACKING                 ##
+############################################
+
 steps_append() {
   local steps_path="$1" step_name="$2" status="$3" message="$4" tool="$5" cmd="$6" exit_code="$7" started_at="$8" ended_at="$9"
   steps_init_if_needed "${steps_path}"
@@ -864,6 +886,7 @@ mv "${tmp}" "${OUTPUTS_JSON}"
 
 # -----------------------------
 # VALENCIA (kraken-report driven; gated by specimen)
+# Mirrors sr_amp approach with inline Python (no pandas dependency)
 # -----------------------------
 VALENCIA_ENABLED_RAW="$(jq_first "${CONFIG_PATH}" '.valencia.enabled' '.qiime2.valencia.enabled' '.valencia_enabled' '.tools.valencia.enabled' || true)"
 VALENCIA_ENABLED_NORM="$(normalize_boolish "${VALENCIA_ENABLED_RAW}")"
@@ -875,7 +898,12 @@ VALENCIA_CENTROIDS_HOST="$(jq_first "${CONFIG_PATH}" '.valencia.centroids_csv' '
 
 VALENCIA_DIR="${RESULTS_DIR}/valencia"
 VALENCIA_LOG="${LOGS_DIR}/valencia.log"
-mkdir -p "${VALENCIA_DIR}"
+VALENCIA_PLOTS_DIR="${VALENCIA_DIR}/plots"
+mkdir -p "${VALENCIA_DIR}" "${VALENCIA_PLOTS_DIR}"
+
+VALENCIA_INPUT_CSV="${VALENCIA_DIR}/taxon_table_kreport.csv"
+VALENCIA_OUTPUT_CSV="${VALENCIA_DIR}/output.csv"
+VALENCIA_ASSIGNMENTS_CSV="${VALENCIA_DIR}/valencia_assignments.csv"
 
 VALENCIA_SHOULD_RUN="no"
 if [[ "${VALENCIA_ENABLED_NORM}" == "true" ]]; then
@@ -904,198 +932,385 @@ if [[ "${VALENCIA_SHOULD_RUN}" != "yes" ]]; then
   started="$(iso_now)"; ended="$(iso_now)"
   steps_append "${STEPS_JSON}" "valencia" "skipped" "VALENCIA skipped (enabled=${VALENCIA_ENABLED_NORM}, specimen=${SPECIMEN_RAW:-})" "" "" "0" "${started}" "${ended}"
 else
-  # Check if pandas is available (required for VALENCIA)
-  if ! python3 -c "import pandas" 2>/dev/null; then
-    started="$(iso_now)"; ended="$(iso_now)"
-    steps_append "${STEPS_JSON}" "valencia" "skipped" "VALENCIA skipped (pandas not installed - run: pip3 install pandas matplotlib)" "" "" "0" "${started}" "${ended}"
-    echo "[valencia] WARN: pandas not installed, skipping VALENCIA. Install with: pip3 install pandas matplotlib" >&2
-  else
-    VALENCIA_PLOTS_DIR="${VALENCIA_DIR}/plots"
-    mkdir -p "${VALENCIA_PLOTS_DIR}"
+  log_info "Running VALENCIA classification..."
+  log_info "  Centroids: ${STAGED_VALENCIA_CENTROIDS}"
+  log_info "  Kraken dir: ${KRAKEN_DIR}"
 
-    started="$(iso_now)"
-    set +e
+  started="$(iso_now)"
+  set +e
 
-    python3 - "${STAGED_VALENCIA_CENTROIDS}" "${VALENCIA_DIR}" "${VALENCIA_PLOTS_DIR}" "${SPECIMEN_NORM}" "${VALENCIA_LOG}" "${KRAKEN_DIR}" <<'PY'
-import os, sys, re
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
+  python3 - "${STAGED_VALENCIA_CENTROIDS}" "${KRAKEN_DIR}" "${VALENCIA_DIR}" "${VALENCIA_PLOTS_DIR}" >>"${VALENCIA_LOG}" 2>&1 <<'VALENCIA_PY'
+import sys, os, re, csv, math
+from pathlib import Path
 
-centroids_csv, out_dir, plots_dir, specimen_norm, log_path, kraken_dir = sys.argv[1:]
+centroids_csv, kraken_dir, out_dir, plots_dir = sys.argv[1:]
 os.makedirs(out_dir, exist_ok=True)
 os.makedirs(plots_dir, exist_ok=True)
 
-def log(msg):
-    with open(log_path, "a", encoding="utf-8") as f:
-        f.write(msg.rstrip() + "\n")
+# -----------------------------
+# Helpers: taxa name normalization (match VALENCIA centroids format)
+# -----------------------------
+bc_focal = {'Lactobacillus','Prevotella','Gardnerella','Atopobium','Sneathia'}
 
-ref = pd.read_csv(centroids_csv)
-if 'sub_CST' not in ref.columns:
-    if 'subCST' in ref.columns:
-        ref = ref.rename(columns={'subCST':'sub_CST'})
-    else:
-        raise SystemExit("ERROR: centroids CSV must contain sub_CST column")
+def norm_taxa_name(name: str) -> str:
+    """Normalize taxa name to match VALENCIA centroids format."""
+    name = (name or "").strip()
+    name = name.lstrip()
+    name = name.replace(" ", "_")
+    return name
 
-id_cols = {'sampleID', 'read_count', 'sub_CST', 'subCST'}
-taxa_cols = [c for c in ref.columns if c not in id_cols]
+# -----------------------------
+# Parse kreport files
+# -----------------------------
+def parse_kreport(path: str):
+    """Parse Kraken2 report file, return dict of taxa -> read counts at species level."""
+    taxa_counts = {}
+    total_reads = 0
 
-def norm_name(s: str) -> str:
-    s = (s or "").strip()
-    s = re.sub(r'\s+', ' ', s)
-    s = s.replace('_', ' ')
-    return s.lower()
-
-taxa_norm_map = {c: norm_name(c) for c in taxa_cols}
-
-def parse_kraken_report(path: str):
-    d = {}
-    total_reads = None
     with open(path, "r", encoding="utf-8", errors="replace") as f:
-        for ln in f:
-            ln = ln.rstrip("\n")
-            if not ln.strip():
-                continue
-            parts = ln.split("\t")
+        for line in f:
+            parts = line.rstrip("\n").split("\t")
             if len(parts) < 6:
-                parts = re.split(r'\s+', ln, maxsplit=5)
-                if len(parts) < 6:
-                    continue
-            try:
-                clade_reads = int(parts[1])
-            except Exception:
                 continue
-            rank = parts[3].strip()
-            name = parts[5].strip()
-            if total_reads is None:
-                total_reads = clade_reads
-            key = norm_name(name)
-            pri = {'S':3,'G':2}.get(rank, 1)
-            if key not in d:
-                d[key] = (clade_reads, pri)
-            else:
-                if pri > d[key][1]:
-                    d[key] = (clade_reads, pri)
-    d2 = {k:v[0] for k,v in d.items()}
-    if total_reads is None:
-        total_reads = 0
-    return total_reads, d2
 
-def yue_distance(row, median):
-    taxon_count = 0
-    median_times_obs = []
-    median_minus_obs_sq = []
-    for taxon_abund in row:
-        median_times_obs.append(median.iloc[taxon_count] * taxon_abund)
-        median_minus_obs_sq.append((median.iloc[taxon_count] - taxon_abund) ** 2)
-        taxon_count += 1
-    product = np.nansum(median_times_obs)
-    diff_sq = np.nansum(median_minus_obs_sq)
-    return product / (diff_sq + product) if (diff_sq + product) != 0 else 0.0
+            try:
+                pct = float(parts[0].strip())
+                clade_reads = int(parts[1].strip())
+                taxon_reads = int(parts[2].strip())
+            except (ValueError, IndexError):
+                continue
+
+            rank = (parts[3] or "").strip()
+            name = (parts[5] or "").strip().lstrip()
+
+            if rank == "R" or (rank == "U" and "unclassified" in name.lower()):
+                total_reads = clade_reads
+
+            if rank != "S":
+                continue
+
+            if not name or clade_reads <= 0:
+                continue
+
+            taxa_name = norm_taxa_name(name)
+            taxa_counts[taxa_name] = taxa_counts.get(taxa_name, 0) + clade_reads
+
+    return taxa_counts, total_reads
+
+# Find all kreport files (sr_meta uses .report.tsv naming)
+kraken_path = Path(kraken_dir)
+kreport_files = list(kraken_path.glob("*.report.tsv"))
+
+if not kreport_files:
+    print(f"WARNING: No kreport files found in {kraken_dir}")
+    sys.exit(0)
+
+print(f"Found {len(kreport_files)} kreport file(s)")
+
+# Build sample data from kreports
+samples_data = []
+all_taxa = set()
+
+for kreport_path in kreport_files:
+    sample_id = kreport_path.stem.replace(".report", "")
+    taxa_counts, total_reads = parse_kreport(kreport_path)
+
+    if not taxa_counts:
+        print(f"  Skipping {sample_id}: no species-level taxa found")
+        continue
+
+    if total_reads == 0:
+        total_reads = sum(taxa_counts.values())
+
+    samples_data.append({
+        "sample_id": sample_id,
+        "taxa_counts": taxa_counts,
+        "total_reads": total_reads
+    })
+    all_taxa.update(taxa_counts.keys())
+    print(f"  Parsed {sample_id}: {len(taxa_counts)} taxa, {total_reads} total reads")
+
+if not samples_data:
+    print("WARNING: No valid samples found for VALENCIA")
+    sys.exit(0)
+
+# -----------------------------
+# Load centroids CSV
+# -----------------------------
+centroid_rows = []
+with open(centroids_csv, "r", encoding="utf-8", errors="replace", newline="") as f:
+    reader = csv.DictReader(f)
+    if not reader.fieldnames:
+        raise SystemExit("ERROR: centroids CSV appears empty")
+    fields = list(reader.fieldnames)
+
+    if "sub_CST" not in fields and "subCST" in fields:
+        fields = ["sub_CST" if x == "subCST" else x for x in fields]
+
+    if "sub_CST" not in fields:
+        raise SystemExit("ERROR: centroids CSV missing 'sub_CST' column")
+
+    for row in reader:
+        centroid_rows.append(row)
+
+if not centroid_rows:
+    raise SystemExit("ERROR: centroids CSV has no rows")
+
+ignore_cols = {"sampleID", "read_count", "sub_CST", "subCST"}
+centroid_taxa_cols = [c for c in centroid_rows[0].keys() if c not in ignore_cols]
+
+print(f"Loaded {len(centroid_rows)} centroids with {len(centroid_taxa_cols)} taxa columns")
+
+centroids = {}
+for row in centroid_rows:
+    label = (row.get("sub_CST") or row.get("subCST") or "").strip()
+    if not label:
+        continue
+    vec = []
+    for c in centroid_taxa_cols:
+        try:
+            vec.append(float(row.get(c, 0) or 0))
+        except Exception:
+            vec.append(0.0)
+    centroids[label] = vec
 
 CSTs = ['I-A','I-B','II','III-A','III-B','IV-A','IV-B','IV-C0','IV-C1','IV-C2','IV-C3','IV-C4','V']
 
-n_centroids = 13
-if len(ref) < n_centroids:
-    raise SystemExit(f"ERROR: centroids file has {len(ref)} rows, expected >= {n_centroids}")
+# -----------------------------
+# Build taxa mapping from kreport names to centroid names
+# -----------------------------
+def normalize_for_matching(s: str) -> str:
+    s = (s or "").strip().lower()
+    s = s.replace(" ", "_").replace("-", "_").replace(".", "_")
+    s = re.sub(r"[^a-z0-9_]", "", s)
+    s = re.sub(r"_+", "_", s).strip("_")
+    return s
 
-reference_centroids = ref.tail(n_centroids).fillna(0)
-reference_centroids = reference_centroids.set_index('sub_CST')
-for c in taxa_cols:
-    if c not in reference_centroids.columns:
-        reference_centroids[c] = 0.0
-reference_centroids = reference_centroids[taxa_cols].apply(pd.to_numeric, errors="coerce").fillna(0.0)
+centroid_taxa_norm = {normalize_for_matching(t): t for t in centroid_taxa_cols}
 
-reports = [p for p in os.listdir(kraken_dir) if p.endswith(".report.tsv")]
-if not reports:
-    raise SystemExit("ERROR: no kraken2 reports found to run VALENCIA")
+# -----------------------------
+# Write input CSV (sample x taxa counts)
+# -----------------------------
+taxon_table_csv = os.path.join(out_dir, "taxon_table_kreport.csv")
 
-for repfile in sorted(reports):
-    unit = repfile.replace(".report.tsv", "")
-    rep_path = os.path.join(kraken_dir, repfile)
-    total_reads, name_to_reads = parse_kraken_report(rep_path)
+with open(taxon_table_csv, "w", encoding="utf-8", newline="") as out:
+    w = csv.writer(out)
+    w.writerow(["sampleID", "read_count", *centroid_taxa_cols])
 
-    row = {'sampleID': unit, 'read_count': int(total_reads)}
-    for c in taxa_cols:
-        want = taxa_norm_map[c]
-        reads = name_to_reads.get(want, 0)
-        row[c] = int(reads)
+    for sample in samples_data:
+        sid = sample["sample_id"]
+        total = sample["total_reads"]
+        taxa_counts = sample["taxa_counts"]
 
-    sample_df = pd.DataFrame([row])
+        row_counts = {t: 0 for t in centroid_taxa_cols}
+        for kreport_taxa, count in taxa_counts.items():
+            kreport_norm = normalize_for_matching(kreport_taxa)
+            if kreport_norm in centroid_taxa_norm:
+                canonical = centroid_taxa_norm[kreport_norm]
+                row_counts[canonical] += count
 
-    if sample_df.loc[0, 'read_count'] > 0:
-        rel = sample_df[taxa_cols].div(sample_df['read_count'], axis=0)
+        row = [sid, total]
+        row.extend([row_counts.get(t, 0) for t in centroid_taxa_cols])
+        w.writerow(row)
+
+print(f"OK: VALENCIA input -> {taxon_table_csv}")
+
+# -----------------------------
+# Yue-Clayton similarity function
+# -----------------------------
+def yue_similarity(obs_vec, med_vec):
+    product = 0.0
+    diff_sq = 0.0
+    for o, m in zip(obs_vec, med_vec):
+        product += (m * o)
+        d = (m - o)
+        diff_sq += (d * d)
+    denom = diff_sq + product
+    return (product / denom) if denom != 0 else 0.0
+
+# -----------------------------
+# Run VALENCIA classification
+# -----------------------------
+out_rows = []
+
+for sample in samples_data:
+    sid = sample["sample_id"]
+    total = sample["total_reads"]
+    taxa_counts = sample["taxa_counts"]
+
+    row_counts = {t: 0 for t in centroid_taxa_cols}
+    for kreport_taxa, count in taxa_counts.items():
+        kreport_norm = normalize_for_matching(kreport_taxa)
+        if kreport_norm in centroid_taxa_norm:
+            canonical = centroid_taxa_norm[kreport_norm]
+            row_counts[canonical] += count
+
+    obs_vec = []
+    total_matched = sum(row_counts.values())
+    if total_matched > 0:
+        for t in centroid_taxa_cols:
+            obs_vec.append(float(row_counts.get(t, 0)) / float(total_matched))
     else:
-        rel = sample_df[taxa_cols].copy()
-        rel.iloc[:] = 0.0
+        obs_vec = [0.0 for _ in centroid_taxa_cols]
 
+    sims = {}
     for cst in CSTs:
-        if cst in reference_centroids.index:
-            median = reference_centroids.loc[cst]
-            sample_df[f"{cst}_sim"] = rel.apply(lambda x: yue_distance(x[taxa_cols], median), axis=1)
+        if cst in centroids:
+            sims[cst] = yue_similarity(obs_vec, centroids[cst])
         else:
-            sample_df[f"{cst}_sim"] = np.nan
+            sims[cst] = float("nan")
 
+    best_cst = None
+    best_score = -1.0
+    for cst in CSTs:
+        v = sims.get(cst)
+        if v is None or (isinstance(v, float) and math.isnan(v)):
+            continue
+        if v > best_score:
+            best_score = v
+            best_cst = cst
+
+    subcst = best_cst or ""
+    score = best_score if best_cst else float("nan")
+
+    cst_group = subcst
+    if subcst in ("I-A", "I-B"):
+        cst_group = "I"
+    elif subcst in ("III-A", "III-B"):
+        cst_group = "III"
+    elif subcst in ("IV-C0", "IV-C1", "IV-C2", "IV-C3", "IV-C4"):
+        cst_group = "IV-C"
+
+    out_row = {"sampleID": sid, "read_count": total}
+    for t in centroid_taxa_cols:
+        out_row[t] = row_counts.get(t, 0)
+    for cst in CSTs:
+        out_row[f"{cst}_sim"] = sims.get(cst)
+    out_row["subCST"] = subcst
+    out_row["score"] = score
+    out_row["CST"] = cst_group
+    out_rows.append(out_row)
+
+# -----------------------------
+# Write output CSVs
+# -----------------------------
+def write_output_csv(path):
+    if not out_rows:
+        raise SystemExit("ERROR: No VALENCIA output rows to write")
     sim_cols = [f"{c}_sim" for c in CSTs]
-    sample_df['subCST'] = sample_df[sim_cols].idxmax(axis=1).str.replace('_sim', '', regex=False)
-    sample_df['score'] = sample_df[sim_cols].max(axis=1)
+    fieldnames = ["sampleID", "read_count", *centroid_taxa_cols, *sim_cols, "subCST", "score", "CST"]
+    with open(path, "w", encoding="utf-8", newline="") as out:
+        w = csv.DictWriter(out, fieldnames=fieldnames)
+        w.writeheader()
+        for r in out_rows:
+            w.writerow(r)
 
-    sample_df['CST'] = sample_df['subCST'].replace({
-        'I-A':'I','I-B':'I',
-        'III-A':'III','III-B':'III',
-        'IV-C0':'IV-C','IV-C1':'IV-C','IV-C2':'IV-C','IV-C3':'IV-C','IV-C4':'IV-C'
-    })
+out_csv = os.path.join(out_dir, "output.csv")
+compat_csv = os.path.join(out_dir, "valencia_assignments.csv")
+write_output_csv(out_csv)
+write_output_csv(compat_csv)
 
-    out_input = os.path.join(out_dir, f"{unit}_valencia_input.csv")
-    out_assign = os.path.join(out_dir, f"{unit}_valencia_assignments.csv")
-    sample_df[['sampleID','read_count'] + taxa_cols].to_csv(out_input, index=False)
-    sample_df.to_csv(out_assign, index=False)
+print(f"OK: VALENCIA output -> {out_csv}")
 
-    try:
-        rel_row = (sample_df[taxa_cols].iloc[0] / max(sample_df['read_count'].iloc[0], 1)).sort_values(ascending=False)
-        top = rel_row.head(15)
-        plt.figure()
-        top[::-1].plot(kind='barh')
-        plt.xlabel("Relative abundance (approx)")
-        plt.title(f"{unit} - centroid taxa (top 15)")
-        plt.tight_layout()
-        plt.savefig(os.path.join(plots_dir, f"{unit}_valencia_taxa_top15.png"), dpi=180)
-        plt.close()
+# -----------------------------
+# Generate SVG similarity plots
+# -----------------------------
+def svg_barplot(sample_id: str, title: str, values: list, labels: list, out_path: str):
+    w = 900
+    h = 360
+    pad_l = 90
+    pad_r = 20
+    pad_t = 40
+    pad_b = 40
+    inner_w = w - pad_l - pad_r
+    inner_h = h - pad_t - pad_b
 
-        sim = sample_df[sim_cols].iloc[0].sort_values(ascending=False)
-        plt.figure()
-        sim.plot(kind='bar')
-        plt.ylabel("Similarity score")
-        plt.title(f"{unit} - VALENCIA similarity")
-        plt.xticks(rotation=45, ha='right')
-        plt.tight_layout()
-        plt.savefig(os.path.join(plots_dir, f"{unit}_valencia_similarity.png"), dpi=180)
-        plt.close()
-    except Exception as e:
-        log(f"[valencia] WARN plot failed for {unit}: {e}")
+    vals = []
+    for v in values:
+        if v is None or (isinstance(v, float) and math.isnan(v)):
+            vals.append(0.0)
+        else:
+            try:
+                vals.append(float(v))
+            except Exception:
+                vals.append(0.0)
 
-    log(f"[valencia] OK unit={unit} input={out_input} assignments={out_assign}")
-PY
+    max_v = max(vals) if vals else 1.0
+    max_v = max(max_v, 1e-9)
+
+    n = len(vals)
+    if n == 0:
+        return
+
+    bar_gap = 6
+    bar_w = max(2, int((inner_w - (n-1)*bar_gap) / n))
+
+    esc = lambda s: (s or "").replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace('"',"&quot;")
+    parts = []
+    parts.append(f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}">')
+    parts.append(f'<rect x="0" y="0" width="{w}" height="{h}" fill="white"/>')
+    parts.append(f'<text x="{pad_l}" y="24" font-family="Arial" font-size="16" fill="black">{esc(title)}</text>')
+    parts.append(f'<line x1="{pad_l}" y1="{pad_t+inner_h}" x2="{pad_l+inner_w}" y2="{pad_t+inner_h}" stroke="black" stroke-width="1"/>')
+
+    x = pad_l
+    for i, (lab, v) in enumerate(zip(labels, vals)):
+        bh = int((v / max_v) * inner_h)
+        y = pad_t + inner_h - bh
+        parts.append(f'<rect x="{x}" y="{y}" width="{bar_w}" height="{bh}" fill="#444"/>')
+        lx = x + bar_w/2
+        parts.append(f'<text x="{lx}" y="{pad_t+inner_h+14}" font-family="Arial" font-size="10" fill="black" text-anchor="middle">{esc(lab)}</text>')
+        x += bar_w + bar_gap
+
+    parts.append(f'<text x="{pad_l}" y="{pad_t+inner_h+28}" font-family="Arial" font-size="10" fill="black">0</text>')
+    parts.append(f'<text x="{pad_l}" y="{pad_t+10}" font-family="Arial" font-size="10" fill="black">{max_v:.3f}</text>')
+    parts.append('</svg>')
+
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(parts))
+
+for r in out_rows:
+    sid = r.get("sampleID", "")
+    sims = [r.get(f"{cst}_sim") for cst in CSTs]
+    title = f"VALENCIA similarities for {sid} (subCST={r.get('subCST','')}, CST={r.get('CST','')})"
+    out_path = os.path.join(plots_dir, f"{sid}_valencia_similarity.svg")
+    svg_barplot(sid, title, sims, CSTs, out_path)
+
+print(f"OK: VALENCIA plots -> {plots_dir}")
+print("VALENCIA classification complete")
+VALENCIA_PY
 
   ec=$?
   set -e
   ended="$(iso_now)"
 
   if [[ $ec -ne 0 ]]; then
-    steps_append "${STEPS_JSON}" "valencia" "failed" "VALENCIA failed (kraken-report driven). See logs/valencia.log" "python3" "python3 valencia_from_kraken" "${ec}" "${started}" "${ended}"
-    exit 3
+    steps_append "${STEPS_JSON}" "valencia" "failed" "VALENCIA classification failed (see logs/valencia.log)" "python3" "VALENCIA inline" "${ec}" "${started}" "${ended}"
+    log_warn "VALENCIA failed. See: ${VALENCIA_LOG}"
   else
-    steps_append "${STEPS_JSON}" "valencia" "succeeded" "VALENCIA completed (kraken-report driven) + plots" "python3" "python3 valencia_from_kraken" "0" "${started}" "${ended}"
+    steps_append "${STEPS_JSON}" "valencia" "succeeded" "VALENCIA produced output.csv and plots" "python3" "VALENCIA inline" "0" "${started}" "${ended}"
+    log_info "VALENCIA completed successfully"
 
     tmp="${OUTPUTS_JSON}.tmp"
     jq --arg valencia_dir "${VALENCIA_DIR}" \
        --arg valencia_log "${VALENCIA_LOG}" \
        --arg valencia_centroids_csv "${STAGED_VALENCIA_CENTROIDS}" \
-       --arg valencia_plots_dir "${VALENCIA_DIR}/plots" \
-       '. + {valencia:{dir:$valencia_dir, log:$valencia_log, centroids_csv:($valencia_centroids_csv|select(length>0)//null), plots_dir:($valencia_plots_dir|select(length>0)//null)}}' "${OUTPUTS_JSON}" > "${tmp}"
+       --arg valencia_input_csv "${VALENCIA_INPUT_CSV}" \
+       --arg valencia_output_csv "${VALENCIA_OUTPUT_CSV}" \
+       --arg valencia_assignments_csv "${VALENCIA_ASSIGNMENTS_CSV}" \
+       --arg valencia_plots_dir "${VALENCIA_PLOTS_DIR}" \
+       '. + {
+          valencia: {
+            dir: $valencia_dir,
+            log: $valencia_log,
+            centroids_csv: ($valencia_centroids_csv | select(length>0) // null),
+            input_csv: ($valencia_input_csv | select(length>0) // null),
+            output_csv: ($valencia_output_csv | select(length>0) // null),
+            assignments_csv: ($valencia_assignments_csv | select(length>0) // null),
+            plots_dir: ($valencia_plots_dir | select(length>0) // null)
+          }
+        }' "${OUTPUTS_JSON}" > "${tmp}"
     mv "${tmp}" "${OUTPUTS_JSON}"
   fi
-  fi  # end pandas check
 fi
 
 # -----------------------------
