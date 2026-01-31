@@ -1390,15 +1390,19 @@ def build_config(config: RunConfig, repo_root: Optional[Path] = None) -> Dict[st
 
         # Valencia paths - auto-detect centroids file from multiple locations
         # Check multiple locations for VALENCIA centroids:
-        # 1. tools/VALENCIA/ (installed by setup in bundle)
+        # 1. tools/VALENCIA/ (installed by setup in bundle - PyInstaller)
         # 2. main/tools/VALENCIA/ (legacy/development location)
+        # 3. Parent directory (edge case for bundle structure)
         valencia_centroids_candidates = [
             repo_root / "tools" / "VALENCIA" / "CST_centroids_012920.csv",
             repo_root / "main" / "tools" / "VALENCIA" / "CST_centroids_012920.csv",
+            repo_root.parent / "tools" / "VALENCIA" / "CST_centroids_012920.csv",
         ]
-        # Also check parent of repo_root for bundle case
-        if (repo_root.parent / "tools" / "VALENCIA" / "CST_centroids_012920.csv").exists():
-            valencia_centroids_candidates.insert(0, repo_root.parent / "tools" / "VALENCIA" / "CST_centroids_012920.csv")
+        # For PyInstaller bundle, also check executable's sibling _internal/tools
+        if getattr(sys, 'frozen', False):
+            bundle_base = Path(sys.executable).parent
+            valencia_centroids_candidates.insert(0, bundle_base / "_internal" / "tools" / "VALENCIA" / "CST_centroids_012920.csv")
+            valencia_centroids_candidates.insert(0, bundle_base / "tools" / "VALENCIA" / "CST_centroids_012920.csv")
 
         valencia_centroids_host_resolved = None
         for candidate in valencia_centroids_candidates:
@@ -1408,6 +1412,12 @@ def build_config(config: RunConfig, repo_root: Optional[Path] = None) -> Dict[st
 
         # Store the host path for mounting later (needed if outside main/)
         config._valencia_centroids_host = valencia_centroids_host_resolved
+
+        if config.verbose:
+            if valencia_centroids_host_resolved:
+                print(f"[stabiom] Found VALENCIA centroids: {valencia_centroids_host_resolved}")
+            elif config.valencia or config.sample_type == "vaginal":
+                print(f"[stabiom] Warning: VALENCIA centroids not found. Run 'stabiom setup' to download.")
 
         if config.use_container:
             valencia_root = "/work/tools/VALENCIA"

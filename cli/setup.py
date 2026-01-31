@@ -618,6 +618,17 @@ def run_setup(interactive: bool = True, install_docker: bool = False,
                         if extract_zip(archive_path, tool_dest, strip_top_dir=True):
                             archive_path.unlink()  # Remove archive after extraction
                             print(f"   {Colors.green_bold('OK')} {tool_info['name']} installed!" if is_tty() else f"   [OK] Installed!")
+
+                            # Print centroids path for VALENCIA
+                            if tool_id == "valencia":
+                                centroids_file = tool_dest / "CST_centroids_012920.csv"
+                                if centroids_file.exists():
+                                    print()
+                                    print(f"   {Colors.cyan_bold('VALENCIA centroids path:')} " if is_tty() else "   VALENCIA centroids path:")
+                                    print(f"   {centroids_file}")
+                                    print()
+                                    print("   Use with: --valencia-centroids " + str(centroids_file))
+                                    print()
                         else:
                             print(f"   Failed to extract tool")
                     else:
