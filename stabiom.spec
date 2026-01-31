@@ -27,6 +27,16 @@ def collect_data_files():
     """Collect all data files to bundle with the executable."""
     datas = []
 
+    # Include certifi CA bundle for SSL certificate verification
+    try:
+        import certifi
+        certifi_path = Path(certifi.where())
+        if certifi_path.exists():
+            # Add the cacert.pem file to certifi package location
+            datas.append((str(certifi_path), "certifi"))
+    except ImportError:
+        pass
+
     # Pipeline shell scripts
     pipelines_dir = MAIN_DIR / "pipelines"
     if pipelines_dir.exists():
@@ -111,6 +121,7 @@ hiddenimports = [
     "main.compare.src.visualize",
     "main.compare.src.report",
     "main.compare.src.run_parser",
+    "certifi",  # SSL certificates for HTTPS downloads
 ]
 
 # Analysis
