@@ -1,0 +1,788 @@
+#!/usr/bin/env python3
+"""STaBioM CLI entry point."""
+
+import argparse
+import glob
+import os
+import sys
+import textwrap
+from pathlib import Path
+
+from stabiom_cli.discovery import (
+    find_repo_root,
+    get_pipeline_info,
+    list_pipeline_ids,
+)
+from stabiom_cli.runner import RunConfig, RunnerError, run_pipeline
+from stabiom_cli.progress import Colors, is_tty, print_banner
+
+
+class StabiomHelpFormatter(argparse.RawDescriptionHelpFormatter):
+    """Custom help formatter with colored headers and better styling."""
+
+    def __init__(self, prog, indent_increment=2, max_help_position=40, width=100):
+        super().__init__(prog, indent_increment, max_help_position, width)
+
+    def start_section(self, heading):
+        """Override to add colors to section headers."""
+        if heading:
+            # Check for specific headers that need special coloring
+            if "REQUIRED" in heading.upper():
+                heading = Colors.red_bold(heading) if is_tty() else f"*** {heading} ***"
+            elif any(x in heading.upper() for x in ["OUTPUT", "SAMPLE", "PRIMER", "DATABASE", "DEMUX", "EXECUTION"]):
+                heading = Colors.cyan_bold(heading) if is_tty() else heading
+        super().start_section(heading)
+
+
+def build_run_epilog():
+    """Build the detailed epilog for the run command with examples."""
+    if is_tty():
+        examples_header = Colors.green_bold("EXAMPLES:")
+        pipelines_header = Colors.cyan_bold("PIPELINES:")
+        sample_types_header = Colors.cyan_bold("SAMPLE TYPES:")
+    else:
+        examples_header = "EXAMPLES:"
+        pipelines_header = "PIPELINES:"
+        sample_types_header = "SAMPLE TYPES:"
+
+    return f"""
+{examples_header}
+  # Basic run with required parameters only
+  stabiom run -p sr_amp -i reads/*.fastq.gz
+
+  # Short-read metagenomics with Kraken2 database
+  stabiom run -p sr_meta -i reads/ --db /path/to/kraken2/db -o ./results
+
+  # Long-read amplicon with vaginal sample (enables Valencia)
+  stabiom run -p lr_amp -i pod5_pass/ --sample-type vaginal -o ./results
+
+  # Multiplexed samples with barcode kit
+  stabiom run -p lr_amp -i data/ --barcode-kit SQK-NBD114-24 -t 8
+
+  # Dry-run to preview configuration
+  stabiom run -p sr_meta -i reads/ --sample-type vaginal --dry-run
+
+  # With primer sequences for cutadapt
+  stabiom run -p sr_amp -i reads/ --primer-f CCTACGGGNGGCWGCAG --primer-r GACTACHVGGGTATCTAATCC
+
+{pipelines_header}
+  lr_amp   Long-read 16S amplicon (ONT, full-length 16S)
+  lr_meta  Long-read shotgun metagenomics (ONT)
+  sr_amp   Short-read 16S amplicon (Illumina)
+  sr_meta  Short-read shotgun metagenomics (Illumina)
+
+{sample_types_header}
+  vaginal  Enables Valencia CST analysis automatically
+  gut      Gut microbiome samples
+  oral     Oral microbiome samples
+  skin     Skin microbiome samples
+  other    Generic sample type (default)
+"""
+
+
+def print_run_help_header():
+    """Print custom header before help text."""
+    print_banner()
+
+
+class CustomArgumentParser(argparse.ArgumentParser):
+    """ArgumentParser that prints banner before help for 'run' command."""
+
+    def __init__(self, *args, show_banner=False, **kwargs):
+        self.show_banner = show_banner
+        super().__init__(*args, **kwargs)
+
+    def format_help(self):
+        """Format help with optional banner."""
+        help_text = super().format_help()
+        if self.show_banner:
+            # Prepend newline for spacing
+            return "\n" + help_text
+        return help_text
+
+
+def main():
+    # Print banner if --help is in argv for run command
+    show_run_help = len(sys.argv) >= 2 and sys.argv[1] == "run" and ("--help" in sys.argv or "-h" in sys.argv)
+
+    if show_run_help:
+        print_banner()
+
+    # Top-level parser
+    parser = argparse.ArgumentParser(
+        prog="stabiom",
+        formatter_class=StabiomHelpFormatter,
+        description=textwrap.dedent("""
+        STaBioM - Standardised Bioinformatics for Microbial samples
+
+        A unified CLI for running microbiome analysis pipelines on long-read
+        and short-read sequencing data (16S amplicon and shotgun metagenomics).
+        """),
+        epilog=textwrap.dedent(f"""
+{Colors.cyan_bold("COMMANDS:") if is_tty() else "COMMANDS:"}
+  run      Run a microbiome analysis pipeline
+  compare  Compare results from multiple pipeline runs
+  list     List available pipelines
+  info     Show detailed pipeline information
+
+Use 'stabiom <command> --help' for more information on a specific command.
+        """),
+    )
+    subparsers = parser.add_subparsers(dest="command", metavar="command")
+
+    # =========================================================================
+    # RUN COMMAND - with argument groups for clarity
+    # =========================================================================
+    run_parser = subparsers.add_parser(
+        "run",
+        help="Run a pipeline",
+        formatter_class=StabiomHelpFormatter,
+        description=textwrap.dedent("""
+        Run a microbiome analysis pipeline on your sequencing data.
+
+        This command executes the full pipeline including quality control,
+        taxonomic classification (Kraken2/Bracken, QIIME2/DADA2, or Emu),
+        and optional Valencia CST analysis for vaginal samples.
+
+        Supports files, directories, and glob patterns as input.
+        Automatically detects paired-end vs single-end reads.
+        """),
+        epilog=build_run_epilog(),
+    )
+
+    # --- REQUIRED arguments ---
+    required_group = run_parser.add_argument_group(
+        'REQUIRED arguments',
+        'These parameters must be specified for every run'
+    )
+    required_group.add_argument(
+        "--pipeline", "-p",
+        required=True,
+        choices=list_pipeline_ids(),
+        metavar="PIPELINE",
+        help="Pipeline to run: lr_amp | lr_meta | sr_amp | sr_meta",
+    )
+    required_group.add_argument(
+        "--input", "-i",
+        required=True,
+        nargs="+",
+        metavar="PATH",
+        help="Input file(s), directory, or glob pattern (e.g., 'reads/', '*.fastq.gz')",
+    )
+
+    # --- OUTPUT options ---
+    output_group = run_parser.add_argument_group(
+        'OUTPUT options',
+        'Control where and how results are saved'
+    )
+    output_group.add_argument(
+        "--outdir", "-o",
+        default="./outputs",
+        metavar="DIR",
+        help="Output directory (default: ./outputs)",
+    )
+    output_group.add_argument(
+        "--run-id",
+        default="",
+        metavar="ID",
+        help="Custom run ID. If empty, auto-generates YYYYMMDD_HHMMSS timestamp",
+    )
+    output_group.add_argument(
+        "--force",
+        action="store_true",
+        help="Force overwrite if output directory already exists",
+    )
+
+    # --- SAMPLE options ---
+    sample_group = run_parser.add_argument_group(
+        'SAMPLE options',
+        'Describe your samples for appropriate analysis'
+    )
+    sample_group.add_argument(
+        "--sample-type",
+        default="other",
+        metavar="TYPE",
+        help="Sample type: vaginal | gut | oral | skin | other (default: other). "
+             "'vaginal' auto-enables Valencia CST analysis",
+    )
+    sample_group.add_argument(
+        "--sample-id",
+        default="sample",
+        metavar="ID",
+        help="Sample identifier for single-sample runs (default: sample)",
+    )
+    sample_group.add_argument(
+        "--valencia",
+        action="store_true",
+        help="Force enable Valencia CST analysis (auto-enabled for --sample-type vaginal)",
+    )
+    sample_group.add_argument(
+        "--no-valencia",
+        action="store_true",
+        help="Disable Valencia CST analysis even for vaginal samples",
+    )
+    sample_group.add_argument(
+        "--valencia-centroids",
+        metavar="PATH",
+        help="Path to Valencia CST centroids CSV file (default: auto-detect)",
+    )
+
+    # --- PRIMER options (sr_amp only) ---
+    primer_group = run_parser.add_argument_group(
+        'PRIMER options (sr_amp only)',
+        'Primer sequences for cutadapt trimming in QIIME2'
+    )
+    primer_group.add_argument(
+        "--primer-f",
+        default="",
+        metavar="SEQ",
+        help="Forward primer sequence (e.g., CCTACGGGNGGCWGCAG for V3-V4)",
+    )
+    primer_group.add_argument(
+        "--primer-r",
+        default="",
+        metavar="SEQ",
+        help="Reverse primer sequence (e.g., GACTACHVGGGTATCTAATCC for V3-V4)",
+    )
+
+    # --- AMPLICON options (lr_amp only) ---
+    amplicon_group = run_parser.add_argument_group(
+        'AMPLICON options (lr_amp only)',
+        'Configure amplicon type for long-read 16S classification'
+    )
+    amplicon_group.add_argument(
+        "--amplicon-type",
+        choices=["full-length", "partial"],
+        default="full-length",
+        metavar="TYPE",
+        help="16S amplicon type: 'full-length' uses Emu classifier (default), "
+             "'partial' uses Kraken2 classifier. Full-length is recommended for "
+             "ONT long-read 16S data targeting the complete 16S gene (~1500bp).",
+    )
+    amplicon_group.add_argument(
+        "--type",
+        dest="seq_type",
+        choices=["map-ont", "map-pb", "map-hifi", "lr:hq"],
+        default="map-ont",
+        metavar="PRESET",
+        help="Sequencing technology preset for Emu/minimap2 alignment: "
+             "map-ont = ONT standard Nanopore reads (default); "
+             "map-pb = PacBio CLR (general PacBio mapping preset); "
+             "map-hifi = PacBio HiFi high-accuracy CCS reads; "
+             "lr:hq = Nanopore Q20+ high-quality long reads.",
+    )
+
+    # --- DATABASE options ---
+    db_group = run_parser.add_argument_group(
+        'DATABASE options',
+        'Paths to reference databases for taxonomic classification'
+    )
+    db_group.add_argument(
+        "--db",
+        default="",
+        metavar="PATH",
+        help="Kraken2 database path (required for sr_meta, lr_meta; also used by lr_amp with --amplicon-type partial). "
+             "Download from: https://benlangmead.github.io/aws-indexes/k2",
+    )
+    db_group.add_argument(
+        "--emu-db",
+        default="",
+        metavar="PATH",
+        help="Emu database path (optional for lr_amp, overrides default)",
+    )
+
+    # --- PREPROCESSING options ---
+    preproc_group = run_parser.add_argument_group(
+        'PREPROCESSING options',
+        'Control read preprocessing before classification'
+    )
+    preproc_group.add_argument(
+        "--host-depletion",
+        action="store_true",
+        help="Enable host read removal (human genome depletion) before classification. "
+             "Useful for sr_meta/lr_meta when samples may contain human contamination.",
+    )
+    preproc_group.add_argument(
+        "--human-index",
+        default="",
+        metavar="PATH",
+        help="Path to human genome minimap2 index (.mmi file) for host depletion. "
+             "Required when --host-depletion is enabled. "
+             "Example: shiny-ui/data/reference/human/grch38.mmi",
+    )
+    preproc_group.add_argument(
+        "--minimap2-split",
+        action="store_true",
+        help="Enable minimap2 split-prefix mode for low-RAM machines. "
+             "Processes the index in chunks to reduce memory usage.",
+    )
+    preproc_group.add_argument(
+        "--min-qscore",
+        type=int,
+        default=10,
+        metavar="N",
+        help="Minimum quality score for read filtering (default: 10). "
+             "Uses NanoFilt for long-read, fastp for short-read pipelines.",
+    )
+    preproc_group.add_argument(
+        "--no-qfilter",
+        action="store_true",
+        help="Disable quality score filtering entirely.",
+    )
+
+    # --- DEMULTIPLEXING options (ONT long-read) ---
+    demux_group = run_parser.add_argument_group(
+        'DEMULTIPLEXING options (long-read only)',
+        'For multiplexed ONT runs with barcoded samples'
+    )
+    demux_group.add_argument(
+        "--barcode-kit",
+        default="",
+        metavar="KIT",
+        help="Barcode kit (e.g., SQK-NBD114-24, EXP-PBC001). "
+             "Empty = single sample, no demultiplexing",
+    )
+    demux_group.add_argument(
+        "--ligation-kit",
+        default="SQK-LSK114",
+        metavar="KIT",
+        help="Ligation kit used for library prep (default: SQK-LSK114)",
+    )
+    demux_group.add_argument(
+        "--dorado-model",
+        default="",
+        metavar="MODEL",
+        help="Dorado basecalling model for FAST5/POD5 input (e.g., 'dna_r10.4.1_e8.2_400bps_hac@v4.1.0'). "
+             "Required when input is FAST5/POD5 raw signal data.",
+    )
+
+    # --- EXECUTION options ---
+    exec_group = run_parser.add_argument_group(
+        'EXECUTION options',
+        'Control how the pipeline runs'
+    )
+    exec_group.add_argument(
+        "--threads", "-t",
+        type=int,
+        default=4,
+        metavar="N",
+        help="Number of CPU threads to use (default: 4)",
+    )
+    exec_group.add_argument(
+        "--no-container",
+        action="store_true",
+        help="Run without Docker container (use locally installed tools)",
+    )
+    exec_group.add_argument(
+        "--image",
+        default="",
+        metavar="TAG",
+        help="Override Docker image (e.g., 'stabiom-tools-sr:dev'). "
+             "Useful for dev/testing with custom images.",
+    )
+    exec_group.add_argument(
+        "--no-postprocess",
+        action="store_true",
+        help="Skip postprocessing (plots, summaries, Valencia)",
+    )
+    exec_group.add_argument(
+        "--no-finalize",
+        action="store_true",
+        help="Skip finalization steps (report generation)",
+    )
+    exec_group.add_argument(
+        "--no-qc-in-final",
+        action="store_true",
+        help="Don't copy FastQC/MultiQC reports to final/qc/ directory",
+    )
+    exec_group.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would run without executing anything",
+    )
+    exec_group.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Enable verbose output with detailed progress",
+    )
+    exec_group.add_argument(
+        "--debug-config",
+        action="store_true",
+        help="Print full config JSON (for debugging only)",
+    )
+
+    # =========================================================================
+    # LIST COMMAND
+    # =========================================================================
+    list_parser = subparsers.add_parser(
+        "list",
+        help="List available pipelines",
+        formatter_class=StabiomHelpFormatter,
+        description="Display all available STaBioM pipelines with brief descriptions.",
+    )
+
+    # =========================================================================
+    # INFO COMMAND
+    # =========================================================================
+    info_parser = subparsers.add_parser(
+        "info",
+        help="Show pipeline information",
+        formatter_class=StabiomHelpFormatter,
+        description="Show detailed information about one or all pipelines.",
+    )
+    info_parser.add_argument(
+        "pipeline",
+        nargs="?",
+        metavar="PIPELINE",
+        help="Pipeline ID to show info for (omit to show all pipelines)",
+    )
+
+    # =========================================================================
+    # COMPARE COMMAND
+    # =========================================================================
+    compare_parser = subparsers.add_parser(
+        "compare",
+        help="Compare pipeline run outputs",
+        formatter_class=StabiomHelpFormatter,
+        description=textwrap.dedent("""
+        Compare taxonomic profiles from multiple pipeline runs.
+
+        This command harmonises abundance data across runs, computes similarity
+        metrics, diversity analyses, and generates visualizations and reports.
+
+        Supports two input modes:
+        1. Run directories (preferred): Automatically parses outputs.json
+        2. Manual tables: Provide TSV abundance tables directly
+        """),
+        epilog=textwrap.dedent(f"""
+{Colors.green_bold("EXAMPLES:") if is_tty() else "EXAMPLES:"}
+  # Compare two pipeline runs
+  stabiom compare --run outputs/run1 --run outputs/run2
+
+  # Compare runs with custom settings
+  stabiom compare --run run1 --run run2 --rank species --norm clr --top-n 30
+
+  # Compare manual abundance tables
+  stabiom compare --table table1.tsv --table table2.tsv --taxonomy tax.tsv
+
+  # With metadata for PERMANOVA
+  stabiom compare --run run1 --run run2 --metadata meta.tsv --group-col treatment
+
+  # Enable differential abundance analysis
+  stabiom compare --run run1 --run run2 --diff -v
+        """),
+    )
+
+    # --- INPUT options ---
+    compare_input_group = compare_parser.add_argument_group(
+        'INPUT options',
+        'Specify runs or tables to compare (use --run OR --table, not both)'
+    )
+    compare_input_group.add_argument(
+        "--run",
+        action="append",
+        dest="runs",
+        metavar="PATH",
+        help="Path to pipeline run directory (can specify multiple times)",
+    )
+    compare_input_group.add_argument(
+        "--table",
+        action="append",
+        dest="tables",
+        metavar="PATH",
+        help="Path to TSV abundance table (can specify multiple times)",
+    )
+    compare_input_group.add_argument(
+        "--taxonomy",
+        default="",
+        metavar="PATH",
+        help="Taxonomy file for manual tables (TSV with Feature ID, Taxon columns)",
+    )
+    compare_input_group.add_argument(
+        "--metadata",
+        default="",
+        metavar="PATH",
+        help="Sample metadata file (TSV, index = sample ID)",
+    )
+
+    # --- HARMONISATION options ---
+    compare_harm_group = compare_parser.add_argument_group(
+        'HARMONISATION options',
+        'Control how data is processed before comparison'
+    )
+    compare_harm_group.add_argument(
+        "--rank",
+        default="genus",
+        choices=["species", "genus", "family", "order", "class", "phylum"],
+        metavar="RANK",
+        help="Taxonomic rank for aggregation (default: genus)",
+    )
+    compare_harm_group.add_argument(
+        "--norm",
+        default="relative",
+        choices=["relative", "clr"],
+        metavar="METHOD",
+        help="Normalisation method: relative | clr (default: relative)",
+    )
+    compare_harm_group.add_argument(
+        "--sample-align",
+        default="intersection",
+        choices=["intersection", "union"],
+        metavar="MODE",
+        help="Sample alignment: intersection | union (default: intersection)",
+    )
+    compare_harm_group.add_argument(
+        "--min-prevalence",
+        type=float,
+        default=0.1,
+        metavar="FRAC",
+        help="Minimum prevalence filter (0-1, default: 0.1)",
+    )
+    compare_harm_group.add_argument(
+        "--min-abundance",
+        type=float,
+        default=0.0,
+        metavar="FRAC",
+        help="Minimum mean abundance filter (default: 0.0)",
+    )
+
+    # --- ANALYSIS options ---
+    compare_analysis_group = compare_parser.add_argument_group(
+        'ANALYSIS options',
+        'Control comparison analyses'
+    )
+    compare_analysis_group.add_argument(
+        "--top-n",
+        type=int,
+        default=20,
+        metavar="N",
+        help="Number of top taxa to display in plots (default: 20)",
+    )
+    compare_analysis_group.add_argument(
+        "--group-col",
+        default="",
+        metavar="COL",
+        help="Metadata column for PERMANOVA grouping",
+    )
+    compare_analysis_group.add_argument(
+        "--diff",
+        action="store_true",
+        help="Enable differential abundance analysis (requires exactly 2 runs)",
+    )
+
+    # --- OUTPUT options ---
+    compare_output_group = compare_parser.add_argument_group(
+        'OUTPUT options',
+        'Control where and how results are saved'
+    )
+    compare_output_group.add_argument(
+        "--outdir", "-o",
+        default="./outputs",
+        metavar="DIR",
+        help="Output directory (default: ./outputs)",
+    )
+    compare_output_group.add_argument(
+        "--name",
+        default="",
+        metavar="NAME",
+        help="Comparison name (default: compare_YYYYMMDD_HHMMSS)",
+    )
+    compare_output_group.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Enable verbose output",
+    )
+
+    args = parser.parse_args()
+
+    if args.command is None:
+        print_banner()
+        parser.print_help()
+        sys.exit(0)
+
+    if args.command == "list":
+        print("\nAvailable pipelines:")
+        for pid in list_pipeline_ids():
+            info = get_pipeline_info(pid)
+            print(f"  {Colors.cyan_bold(pid):20} - {info['label']}")
+        print()
+        sys.exit(0)
+
+    if args.command == "info":
+        if args.pipeline:
+            pipelines = [args.pipeline]
+        else:
+            pipelines = list_pipeline_ids()
+
+        for pid in pipelines:
+            info = get_pipeline_info(pid)
+            if info:
+                print(f"\n{Colors.cyan_bold(pid)}:")
+                print(f"  Label:       {info['label']}")
+                print(f"  Read type:   {info['read_technology']}")
+                print(f"  Approach:    {info['approach']}")
+                print(f"  Description: {info['description']}")
+            else:
+                print(f"\n{Colors.red_bold('Unknown pipeline')}: {pid}")
+        print()
+        sys.exit(0)
+
+    if args.command == "compare":
+        # Import compare module
+        try:
+            from compare.src.compare import CompareConfig, run_compare
+        except ImportError as e:
+            print(f"{Colors.red_bold('ERROR')}: Could not import compare module: {e}", file=sys.stderr)
+            print("Make sure you're running from the STaBioM repository root.", file=sys.stderr)
+            sys.exit(1)
+
+        # Validate inputs
+        runs = args.runs or []
+        tables = args.tables or []
+
+        if runs and tables:
+            print(f"{Colors.red_bold('ERROR')}: Cannot use both --run and --table. Choose one input mode.", file=sys.stderr)
+            sys.exit(1)
+
+        if not runs and not tables:
+            print(f"{Colors.red_bold('ERROR')}: Must specify at least 2 runs (--run) or 2 tables (--table).", file=sys.stderr)
+            sys.exit(1)
+
+        if runs and len(runs) < 2:
+            print(f"{Colors.red_bold('ERROR')}: Need at least 2 runs to compare, got {len(runs)}.", file=sys.stderr)
+            sys.exit(1)
+
+        if tables and len(tables) < 2:
+            print(f"{Colors.red_bold('ERROR')}: Need at least 2 tables to compare, got {len(tables)}.", file=sys.stderr)
+            sys.exit(1)
+
+        # Build config
+        config = CompareConfig(
+            run_paths=runs,
+            table_paths=tables,
+            taxonomy_path=args.taxonomy,
+            metadata_path=args.metadata,
+            rank=args.rank,
+            norm=args.norm,
+            sample_align=args.sample_align,
+            min_prevalence=args.min_prevalence,
+            min_mean_abundance=args.min_abundance,
+            top_n=args.top_n,
+            group_col=args.group_col,
+            enable_diff=args.diff,
+            outdir=args.outdir,
+            name=args.name,
+            verbose=args.verbose,
+        )
+
+        if args.verbose:
+            print(f"\n{Colors.cyan_bold('STaBioM Compare')}")
+            print(f"  Runs: {len(runs)}" if runs else f"  Tables: {len(tables)}")
+            print(f"  Rank: {args.rank}")
+            print(f"  Normalisation: {args.norm}")
+            print()
+
+        try:
+            exit_code = run_compare(config)
+            sys.exit(exit_code)
+        except KeyboardInterrupt:
+            print(f"\n{Colors.yellow_bold('Interrupted by user')}", file=sys.stderr)
+            sys.exit(130)
+        except Exception as e:
+            print(f"{Colors.red_bold('ERROR')}: {e}", file=sys.stderr)
+            if args.verbose:
+                import traceback
+                traceback.print_exc()
+            sys.exit(1)
+
+    if args.command == "run":
+        # Expand glob patterns and directories in input paths
+        input_paths = []
+        for pattern in args.input:
+            path = Path(pattern)
+
+            # If it's a directory, find all relevant files
+            if path.is_dir():
+                # Find FASTQ files
+                fastq_files = list(path.glob("*.fastq.gz")) + list(path.glob("*.fastq")) + \
+                              list(path.glob("*.fq.gz")) + list(path.glob("*.fq"))
+                # Find FAST5 files
+                fast5_files = list(path.glob("*.fast5"))
+
+                if fastq_files:
+                    input_paths.extend([str(f) for f in sorted(fastq_files)])
+                elif fast5_files:
+                    input_paths.extend([str(f) for f in sorted(fast5_files)])
+                else:
+                    # Treat as directory input (for pipelines that expect directories)
+                    input_paths.append(str(path))
+            else:
+                # Expand glob patterns
+                expanded = glob.glob(pattern)
+                if expanded:
+                    input_paths.extend(sorted(expanded))
+                else:
+                    # If no glob match, use the pattern as-is (will error later if not found)
+                    input_paths.append(pattern)
+
+        if not input_paths:
+            print(f"{Colors.red_bold('ERROR')}: No input files found matching: {args.input}", file=sys.stderr)
+            sys.exit(1)
+
+        # Print input summary
+        if args.verbose:
+            print(f"\nInput ({len(input_paths)} file{'s' if len(input_paths) != 1 else ''}):")
+            for p in input_paths[:10]:
+                print(f"  - {p}")
+            if len(input_paths) > 10:
+                print(f"  ... and {len(input_paths) - 10} more")
+
+        config = RunConfig(
+            pipeline=args.pipeline,
+            input_paths=input_paths,
+            outdir=args.outdir,
+            run_id=args.run_id,
+            threads=args.threads,
+            sample_type=args.sample_type,
+            sample_id=args.sample_id,
+            valencia=args.valencia,
+            no_valencia=args.no_valencia,
+            valencia_centroids=args.valencia_centroids or "",
+            barcode_kit=args.barcode_kit,
+            ligation_kit=args.ligation_kit,
+            primer_f=args.primer_f,
+            primer_r=args.primer_r,
+            amplicon_type=args.amplicon_type,
+            seq_type=args.seq_type,
+            kraken2_db=args.db,
+            emu_db=args.emu_db,
+            host_depletion=args.host_depletion,
+            human_index=args.human_index,
+            minimap2_split_index=args.minimap2_split,
+            min_qscore=args.min_qscore,
+            no_qfilter=args.no_qfilter,
+            dorado_model=args.dorado_model,
+            postprocess=not args.no_postprocess,
+            finalize=not args.no_finalize,
+            qc_in_final=not args.no_qc_in_final,
+            use_container=not args.no_container,
+            docker_image=args.image,
+            verbose=args.verbose,
+            force_overwrite=args.force,
+            debug_config=args.debug_config,
+        )
+
+        try:
+            repo_root = find_repo_root()
+            exit_code = run_pipeline(config, dry_run=args.dry_run, repo_root=repo_root)
+            sys.exit(exit_code)
+        except RunnerError as e:
+            print(f"{Colors.red_bold('ERROR')}: {e}", file=sys.stderr)
+            sys.exit(1)
+        except KeyboardInterrupt:
+            print(f"\n{Colors.yellow_bold('Interrupted by user')}", file=sys.stderr)
+            sys.exit(130)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,7 +1,8 @@
 #!/usr/bin/env Rscript
 
 # =============================================================================
-# STaBioM R Postprocess: Heatmap
+# STaBioM R Postprocess: Heatmap (Genus & Species)
+# Generates both genus-level and species-level heatmaps
 # Works with both sr_amp (QIIME2) and sr_meta/lr_meta (Kraken2) outputs
 # =============================================================================
 
@@ -48,41 +49,160 @@ cat("[heatmap] Output dir:", out_dir, "\n")
 
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
-# Load data (same logic as relative_abundance.R)
-data <- NULL
-taxon_col <- NULL
-abundance_col <- NULL
+# ----------------------------
+# Legend sizing controls
+# ----------------------------
+legend_axis_cex <- 0.5
+legend_title_cex <- 0.5
+legend_title_line <- 1
+# ----------------------------
 
+# Helper function to generate heatmap
+generate_heatmap <- function(data, taxon_col, abundance_col, rank_label, top_n, out_dir) {
+  if (is.null(data) || nrow(data) == 0) {
+    cat("[heatmap]", rank_label, ": No data available\n")
+    return(FALSE)
+  }
+
+  # Get top N taxa by total abundance
+  taxon_totals <- aggregate(data[[abundance_col]], by = list(taxon = data[[taxon_col]]), FUN = sum)
+  colnames(taxon_totals) <- c("taxon", "total")
+  taxon_totals <- taxon_totals[order(-taxon_totals$total), ]
+  top_taxa <- head(taxon_totals$taxon, top_n)
+
+  # Filter to top taxa only
+  data_top <- data[data[[taxon_col]] %in% top_taxa, ]
+
+  if (nrow(data_top) == 0) {
+    cat("[heatmap]", rank_label, ": No data after filtering\n")
+    return(FALSE)
+  }
+
+  # Create wide matrix for heatmap
+  samples <- unique(data_top$sample_id)
+  taxa <- top_taxa
+
+  n_samples <- length(samples)
+  n_taxa <- length(taxa)
+
+  if (n_samples == 0 || n_taxa == 0) {
+    cat("[heatmap]", rank_label, ": No samples or taxa found\n")
+    return(FALSE)
+  }
+
+  mat <- matrix(0, nrow = n_taxa, ncol = n_samples)
+  rownames(mat) <- taxa
+  colnames(mat) <- samples
+
+  for (r in seq_len(nrow(data_top))) {
+    s <- data_top$sample_id[r]
+    t <- data_top[[taxon_col]][r]
+    if (t %in% taxa && s %in% samples) {
+      mat[t, s] <- data_top[[abundance_col]][r]
+    }
+  }
+
+  # Generate heatmap
+  out_png <- file.path(out_dir, paste0("heatmap_", tolower(rank_label), ".png"))
+
+  plot_width <- max(800, n_samples * 100 + 250)
+  plot_height <- max(800, n_taxa * 30 + 200)
+
+  png(out_png, width = plot_width, height = plot_height, res = 150, bg = "white")
+
+  layout(matrix(c(1, 2), nrow = 1), widths = c(4, 1))
+
+  par(mar = c(8, 12, 3, 1))
+
+  n_colors <- 100
+  colors <- colorRampPalette(c("white", "lightyellow", "orange", "red", "darkred"))(n_colors)
+
+  image(
+    1:n_samples, 1:n_taxa, t(mat),
+    col = colors,
+    xlab = "", ylab = "",
+    axes = FALSE,
+    main = paste(rank_label, "Heatmap (Top", top_n, ")")
+  )
+
+  axis(1, at = 1:n_samples, labels = colnames(mat), las = 2, cex.axis = 0.7)
+  axis(2, at = 1:n_taxa, labels = rownames(mat), las = 1, cex.axis = 0.6)
+
+  abline(h = 0.5:(n_taxa + 0.5), col = "gray90", lwd = 0.5)
+  abline(v = 0.5:(n_samples + 0.5), col = "gray90", lwd = 0.5)
+
+  # Colorbar
+  par(mar = c(8, 1, 3, 3))
+  image(
+    1, seq(0, 1, length.out = n_colors), t(matrix(1:n_colors)),
+    col = colors,
+    xlab = "", ylab = "",
+    axes = FALSE
+  )
+  axis(
+    4,
+    at = c(0, 0.25, 0.5, 0.75, 1),
+    labels = format(c(0, 0.25, 0.5, 0.75, 1), digits = 2),
+    las = 1,
+    cex.axis = legend_axis_cex
+  )
+  mtext("Rel. Abundance", side = 4, line = legend_title_line, cex = legend_title_cex)
+
+  dev.off()
+  cat("[heatmap] Generated:", out_png, "\n")
+
+  # Generate CSV
+  out_csv <- file.path(out_dir, paste0("heatmap_", tolower(rank_label), "_data.csv"))
+  write.csv(as.data.frame(mat), out_csv, row.names = TRUE)
+  cat("[heatmap] Generated:", out_csv, "\n")
+
+  return(TRUE)
+}
+
+# Get top_n parameter
+top_n <- if (!is.null(params$top_n)) params$top_n else 25
+
+# Track what we generated
+generated_any <- FALSE
+
+# Load Kraken2 data (lr_meta, sr_meta)
 if (module_name %in% c("sr_meta", "lr_meta", "lr_amp") || is.null(module_name)) {
   postprocess_dir <- outputs$postprocess$dir
   if (!is.null(postprocess_dir)) {
     species_tidy <- file.path(postprocess_dir, "kraken_species_tidy.csv")
     genus_tidy <- file.path(postprocess_dir, "kraken_genus_tidy.csv")
-    
+
+    # Load genus data
+    if (file.exists(genus_tidy)) {
+      genus_data <- read.csv(genus_tidy, stringsAsFactors = FALSE)
+      cat("[heatmap] Loaded genus data:", nrow(genus_data), "rows,", length(unique(genus_data$genus)), "taxa\n")
+      if (generate_heatmap(genus_data, "genus", "fraction", "Genus", top_n, out_dir)) {
+        generated_any <- TRUE
+      }
+    }
+
+    # Load species data
     if (file.exists(species_tidy)) {
-      data <- read.csv(species_tidy, stringsAsFactors = FALSE)
-      taxon_col <- "species"
-      abundance_col <- "fraction"
-      cat("[heatmap] Using Kraken2 species data\n")
-    } else if (file.exists(genus_tidy)) {
-      data <- read.csv(genus_tidy, stringsAsFactors = FALSE)
-      taxon_col <- "genus"
-      abundance_col <- "fraction"
-      cat("[heatmap] Using Kraken2 genus data\n")
+      species_data <- read.csv(species_tidy, stringsAsFactors = FALSE)
+      cat("[heatmap] Loaded species data:", nrow(species_data), "rows,", length(unique(species_data$species)), "taxa\n")
+      if (generate_heatmap(species_data, "species", "fraction", "Species", top_n, out_dir)) {
+        generated_any <- TRUE
+      }
     }
   }
 }
 
-if (is.null(data) && (module_name == "sr_amp" || is.null(module_name))) {
+# Load QIIME2 data (sr_amp)
+if (!generated_any && (module_name == "sr_amp" || is.null(module_name))) {
   qiime2_exports <- outputs$qiime2_exports
   if (!is.null(qiime2_exports)) {
     table_tsv <- qiime2_exports$table_tsv
     taxonomy_tsv <- qiime2_exports$taxonomy_tsv
-    
+
     if (!is.null(table_tsv) && file.exists(table_tsv) &&
         !is.null(taxonomy_tsv) && file.exists(taxonomy_tsv)) {
       cat("[heatmap] Using QIIME2 exports\n")
-      
+
       lines <- readLines(table_tsv)
       header_idx <- which(grepl("^#OTU ID", lines))[1]
       if (!is.na(header_idx)) {
@@ -93,172 +213,188 @@ if (is.null(data) && (module_name == "sr_amp" || is.null(module_name))) {
           check.names = FALSE
         )
         colnames(table_df)[1] <- "FeatureID"
-        
+
         tax_df <- read.delim(taxonomy_tsv, stringsAsFactors = FALSE, check.names = FALSE)
         colnames(tax_df)[1] <- "FeatureID"
-        
-        parse_taxon <- function(taxon) {
-          if (is.na(taxon) || taxon == "") return("Unassigned")
+
+        # Parse taxonomy
+        parse_taxonomy <- function(taxon) {
+          if (is.na(taxon) || taxon == "") return(list(genus = "Unassigned", species = "Unassigned"))
           parts <- strsplit(taxon, ";")[[1]]
           parts <- trimws(parts)
-          genus <- ""
-          species <- ""
+          genus <- "Unassigned"
+          species <- "Unassigned"
           for (p in parts) {
             if (grepl("^g__", p)) genus <- sub("^g__", "", p)
             if (grepl("^s__", p)) species <- sub("^s__", "", p)
             if (grepl("^D_5__", p)) genus <- sub("^D_5__", "", p)
             if (grepl("^D_6__", p)) species <- sub("^D_6__", "", p)
           }
-          if (genus != "" && species != "") {
-            paste(genus, species)
-          } else if (genus != "") {
-            genus
-          } else {
-            for (p in rev(parts)) {
-              val <- sub("^[a-zA-Z]__", "", p)
-              val <- sub("^D_[0-9]__", "", val)
-              if (val != "" && !grepl("^unclassified", val, ignore.case = TRUE)) return(val)
-            }
-            "Unassigned"
-          }
+          if (genus == "") genus <- "Unassigned"
+          if (species == "" || species == genus) species <- "Unassigned"
+          list(genus = genus, species = species)
         }
-        
-        tax_df$taxon_label <- vapply(tax_df$Taxon, parse_taxon, character(1))
+
+        parsed <- lapply(tax_df$Taxon, parse_taxonomy)
+        tax_df$genus <- vapply(parsed, function(x) x$genus, character(1))
+        tax_df$species <- vapply(parsed, function(x) x$species, character(1))
+
         sample_cols <- setdiff(colnames(table_df), "FeatureID")
-        
-        tidy_rows <- list()
+
+        # Build tidy data
+        genus_rows <- list()
+        species_rows <- list()
         for (r in seq_len(nrow(table_df))) {
           fid <- table_df$FeatureID[r]
-          taxon <- tax_df$taxon_label[match(fid, tax_df$FeatureID)]
-          if (is.na(taxon)) taxon <- "Unassigned"
-          
-          for (s in sample_cols) {
-            count <- suppressWarnings(as.numeric(table_df[r, s]))
+          idx <- match(fid, tax_df$FeatureID)
+          g <- if (!is.na(idx)) tax_df$genus[idx] else "Unassigned"
+          s <- if (!is.na(idx)) tax_df$species[idx] else "Unassigned"
+
+          for (sc in sample_cols) {
+            count <- suppressWarnings(as.numeric(table_df[r, sc]))
             if (!is.na(count) && count > 0) {
-              tidy_rows[[length(tidy_rows) + 1]] <- data.frame(
-                sample_id = s,
-                taxon = taxon,
-                count = count,
-                stringsAsFactors = FALSE
-              )
+              genus_rows[[length(genus_rows) + 1]] <- data.frame(sample_id = sc, genus = g, count = count, stringsAsFactors = FALSE)
+              if (s != "Unassigned") {
+                species_rows[[length(species_rows) + 1]] <- data.frame(sample_id = sc, species = s, count = count, stringsAsFactors = FALSE)
+              }
             }
           }
         }
-        
-        if (length(tidy_rows) > 0) {
-          data <- do.call(rbind, tidy_rows)
-          data <- aggregate(count ~ sample_id + taxon, data = data, FUN = sum)
-          
-          totals <- aggregate(count ~ sample_id, data = data, FUN = sum)
+
+        # Process genus data
+        if (length(genus_rows) > 0) {
+          genus_data <- do.call(rbind, genus_rows)
+          genus_data <- aggregate(count ~ sample_id + genus, data = genus_data, FUN = sum)
+          totals <- aggregate(count ~ sample_id, data = genus_data, FUN = sum)
           colnames(totals)[2] <- "total"
-          data <- merge(data, totals, by = "sample_id")
-          data$fraction <- data$count / data$total
-          
-          taxon_col <- "taxon"
-          abundance_col <- "fraction"
+          genus_data <- merge(genus_data, totals, by = "sample_id")
+          genus_data$fraction <- genus_data$count / genus_data$total
+          if (generate_heatmap(genus_data, "genus", "fraction", "Genus", top_n, out_dir)) {
+            generated_any <- TRUE
+          }
+        }
+
+        # Process species data
+        if (length(species_rows) > 0) {
+          species_data <- do.call(rbind, species_rows)
+          species_data <- aggregate(count ~ sample_id + species, data = species_data, FUN = sum)
+          totals <- aggregate(count ~ sample_id, data = species_data, FUN = sum)
+          colnames(totals)[2] <- "total"
+          species_data <- merge(species_data, totals, by = "sample_id")
+          species_data$fraction <- species_data$count / species_data$total
+          if (generate_heatmap(species_data, "species", "fraction", "Species", top_n, out_dir)) {
+            generated_any <- TRUE
+          }
         }
       }
     }
   }
 }
 
-if (is.null(data) || nrow(data) == 0) {
-  cat("[heatmap] No suitable data found for plotting\n")
-  quit(save = "no", status = 0)
-}
+# Load Emu data (lr_amp) - if no Kraken data available
+if (!generated_any && module_name == "lr_amp") {
+  # Helper function to translate container paths to host paths
+  translate_path <- function(path) {
+    if (is.null(path) || path == "") return(NULL)
+    if (grepl("^/work/", path)) {
+      module_dir <- dirname(outputs_json)
+      parts <- strsplit(path, "/")[[1]]
+      results_idx <- which(parts == "results")
+      if (length(results_idx) > 0) {
+        rel_path <- paste(parts[results_idx[1]:length(parts)], collapse = "/")
+        return(file.path(module_dir, rel_path))
+      }
+      if (!is.null(module_name)) {
+        module_idx <- which(parts == module_name)
+        if (length(module_idx) > 0) {
+          rel_path <- paste(parts[(module_idx[1]+1):length(parts)], collapse = "/")
+          return(file.path(module_dir, rel_path))
+        }
+      }
+    }
+    path
+  }
 
-# Get top N taxa
-top_n <- if (!is.null(params$top_n)) params$top_n else 25
+  emu_dir <- translate_path(outputs$emu$dir)
+  cat("[heatmap] Emu dir:", emu_dir, "\n")
+  if (!is.null(emu_dir) && dir.exists(emu_dir)) {
+    cat("[heatmap] Loading Emu data from:", emu_dir, "\n")
 
-# Calculate total abundance per taxon
-taxon_totals <- aggregate(data[[abundance_col]], by = list(taxon = data[[taxon_col]]), FUN = sum)
-colnames(taxon_totals) <- c("taxon", "total")
-taxon_totals <- taxon_totals[order(-taxon_totals$total), ]
-top_taxa <- head(taxon_totals$taxon, top_n)
+    emu_files <- list.files(emu_dir, pattern = "_rel-abundance\\.tsv$",
+                            recursive = TRUE, full.names = TRUE)
 
-# Filter to top taxa only
-data_top <- data[data[[taxon_col]] %in% top_taxa, ]
+    if (length(emu_files) > 0) {
+      cat("[heatmap] Found", length(emu_files), "Emu output files\n")
 
-# Create wide matrix for heatmap
-samples <- unique(data_top$sample_id)
-taxa <- top_taxa
+      genus_rows <- list()
+      species_rows <- list()
 
-mat <- matrix(0, nrow = length(taxa), ncol = length(samples))
-rownames(mat) <- taxa
-colnames(mat) <- samples
+      for (emu_file in emu_files) {
+        sample_id <- basename(dirname(emu_file))
+        if (sample_id == "." || sample_id == emu_dir) {
+          sample_id <- sub("_rel-abundance\\.tsv$", "", basename(emu_file))
+          sample_id <- sub("\\..*$", "", sample_id)
+        }
 
-for (r in seq_len(nrow(data_top))) {
-  s <- data_top$sample_id[r]
-  t <- data_top[[taxon_col]][r]
-  if (t %in% taxa && s %in% samples) {
-    mat[t, s] <- data_top[[abundance_col]][r]
+        emu_data <- tryCatch(
+          read.delim(emu_file, stringsAsFactors = FALSE),
+          error = function(e) NULL
+        )
+
+        if (!is.null(emu_data) && nrow(emu_data) > 0) {
+          if ("genus" %in% colnames(emu_data) && "abundance" %in% colnames(emu_data)) {
+            for (r in seq_len(nrow(emu_data))) {
+              if (!is.na(emu_data$abundance[r]) && emu_data$abundance[r] > 0 &&
+                  !is.na(emu_data$genus[r]) && emu_data$genus[r] != "") {
+                genus_rows[[length(genus_rows) + 1]] <- data.frame(
+                  sample_id = sample_id,
+                  genus = emu_data$genus[r],
+                  fraction = emu_data$abundance[r],
+                  stringsAsFactors = FALSE
+                )
+              }
+            }
+          }
+
+          if ("species" %in% colnames(emu_data) && "abundance" %in% colnames(emu_data)) {
+            for (r in seq_len(nrow(emu_data))) {
+              if (!is.na(emu_data$abundance[r]) && emu_data$abundance[r] > 0 &&
+                  !is.na(emu_data$species[r]) && emu_data$species[r] != "") {
+                species_rows[[length(species_rows) + 1]] <- data.frame(
+                  sample_id = sample_id,
+                  species = emu_data$species[r],
+                  fraction = emu_data$abundance[r],
+                  stringsAsFactors = FALSE
+                )
+              }
+            }
+          }
+        }
+      }
+
+      if (length(genus_rows) > 0) {
+        genus_data <- do.call(rbind, genus_rows)
+        cat("[heatmap] Emu genus data:", nrow(genus_data), "rows,",
+            length(unique(genus_data$sample_id)), "samples\n")
+        if (generate_heatmap(genus_data, "genus", "fraction", "Genus", top_n, out_dir)) {
+          generated_any <- TRUE
+        }
+      }
+
+      if (length(species_rows) > 0) {
+        species_data <- do.call(rbind, species_rows)
+        cat("[heatmap] Emu species data:", nrow(species_data), "rows,",
+            length(unique(species_data$sample_id)), "samples\n")
+        if (generate_heatmap(species_data, "species", "fraction", "Species", top_n, out_dir)) {
+          generated_any <- TRUE
+        }
+      }
+    }
   }
 }
 
-# ----------------------------
-# Legend sizing controls (colorbar)
-# Change these to alter legend label sizing and spacing
-# ----------------------------
-legend_axis_cex <- 0.5     # tick label size on the colorbar
-legend_title_cex <- 0.5    # "Rel. Abundance" label size
-legend_title_line <- 1     # distance of title from axis (bigger = more space)
-# ----------------------------
-
-# Generate heatmap using base R
-out_png <- file.path(out_dir, "heatmap.png")
-
-n_taxa <- nrow(mat)
-n_samples <- ncol(mat)
-
-plot_width <- max(800, n_samples * 100 + 250)
-plot_height <- max(800, n_taxa * 30 + 200)
-
-png(out_png, width = plot_width, height = plot_height, res = 150)
-
-layout(matrix(c(1, 2), nrow = 1), widths = c(4, 1))
-
-par(mar = c(8, 12, 3, 1))
-
-n_colors <- 100
-colors <- colorRampPalette(c("white", "lightyellow", "orange", "red", "darkred"))(n_colors)
-
-image(
-  1:n_samples, 1:n_taxa, t(mat),
-  col = colors,
-  xlab = "", ylab = "",
-  axes = FALSE,
-  main = paste("Heatmap: Relative Abundance (Top", top_n, "Taxa)")
-)
-
-axis(1, at = 1:n_samples, labels = colnames(mat), las = 2, cex.axis = 0.7)
-axis(2, at = 1:n_taxa, labels = rownames(mat), las = 1, cex.axis = 0.6)
-
-abline(h = 0.5:(n_taxa + 0.5), col = "gray90", lwd = 0.5)
-abline(v = 0.5:(n_samples + 0.5), col = "gray90", lwd = 0.5)
-
-# Colorbar (legend)
-par(mar = c(8, 1, 3, 3))
-image(
-  1, seq(0, 1, length.out = n_colors), t(matrix(1:n_colors)),
-  col = colors,
-  xlab = "", ylab = "",
-  axes = FALSE
-)
-axis(
-  4,
-  at = c(0, 0.25, 0.5, 0.75, 1),
-  labels = format(c(0, 0.25, 0.5, 0.75, 1), digits = 2),
-  las = 1,
-  cex.axis = legend_axis_cex
-)
-mtext("Rel. Abundance", side = 4, line = legend_title_line, cex = legend_title_cex)
-
-dev.off()
-
-cat("[heatmap] Generated:", out_png, "\n")
-
-out_csv <- file.path(out_dir, "heatmap_data.csv")
-write.csv(as.data.frame(mat), out_csv, row.names = TRUE)
-cat("[heatmap] Generated:", out_csv, "\n")
+if (!generated_any) {
+  cat("[heatmap] No suitable data found for plotting\n")
+}
 
 cat("[heatmap] Complete\n")

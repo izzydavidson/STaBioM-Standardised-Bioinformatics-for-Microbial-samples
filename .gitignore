@@ -1,5 +1,5 @@
 # R session files
-.Rproj.user
+.Rproj.user/
 .Rhistory
 .RData
 .Ruserdata
@@ -13,18 +13,18 @@
 .venv/
 __pycache__/
 *.pyc
+*.pyo
 .env
 
 # Pipeline outputs and results
+outputs/
+shiny-ui/outputs/
 shiny-ui/data/outputs/
-shiny-ui/runs/
-
-# Test input data (large files)
-shiny-ui/data/test_inputs/sample_sheets/
 
 # Reference databases (large files)
-shiny-ui/data/reference/human/
-shiny-ui/data/reference/qiime2/
+shiny-ui/data/reference/
+
+# QIIME2 artifacts (large files)
 *.qza
 
 # App state/config
@@ -35,11 +35,9 @@ shiny-ui/configs/
 
 # Diagnostic files
 *.diagnose.txt
-docker_desktop_diagnose.txt
-shiny-ui/docker_desktop_diagnose.txt
 
-# Build/tool artifacts
-shiny-ui/tools/
+# Build/tool artifacts (preserve wrappers)
+shiny-ui/tools/VALENCIA/
 
 # Keep files (for maintaining empty directories)
 !.keep

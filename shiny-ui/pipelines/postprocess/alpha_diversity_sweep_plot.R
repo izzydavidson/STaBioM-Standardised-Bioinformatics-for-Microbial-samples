@@ -230,8 +230,8 @@ plot_one_metric <- function(metric_name) {
   
   out_png1 <- file.path(div_root, paste0(run_base, "_", out_name, "_", metric_name, "_sweep_box.png"))
   out_pdf1 <- file.path(div_root, paste0(run_base, "_", out_name, "_", metric_name, "_sweep_box.pdf"))
-  ggsave(out_png1, p1, width = 12, height = 6, dpi = 300)
-  ggsave(out_pdf1, p1, width = 12, height = 6)
+  ggsave(out_png1, p1, width = 12, height = 6, dpi = 300, bg = "white")
+  ggsave(out_pdf1, p1, width = 12, height = 6, bg = "white")
   
   # Mean +/- sd vs param
   summ <- df_m %>%
@@ -257,8 +257,8 @@ plot_one_metric <- function(metric_name) {
   
   out_png2 <- file.path(div_root, paste0(run_base, "_", out_name, "_", metric_name, "_sweep_mean.png"))
   out_pdf2 <- file.path(div_root, paste0(run_base, "_", out_name, "_", metric_name, "_sweep_mean.pdf"))
-  ggsave(out_png2, p2, width = 12, height = 5, dpi = 300)
-  ggsave(out_pdf2, p2, width = 12, height = 5)
+  ggsave(out_png2, p2, width = 12, height = 5, dpi = 300, bg = "white")
+  ggsave(out_pdf2, p2, width = 12, height = 5, bg = "white")
   
   list(out_png1, out_pdf1, out_png2, out_pdf2)
 }
