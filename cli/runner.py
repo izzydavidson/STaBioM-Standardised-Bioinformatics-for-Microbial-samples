@@ -1336,7 +1336,7 @@ def build_config(config: RunConfig, repo_root: Optional[Path] = None) -> Dict[st
         }
 
     elif config.pipeline in ("lr_amp", "lr_meta"):
-        # Emu database path - use CLI arg if provided, else default
+        # Emu database path - use CLI arg if provided, else auto-detect
         # Check multiple locations for the emu database:
         # 1. databases/emu-default/emu (installed by setup)
         # 2. databases/emu-default (in case files are directly here)
@@ -1346,20 +1346,28 @@ def build_config(config: RunConfig, repo_root: Optional[Path] = None) -> Dict[st
             repo_root / "main" / "data" / "databases" / "emu-default",
             repo_root / "main" / "data" / "reference" / "emu",
         ]
-        emu_db_host = None
+        emu_db_host_resolved = None
         for candidate in emu_db_candidates:
             if candidate.exists() and (candidate / "species_taxid.fasta").exists():
-                emu_db_host = candidate
+                emu_db_host_resolved = candidate
                 break
-        if emu_db_host is None:
-            emu_db_host = emu_db_candidates[0]  # Default to first candidate
 
+        # Use CLI arg if provided, otherwise use resolved path
         if config.emu_db:
-            emu_db = config.emu_db
-        elif config.use_container:
-            emu_db = "/work/data/reference/emu"
+            emu_db_host_path = Path(config.emu_db)
+        elif emu_db_host_resolved:
+            emu_db_host_path = emu_db_host_resolved
         else:
-            emu_db = str(emu_db_host)
+            emu_db_host_path = emu_db_candidates[0]  # Default (may not exist)
+
+        # For container mode, we'll mount the database and use container path
+        if config.use_container:
+            emu_db = "/db/emu"  # Container path - will be mounted
+        else:
+            emu_db = str(emu_db_host_path)
+
+        # Store the host path for mounting later
+        config._emu_db_host_path = emu_db_host_path
 
         # Valencia paths - use user-provided centroids path if available
         if config.use_container:
@@ -1381,11 +1389,14 @@ def build_config(config: RunConfig, repo_root: Optional[Path] = None) -> Dict[st
                 try:
                     rel_path = user_centroids.relative_to(main_path)
                     valencia_centroids = f"/work/{rel_path}"
+                    config._valencia_centroids_host = None  # No extra mount needed
                 except ValueError:
-                    # File is outside main/, use host path (will need extra mount)
-                    valencia_centroids = str(user_centroids)
+                    # File is outside main/, mount to container
+                    valencia_centroids = "/valencia/centroids.csv"
+                    config._valencia_centroids_host = user_centroids
             else:
                 valencia_centroids = str(user_centroids)
+                config._valencia_centroids_host = None
         else:
             valencia_centroids = default_centroids
 
@@ -1923,11 +1934,11 @@ def run_pipeline(
             if config.verbose:
                 print(f"[stabiom] Mounting Kraken2 DB: {kraken2_db_host} -> {kraken2_db_container}")
 
-        # Mount Emu database if specified
-        emu_db_host = config.emu_db
-        if emu_db_host and Path(emu_db_host).exists():
+        # Mount Emu database (from CLI arg or auto-detected path)
+        emu_db_host_path = getattr(config, '_emu_db_host_path', None)
+        if emu_db_host_path and Path(emu_db_host_path).exists():
             emu_db_container = "/db/emu"
-            extra_mounts.append((emu_db_host, emu_db_container))
+            extra_mounts.append((str(emu_db_host_path), emu_db_container))
             # Update container config to use container path
             if "tools" not in container_config_dict:
                 container_config_dict["tools"] = {}
@@ -1935,7 +1946,9 @@ def run_pipeline(
                 container_config_dict["tools"]["emu"] = {}
             container_config_dict["tools"]["emu"]["db"] = emu_db_container
             if config.verbose:
-                print(f"[stabiom] Mounting Emu DB: {emu_db_host} -> {emu_db_container}")
+                print(f"[stabiom] Mounting Emu DB: {emu_db_host_path} -> {emu_db_container}")
+        elif config.verbose and config.pipeline in ("lr_amp", "lr_meta"):
+            print(f"[stabiom] Warning: Emu database not found at expected locations")
 
         # Mount patched Emu script (fixes taxonomy index type mismatch in v3.5.5)
         # The bug: Emu loads taxonomy.tsv with dtype=str, but parses SAM tax_ids as int
@@ -1945,6 +1958,20 @@ def run_pipeline(
             extra_mounts.append((str(patched_emu_path), "/usr/local/bin/emu"))
             if config.verbose:
                 print(f"[stabiom] Mounting patched Emu: {patched_emu_path}")
+
+        # Mount VALENCIA centroids file if it's external to the bundle
+        valencia_centroids_host = getattr(config, '_valencia_centroids_host', None)
+        if valencia_centroids_host and Path(valencia_centroids_host).exists():
+            valencia_centroids_container = "/valencia/centroids.csv"
+            # Mount the file's directory
+            valencia_dir = Path(valencia_centroids_host).parent
+            extra_mounts.append((str(valencia_dir), "/valencia"))
+            # Update container config
+            if "valencia" not in container_config_dict:
+                container_config_dict["valencia"] = {}
+            container_config_dict["valencia"]["centroids_csv"] = valencia_centroids_container
+            if config.verbose:
+                print(f"[stabiom] Mounting VALENCIA centroids: {valencia_centroids_host} -> {valencia_centroids_container}")
 
         # Mount human genome index if specified (for host depletion)
         human_index_host = config.human_index
