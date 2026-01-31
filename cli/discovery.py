@@ -71,6 +71,9 @@ def find_repo_root(start_path: Optional[Path] = None) -> Path:
         # Check if this looks like our bundle (has main/ with pipelines)
         if (bundle_dir / "main" / "pipelines").exists():
             return bundle_dir
+        # PyInstaller 6.x puts data files in _internal/
+        if (bundle_dir / "_internal" / "main" / "pipelines").exists():
+            return bundle_dir / "_internal"
         # Also check if main is directly here (flat structure)
         if (bundle_dir / "pipelines").exists():
             # Return parent to simulate repo structure
