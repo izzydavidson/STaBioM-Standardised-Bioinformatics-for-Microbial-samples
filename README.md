@@ -15,7 +15,7 @@ A unified CLI for running microbiome analysis pipelines on long-read and short-r
 
 ### 1. Download
 
-Download the latest release for your platform from [GitHub Releases](https://github.com/YOUR_ORG/STaBioM/releases):
+Download the latest release for your platform from [GitHub Releases](https://github.com/izzydavidson/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/releases):
 
 | Platform | Download |
 |----------|----------|
@@ -25,7 +25,7 @@ Download the latest release for your platform from [GitHub Releases](https://git
 
 ```bash
 # Download (replace URL with actual release)
-curl -LO https://github.com/YOUR_ORG/STaBioM/releases/download/v1.0.0/stabiom-v1.0.0-macos-arm64.tar.gz
+curl -LO https://github.com/izzydavidson/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/releases/download/v1.0.0/stabiom-v1.0.0-macos-arm64.tar.gz
 
 # Extract
 tar -xzf stabiom-v1.0.0-macos-arm64.tar.gz
@@ -210,7 +210,7 @@ For contributors or advanced users who want to run from source:
 
 ```bash
 # Clone the repository
-git clone https://github.com/YOUR_ORG/STaBioM.git
+git clone https://github.com/izzydavidson/STaBioM-Standardised-Bioinformatics-for-Microbial-samples.git
 cd STaBioM
 
 # Run directly with Python
@@ -277,4 +277,4 @@ If you use STaBioM in your research, please cite:
 
 ## Contact
 
-For questions, issues, or feature requests, please [open an issue](https://github.com/YOUR_ORG/STaBioM/issues).
+For questions, issues, or feature requests, please [open an issue](https://github.com/izzydavidson/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/issues).
