@@ -7,6 +7,7 @@ import subprocess
 import sys
 import tarfile
 import urllib.request
+import zipfile
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -35,6 +36,17 @@ DATABASES = {
         "url": "https://gitlab.com/treangenlab/emu/-/raw/master/emu_database.tar.gz",
         "size_gb": 0.5,
         "pipelines": ["lr_amp"],
+    },
+}
+
+# Analysis tools that can be downloaded
+TOOLS = {
+    "valencia": {
+        "name": "VALENCIA",
+        "description": "Vaginal community state type (CST) classification tool",
+        "url": "https://github.com/ravel-lab/VALENCIA/archive/refs/heads/master.zip",
+        "size_mb": 1,
+        "sample_types": ["vaginal"],
     },
 }
 
@@ -112,6 +124,20 @@ def get_data_dir() -> Path:
     return data_dir
 
 
+def get_tools_dir() -> Path:
+    """Get the tools directory for analysis tools like VALENCIA."""
+    # Check if running as PyInstaller bundle
+    if getattr(sys, 'frozen', False):
+        base = Path(sys.executable).parent
+    else:
+        from cli.discovery import find_repo_root
+        base = find_repo_root()
+
+    tools_dir = base / "tools"
+    tools_dir.mkdir(parents=True, exist_ok=True)
+    return tools_dir
+
+
 def download_with_progress(url: str, dest: Path, desc: str = "Downloading") -> bool:
     """Download a file with progress display."""
     try:
@@ -154,6 +180,52 @@ def extract_tarball(archive: Path, dest_dir: Path) -> bool:
         print(f"  Extracting to {dest_dir}...")
         with tarfile.open(archive, "r:gz") as tar:
             tar.extractall(path=dest_dir)
+        return True
+    except Exception as e:
+        print(f"  Error extracting: {e}")
+        return False
+
+
+def extract_zip(archive: Path, dest_dir: Path, strip_top_dir: bool = True) -> bool:
+    """Extract a zip archive.
+
+    Args:
+        archive: Path to the zip file
+        dest_dir: Destination directory
+        strip_top_dir: If True, strip the top-level directory from the archive
+    """
+    try:
+        print(f"  Extracting to {dest_dir}...")
+        dest_dir.mkdir(parents=True, exist_ok=True)
+
+        with zipfile.ZipFile(archive, 'r') as zf:
+            if strip_top_dir:
+                # Get the top-level directory name
+                top_dirs = set()
+                for name in zf.namelist():
+                    parts = name.split('/')
+                    if parts[0]:
+                        top_dirs.add(parts[0])
+
+                # If there's exactly one top-level directory, strip it
+                if len(top_dirs) == 1:
+                    top_dir = top_dirs.pop()
+                    for member in zf.namelist():
+                        if member.startswith(top_dir + '/'):
+                            # Strip the top directory
+                            relative_path = member[len(top_dir) + 1:]
+                            if relative_path:  # Skip empty paths
+                                target_path = dest_dir / relative_path
+                                if member.endswith('/'):
+                                    target_path.mkdir(parents=True, exist_ok=True)
+                                else:
+                                    target_path.parent.mkdir(parents=True, exist_ok=True)
+                                    with zf.open(member) as src, open(target_path, 'wb') as dst:
+                                        dst.write(src.read())
+                    return True
+
+            # Default extraction
+            zf.extractall(path=dest_dir)
         return True
     except Exception as e:
         print(f"  Error extracting: {e}")
@@ -466,8 +538,54 @@ def run_setup(interactive: bool = True, install_docker: bool = False,
 
     print()
 
-    # Step 4: Summary
-    print(Colors.cyan_bold("4. Summary") if is_tty() else "4. Summary")
+    # Step 4: Analysis Tools (VALENCIA)
+    print(Colors.cyan_bold("4. Analysis Tools") if is_tty() else "4. Analysis Tools")
+
+    tools_dir = get_tools_dir()
+    print(f"   Tools directory: {tools_dir}")
+    print()
+
+    # Check existing tools
+    existing_tools = []
+    for tool_id, tool_info in TOOLS.items():
+        tool_path = tools_dir / tool_id.upper()
+        if tool_path.exists() and any(tool_path.iterdir()):
+            existing_tools.append(tool_id)
+            print(f"   {Colors.green_bold('FOUND')} {tool_info['name']}" if is_tty() else f"   [FOUND] {tool_info['name']}")
+
+    missing_tools = [tool_id for tool_id in TOOLS if tool_id not in existing_tools]
+
+    if missing_tools and interactive:
+        print()
+        print("   Available tools to download:")
+        for tool_id in missing_tools:
+            tool_info = TOOLS[tool_id]
+            print(f"   - {tool_info['name']}: {tool_info['description']}")
+            print(f"     Size: ~{tool_info['size_mb']} MB, For sample types: {', '.join(tool_info['sample_types'])}")
+
+        print()
+        if prompt_yes_no("   Would you like to download analysis tools now?", default=True):
+            for tool_id in missing_tools:
+                tool_info = TOOLS[tool_id]
+                if prompt_yes_no(f"   Download {tool_info['name']}?", default=True):
+                    # Download
+                    archive_path = tools_dir / f"{tool_id}.zip"
+                    tool_dest = tools_dir / tool_id.upper()
+                    print(f"   Downloading {tool_info['name']}...")
+
+                    if download_with_progress(tool_info['url'], archive_path, "Downloading"):
+                        if extract_zip(archive_path, tool_dest, strip_top_dir=True):
+                            archive_path.unlink()  # Remove archive after extraction
+                            print(f"   {Colors.green_bold('OK')} {tool_info['name']} installed!" if is_tty() else f"   [OK] Installed!")
+                        else:
+                            print(f"   Failed to extract tool")
+                    else:
+                        print(f"   Failed to download tool")
+
+    print()
+
+    # Step 5: Summary
+    print(Colors.cyan_bold("5. Summary") if is_tty() else "5. Summary")
     print()
 
     if not issues:
@@ -580,6 +698,24 @@ def run_doctor() -> int:
     if not found_any:
         print(f"  {Colors.yellow_bold('NONE')} No databases installed" if is_tty() else "  [NONE] No databases installed")
         print(f"  Run 'stabiom setup' to download databases")
+
+    print()
+
+    # Check analysis tools
+    print("Analysis Tools:")
+    tools_dir = get_tools_dir()
+
+    found_any_tools = False
+    for tool_id, tool_info in TOOLS.items():
+        tool_path = tools_dir / tool_id.upper()
+        if tool_path.exists() and any(tool_path.iterdir()):
+            found_any_tools = True
+            print(f"  {Colors.green_bold('OK')} {tool_info['name']}: {tool_path}" if is_tty()
+                  else f"  [OK] {tool_info['name']}: {tool_path}")
+
+    if not found_any_tools:
+        print(f"  {Colors.yellow_bold('NONE')} No analysis tools installed" if is_tty() else "  [NONE] No analysis tools installed")
+        print(f"  Run 'stabiom setup' to download tools (e.g., VALENCIA for vaginal samples)")
 
     print()
 
