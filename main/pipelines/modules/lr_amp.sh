@@ -365,28 +365,8 @@ LR_AMP_SAMPLE_TYPE_NORM="$(printf "%s" "${LR_AMP_SAMPLE_TYPE_RAW}" | tr '[:upper
 POSTPROCESS_ENABLED="$(jq_first "${CONFIG_PATH}" '.postprocess.enabled' '.tools.postprocess.enabled' '.postprocess_enabled' || true)"
 [[ -n "${POSTPROCESS_ENABLED}" ]] || POSTPROCESS_ENABLED="1"
 
-# References + DB
-KRAKEN2_DB="$(jq_first "${CONFIG_PATH}" '.tools.kraken2.db' '.tools.kraken2.db_classify' '.kraken2_db' || true)"
-
-# Emu settings
+# Emu settings (lr_amp uses Emu for taxonomy classification)
 EMU_DB="$(jq_first "${CONFIG_PATH}" '.tools.emu.db' '.emu.db' '.emu_db' || true)"
-
-# Kraken params for amplicon
-KRAKEN_CONF_VAGINAL="$(jq_first "${CONFIG_PATH}" '.tools.kraken2.vaginal.confidence' '.kraken_confidence_vaginal' || true)"
-[[ -n "${KRAKEN_CONF_VAGINAL}" ]] || KRAKEN_CONF_VAGINAL="0.1"
-KRAKEN_MHG_VAGINAL="$(jq_first "${CONFIG_PATH}" '.tools.kraken2.vaginal.minimum_hit_groups' '.kraken_min_hit_groups_vaginal' || true)"
-[[ -n "${KRAKEN_MHG_VAGINAL}" ]] || KRAKEN_MHG_VAGINAL="2"
-
-KRAKEN_CONF_NONVAGINAL="$(jq_first "${CONFIG_PATH}" '.tools.kraken2.nonvaginal.confidence' '.kraken_confidence_nonvaginal' || true)"
-[[ -n "${KRAKEN_CONF_NONVAGINAL}" ]] || KRAKEN_CONF_NONVAGINAL="0.05"
-KRAKEN_MHG_NONVAGINAL="$(jq_first "${CONFIG_PATH}" '.tools.kraken2.nonvaginal.minimum_hit_groups' '.kraken_min_hit_groups_nonvaginal' || true)"
-[[ -n "${KRAKEN_MHG_NONVAGINAL}" ]] || KRAKEN_MHG_NONVAGINAL="2"
-
-USE_BRACKEN="$(jq_first "${CONFIG_PATH}" '.tools.bracken.enabled' '.use_bracken' || true)"
-[[ -n "${USE_BRACKEN}" ]] || USE_BRACKEN="1"
-BRACKEN_READLEN="$(jq_first "${CONFIG_PATH}" '.tools.bracken.readlen' '.bracken_readlen' || true)"
-[[ -n "${BRACKEN_READLEN}" ]] || BRACKEN_READLEN="1500"
-BRACKEN_AVAILABLE="1"
 
 # Dorado/Pod5 settings (used when FAST5 input is provided)
 DORADO_MODEL="$(jq_first "${CONFIG_PATH}" '.tools.dorado.model' '.dorado.model' || true)"
@@ -607,8 +587,6 @@ SAMTOOLS_BIN="$(resolve_tool "${CONFIG_PATH}" '.tools.samtools_bin' 'samtools')"
 FASTQC_BIN="$(resolve_tool "${CONFIG_PATH}" '.tools.fastqc_bin' 'fastqc')"
 MULTIQC_BIN="$(resolve_tool "${CONFIG_PATH}" '.tools.multiqc_bin' 'multiqc')"
 NANOFILT_BIN="$(resolve_tool "${CONFIG_PATH}" '.tools.nanofilt_bin' 'NanoFilt')"
-KRAKEN2_BIN="$(resolve_tool "${CONFIG_PATH}" '.tools.kraken2.bin' 'kraken2')"
-BRACKEN_BIN="$(resolve_tool "${CONFIG_PATH}" '.tools.bracken.bin' 'bracken')"
 EMU_BIN="$(resolve_tool "${CONFIG_PATH}" '.tools.emu.bin' 'emu')"
 GIT_BIN="$(resolve_tool "${CONFIG_PATH}" '.tools.git_bin' 'git')"
 RSCRIPT_BIN="$(resolve_tool "${CONFIG_PATH}" '.tools.rscript_bin' 'Rscript')"
@@ -665,23 +643,6 @@ is_vaginal_barcode() {
 get_site_for_barcode() {
   local barcode="${1:-}"
   echo "${SITE_BY_BARCODE[${barcode}]:-unknown}"
-}
-
-check_bracken_available() {
-  if ! command -v "${BRACKEN_BIN}" >/dev/null 2>&1; then
-    BRACKEN_AVAILABLE="0"
-    USE_BRACKEN="0"
-    log_warn "Bracken not found. Bracken will be skipped."
-    return 0
-  fi
-
-  [[ -n "${KRAKEN2_DB}" && "${KRAKEN2_DB}" != "null" ]] || { BRACKEN_AVAILABLE="0"; USE_BRACKEN="0"; log_warn "KRAKEN2_DB not set; bracken disabled."; return 0; }
-  local kmer_file="${KRAKEN2_DB}/database${BRACKEN_READLEN}mers.kmer_distrib"
-  if [[ ! -s "${kmer_file}" ]]; then
-    BRACKEN_AVAILABLE="0"
-    USE_BRACKEN="0"
-    log_warn "Bracken kmer distribution not found at ${kmer_file}; bracken disabled."
-  fi
 }
 
 ############################################
@@ -913,7 +874,7 @@ length_filter_per_barcode() {
 ############################################
 
 emu_classification_per_barcode() {
-  # lr_amp uses ONLY Emu for classification (no Kraken2)
+  # lr_amp uses Emu for taxonomy classification
   if [[ "${FULL_LENGTH}" != "1" ]]; then
     log_warn "Skipping Emu (not full-length amplicons). Note: lr_amp uses Emu only."
     return 0
@@ -960,18 +921,6 @@ emu_classification_per_barcode() {
 }
 
 ############################################
-##  KRAKEN2 - DISABLED FOR lr_amp        ##
-##  (lr_amp uses ONLY Emu classification) ##
-############################################
-
-kraken2_secondary_per_barcode() {
-  # lr_amp uses ONLY Emu for taxonomy classification
-  # Kraken2/Bracken are disabled - use lr_meta for Kraken2-based workflows
-  : # Kraken2 not used in lr_amp pipeline
-  return 0
-}
-
-############################################
 ##       VALENCIA (vaginal samples)       ##
 ############################################
 
@@ -979,7 +928,7 @@ kraken2_secondary_per_barcode() {
 # This mirrors the sr_amp approach for consistency across all pipelines
 
 run_valencia() {
-  # lr_amp uses Emu outputs for VALENCIA (not Kraken2 kreports)
+  # lr_amp uses Emu outputs for VALENCIA
   local emu_run_dir="${EMU_DIR}/${RUN_NAME}"
 
   # Determine if VALENCIA should run
@@ -1428,7 +1377,7 @@ VALENCIA_PY
 run_postprocess() {
   [[ "${POSTPROCESS_ENABLED}" == "1" ]] || { log_warn "Skipping postprocess (postprocess.enabled=0)"; return 0; }
 
-  # lr_amp uses ONLY Emu - check for Emu outputs (not Kraken2)
+  # Check for Emu outputs
   local emu_run_dir="${EMU_DIR}/${RUN_NAME}"
   if [[ ! -d "${emu_run_dir}" ]]; then
     log_warn "Skipping postprocess - no Emu results found at ${emu_run_dir}"
@@ -1743,9 +1692,9 @@ main() {
   set -e
   ended="$(iso_now)"
   if [[ $ec -eq 0 ]]; then
-    steps_append "${STEPS_JSON}" "qfilter" "succeeded" "qfilter completed or skipped" "${NANOFILT_BIN}" "NanoFilt" "${ec}" "${started}" "${ended}"
+    steps_append "${STEPS_JSON}" "qfilter" "succeeded" "Q-filter completed (min_q=${QFILTER_MIN_Q})" "${NANOFILT_BIN}" "NanoFilt" "${ec}" "${started}" "${ended}"
   else
-    steps_append "${STEPS_JSON}" "qfilter" "failed" "qfilter failed" "${NANOFILT_BIN}" "NanoFilt" "${ec}" "${started}" "${ended}"
+    steps_append "${STEPS_JSON}" "qfilter" "failed" "Q-filter failed (min_q=${QFILTER_MIN_Q})" "${NANOFILT_BIN}" "NanoFilt" "${ec}" "${started}" "${ended}"
     exit $ec
   fi
 
@@ -1773,12 +1722,6 @@ main() {
   else
     steps_append "${STEPS_JSON}" "emu_primary" "skipped" "Emu classification skipped" "${EMU_BIN}" "emu abundance" "${ec}" "${started}" "${ended}"
   fi
-
-  # Kraken2 is disabled for lr_amp
-  started="$(iso_now)"
-  kraken2_secondary_per_barcode  # This is now a no-op that logs "disabled"
-  ended="$(iso_now)"
-  steps_append "${STEPS_JSON}" "taxonomy_kraken2" "skipped" "Skipped (using Emu classifier)" "" "" "0" "${started}" "${ended}"
 
   # Run VALENCIA (inline Python, mirrors sr_amp approach)
   run_valencia
@@ -1855,7 +1798,6 @@ print_step_status "${STEPS_JSON}" "raw_fastqc_multiqc"
 print_step_status "${STEPS_JSON}" "qfilter"
 print_step_status "${STEPS_JSON}" "length_filter"
 print_step_status "${STEPS_JSON}" "emu_primary"
-print_step_status "${STEPS_JSON}" "taxonomy_kraken2"
 print_step_status "${STEPS_JSON}" "valencia"
 print_step_status "${STEPS_JSON}" "postprocess"
 echo "[${MODULE_NAME}] seq_type: ${SEQ_TYPE}"
