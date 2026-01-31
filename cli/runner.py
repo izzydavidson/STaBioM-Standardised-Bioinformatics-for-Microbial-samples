@@ -1337,8 +1337,23 @@ def build_config(config: RunConfig, repo_root: Optional[Path] = None) -> Dict[st
 
     elif config.pipeline in ("lr_amp", "lr_meta"):
         # Emu database path - use CLI arg if provided, else default
-        # Use the main emu database directory (contains default rrnDB + NCBI 16S RefSeq database)
-        emu_db_host = repo_root / "main" / "data" / "reference" / "emu"
+        # Check multiple locations for the emu database:
+        # 1. databases/emu-default/emu (installed by setup)
+        # 2. databases/emu-default (in case files are directly here)
+        # 3. reference/emu (legacy location)
+        emu_db_candidates = [
+            repo_root / "main" / "data" / "databases" / "emu-default" / "emu",
+            repo_root / "main" / "data" / "databases" / "emu-default",
+            repo_root / "main" / "data" / "reference" / "emu",
+        ]
+        emu_db_host = None
+        for candidate in emu_db_candidates:
+            if candidate.exists() and (candidate / "species_taxid.fasta").exists():
+                emu_db_host = candidate
+                break
+        if emu_db_host is None:
+            emu_db_host = emu_db_candidates[0]  # Default to first candidate
+
         if config.emu_db:
             emu_db = config.emu_db
         elif config.use_container:
