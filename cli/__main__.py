@@ -405,7 +405,13 @@ Use 'stabiom <command> --help' for more information on a specific command.
     exec_group.add_argument(
         "--verbose", "-v",
         action="store_true",
-        help="Enable verbose output with detailed progress",
+        default=True,
+        help="Enable verbose output with detailed progress (enabled by default)",
+    )
+    exec_group.add_argument(
+        "--quiet", "-q",
+        action="store_true",
+        help="Suppress real-time logging output",
     )
     exec_group.add_argument(
         "--debug-config",
@@ -847,7 +853,7 @@ Use 'stabiom <command> --help' for more information on a specific command.
             qc_in_final=not args.no_qc_in_final,
             use_container=not args.no_container,
             docker_image=args.image,
-            verbose=args.verbose,
+            verbose=args.verbose and not getattr(args, 'quiet', False),
             force_overwrite=args.force,
             debug_config=args.debug_config,
         )
