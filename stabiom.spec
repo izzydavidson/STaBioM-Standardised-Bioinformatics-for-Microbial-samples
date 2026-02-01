@@ -44,6 +44,14 @@ def collect_data_files():
             rel_path = f.relative_to(REPO_ROOT)
             datas.append((str(f), str(rel_path.parent)))
 
+    # Postprocess R scripts (required for plotting and results generation)
+    postprocess_dir = MAIN_DIR / "pipelines" / "postprocess"
+    if postprocess_dir.exists():
+        for pattern in ["*.R", "*.py"]:
+            for f in postprocess_dir.rglob(pattern):
+                rel_path = f.relative_to(REPO_ROOT)
+                datas.append((str(f), str(rel_path.parent)))
+
     # Include Dockerfiles for building container images
     container_dir = MAIN_DIR / "pipelines" / "container"
     if container_dir.exists():
