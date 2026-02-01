@@ -43,6 +43,9 @@ class Colors:
     BRIGHT_PURPLE = "\033[95m"
     BRIGHT_CYAN = "\033[96m"
 
+    # 256-color orange (color 208)
+    ORANGE = "\033[38;5;208m"
+
     @classmethod
     def colorize(cls, text: str, *codes: str) -> str:
         """Apply color codes to text if TTY, otherwise return plain text."""
@@ -69,6 +72,14 @@ class Colors:
     @classmethod
     def cyan_bold(cls, text: str) -> str:
         return cls.colorize(text, cls.BOLD, cls.BRIGHT_CYAN)
+
+    @classmethod
+    def orange_bold(cls, text: str) -> str:
+        return cls.colorize(text, cls.BOLD, cls.ORANGE)
+
+    @classmethod
+    def green(cls, text: str) -> str:
+        return cls.colorize(text, cls.GREEN)
 
     @classmethod
     def dim(cls, text: str) -> str:

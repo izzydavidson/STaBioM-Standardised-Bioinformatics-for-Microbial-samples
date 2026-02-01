@@ -827,9 +827,11 @@ def run_setup(interactive: bool = True, install_docker: bool = False,
             print(f"     source {shell_config}")
 
         print()
-        print("   Quick start:")
-        print("     stabiom list              # List available pipelines")
-        print("     stabiom run -p sr_amp -i reads/  # Run a pipeline")
+        print(f"   {Colors.orange_bold('Quick start:')}" if is_tty() else "   Quick start:")
+        print(f"     {Colors.green('stabiom list')}                       # List available pipelines" if is_tty()
+              else "     stabiom list                       # List available pipelines")
+        print(f"     {Colors.green('stabiom run -p sr_amp -i reads/')}    # Run a pipeline" if is_tty()
+              else "     stabiom run -p sr_amp -i reads/    # Run a pipeline")
         print()
         return 0
     else:
