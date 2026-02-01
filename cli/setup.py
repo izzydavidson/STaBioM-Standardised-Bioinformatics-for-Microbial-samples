@@ -59,6 +59,16 @@ DATABASES = {
         "size_gb": 1.3,  # ~110 MB compressed, ~1.2 GB extracted
         "pipelines": ["lr_amp"],
     },
+    "qiime2-silva-138": {
+        "name": "QIIME2 SILVA 138 Classifier (208MB)",
+        "description": "SILVA 138 99% Naive Bayes classifier for QIIME2 - REQUIRED for sr_amp",
+        "url": "https://data.qiime2.org/2024.10/common/silva-138-99-nb-classifier.qza",
+        "size_gb": 0.21,  # ~208 MB
+        "pipelines": ["sr_amp"],
+        "is_single_file": True,  # Not a tarball, just a single .qza file
+        "dest_subdir": "reference/qiime2",  # Goes to main/data/reference/qiime2/
+        "dest_filename": "silva-138-99-nb-classifier.qza",
+    },
 }
 
 # Analysis tools that can be downloaded
@@ -628,10 +638,19 @@ def run_setup(interactive: bool = True, install_docker: bool = False,
     # Check existing databases
     existing_dbs = []
     for db_id, db_info in DATABASES.items():
-        db_path = data_dir / db_id
-        if db_path.exists():
-            existing_dbs.append(db_id)
-            print(f"   {Colors.green_bold('FOUND')} {db_info['name']}" if is_tty() else f"   [FOUND] {db_info['name']}")
+        # Handle single file databases (like QIIME2 classifier)
+        if db_info.get('is_single_file'):
+            dest_subdir = db_info.get('dest_subdir', '')
+            dest_filename = db_info.get('dest_filename', '')
+            db_path = data_dir.parent / dest_subdir / dest_filename  # Goes to main/data/reference/...
+            if db_path.exists():
+                existing_dbs.append(db_id)
+                print(f"   {Colors.green_bold('FOUND')} {db_info['name']}" if is_tty() else f"   [FOUND] {db_info['name']}")
+        else:
+            db_path = data_dir / db_id
+            if db_path.exists():
+                existing_dbs.append(db_id)
+                print(f"   {Colors.green_bold('FOUND')} {db_info['name']}" if is_tty() else f"   [FOUND] {db_info['name']}")
 
     missing_dbs = [db_id for db_id in DATABASES if db_id not in existing_dbs]
 
@@ -674,38 +693,59 @@ def run_setup(interactive: bool = True, install_docker: bool = False,
                         if not prompt_yes_no("   Continue anyway?", default=False):
                             continue
 
-                    # Download - determine file extension from URL
-                    url = db_info['url']
-                    if url.endswith('.tar.gz') or url.endswith('.tgz'):
-                        ext = '.tar.gz'
-                    elif url.endswith('.tar'):
-                        ext = '.tar'
-                    else:
-                        ext = '.tar.gz'  # Default
-                    archive_path = data_dir / f"{db_id}{ext}"
-                    print(f"   Downloading {db_info['name']}...")
+                    # Handle single file downloads (like QIIME2 classifier)
+                    if db_info.get('is_single_file'):
+                        dest_subdir = db_info.get('dest_subdir', '')
+                        dest_filename = db_info.get('dest_filename', '')
+                        dest_dir = data_dir.parent / dest_subdir
+                        dest_dir.mkdir(parents=True, exist_ok=True)
+                        dest_path = dest_dir / dest_filename
+                        print(f"   Downloading {db_info['name']}...")
 
-                    if download_with_progress(db_info['url'], archive_path, "Downloading"):
-                        if extract_tarball(archive_path, data_dir / db_id):
-                            archive_path.unlink()  # Remove archive after extraction
-                            db_path = data_dir / db_id
+                        if download_with_progress(db_info['url'], dest_path, "Downloading"):
                             print(f"   {Colors.green_bold('OK')} {db_info['name']} installed!" if is_tty() else f"   [OK] Installed!")
                             print()
-                            print(f"   {Colors.cyan_bold('Database path:')} " if is_tty() else "   Database path:")
-                            print(f"   {db_path}")
-                            # Print usage hint based on database type
-                            if "emu" in db_id:
-                                emu_subdir = db_path / "emu" if (db_path / "emu").exists() else db_path
-                                print(f"   Use with: --emu-db {emu_subdir}")
-                                downloaded_items.append(("Emu Database", str(emu_subdir), f"--emu-db {emu_subdir}"))
-                            elif "kraken2" in db_id:
-                                print(f"   Use with: --db {db_path}")
-                                downloaded_items.append(("Kraken2 Database", str(db_path), f"--db {db_path}"))
+                            print(f"   {Colors.cyan_bold('Classifier path:')} " if is_tty() else "   Classifier path:")
+                            print(f"   {dest_path}")
+                            if "qiime2" in db_id:
+                                print(f"   (Auto-detected by sr_amp pipeline)")
+                                downloaded_items.append(("QIIME2 Classifier", str(dest_path), "(auto-detected)"))
                             print()
                         else:
-                            print(f"   Failed to extract database")
+                            print(f"   Failed to download classifier")
                     else:
-                        print(f"   Failed to download database")
+                        # Download tarball - determine file extension from URL
+                        url = db_info['url']
+                        if url.endswith('.tar.gz') or url.endswith('.tgz'):
+                            ext = '.tar.gz'
+                        elif url.endswith('.tar'):
+                            ext = '.tar'
+                        else:
+                            ext = '.tar.gz'  # Default
+                        archive_path = data_dir / f"{db_id}{ext}"
+                        print(f"   Downloading {db_info['name']}...")
+
+                        if download_with_progress(db_info['url'], archive_path, "Downloading"):
+                            if extract_tarball(archive_path, data_dir / db_id):
+                                archive_path.unlink()  # Remove archive after extraction
+                                db_path = data_dir / db_id
+                                print(f"   {Colors.green_bold('OK')} {db_info['name']} installed!" if is_tty() else f"   [OK] Installed!")
+                                print()
+                                print(f"   {Colors.cyan_bold('Database path:')} " if is_tty() else "   Database path:")
+                                print(f"   {db_path}")
+                                # Print usage hint based on database type
+                                if "emu" in db_id:
+                                    emu_subdir = db_path / "emu" if (db_path / "emu").exists() else db_path
+                                    print(f"   Use with: --emu-db {emu_subdir}")
+                                    downloaded_items.append(("Emu Database", str(emu_subdir), f"--emu-db {emu_subdir}"))
+                                elif "kraken2" in db_id:
+                                    print(f"   Use with: --db {db_path}")
+                                    downloaded_items.append(("Kraken2 Database", str(db_path), f"--db {db_path}"))
+                                print()
+                            else:
+                                print(f"   Failed to extract database")
+                        else:
+                            print(f"   Failed to download database")
 
     elif databases:
         # Non-interactive mode with specific databases requested
@@ -718,28 +758,44 @@ def run_setup(interactive: bool = True, install_docker: bool = False,
                 continue
 
             db_info = DATABASES[db_id]
-            # Determine file extension from URL
-            url = db_info['url']
-            if url.endswith('.tar.gz') or url.endswith('.tgz'):
-                ext = '.tar.gz'
-            elif url.endswith('.tar'):
-                ext = '.tar'
-            else:
-                ext = '.tar.gz'
-            archive_path = data_dir / f"{db_id}{ext}"
-            print(f"   Downloading {db_info['name']}...")
 
-            if download_with_progress(db_info['url'], archive_path, "Downloading"):
-                if extract_tarball(archive_path, data_dir / db_id):
-                    archive_path.unlink()
-                    db_path = data_dir / db_id
+            # Handle single file downloads (like QIIME2 classifier)
+            if db_info.get('is_single_file'):
+                dest_subdir = db_info.get('dest_subdir', '')
+                dest_filename = db_info.get('dest_filename', '')
+                dest_dir = data_dir.parent / dest_subdir
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                dest_path = dest_dir / dest_filename
+                print(f"   Downloading {db_info['name']}...")
+
+                if download_with_progress(db_info['url'], dest_path, "Downloading"):
                     print(f"   Installed {db_info['name']}")
-                    print(f"   Path: {db_path}")
-                    if "emu" in db_id:
-                        emu_subdir = db_path / "emu" if (db_path / "emu").exists() else db_path
-                        downloaded_items.append(("Emu Database", str(emu_subdir), f"--emu-db {emu_subdir}"))
-                    elif "kraken2" in db_id:
-                        downloaded_items.append(("Kraken2 Database", str(db_path), f"--db {db_path}"))
+                    print(f"   Path: {dest_path}")
+                    if "qiime2" in db_id:
+                        downloaded_items.append(("QIIME2 Classifier", str(dest_path), "(auto-detected)"))
+            else:
+                # Determine file extension from URL
+                url = db_info['url']
+                if url.endswith('.tar.gz') or url.endswith('.tgz'):
+                    ext = '.tar.gz'
+                elif url.endswith('.tar'):
+                    ext = '.tar'
+                else:
+                    ext = '.tar.gz'
+                archive_path = data_dir / f"{db_id}{ext}"
+                print(f"   Downloading {db_info['name']}...")
+
+                if download_with_progress(db_info['url'], archive_path, "Downloading"):
+                    if extract_tarball(archive_path, data_dir / db_id):
+                        archive_path.unlink()
+                        db_path = data_dir / db_id
+                        print(f"   Installed {db_info['name']}")
+                        print(f"   Path: {db_path}")
+                        if "emu" in db_id:
+                            emu_subdir = db_path / "emu" if (db_path / "emu").exists() else db_path
+                            downloaded_items.append(("Emu Database", str(emu_subdir), f"--emu-db {emu_subdir}"))
+                        elif "kraken2" in db_id:
+                            downloaded_items.append(("Kraken2 Database", str(db_path), f"--db {db_path}"))
 
     print()
 
