@@ -16,27 +16,34 @@ from cli.progress import Colors, is_tty
 
 
 # Database download URLs and sizes
+# NOTE: Kraken2 Standard databases are subsampled and have LIMITED coverage.
+# For comprehensive bacterial classification, the full Kraken2 Bacteria database
+# (~200GB+) is recommended but requires manual installation due to size.
+# See: https://benlangmead.github.io/aws-indexes/k2
 DATABASES = {
     "kraken2-standard-8": {
         "name": "Kraken2 Standard-8 (8GB)",
-        "description": "Standard Kraken2 database, 8GB version - good balance of accuracy and size",
+        "description": "Subsampled database - LIMITED coverage, suitable for quick analysis",
         "url": "https://genome-idx.s3.amazonaws.com/kraken/k2_standard_08gb_20240605.tar.gz",
         "size_gb": 8,
-        "pipelines": ["sr_meta", "lr_meta", "lr_amp"],
+        "pipelines": ["sr_meta", "lr_meta"],
+        "warning": "Limited species coverage. Full Bacteria database (200GB+) recommended for comprehensive analysis.",
     },
     "kraken2-standard-16": {
         "name": "Kraken2 Standard-16 (16GB)",
-        "description": "Standard Kraken2 database, 16GB version - better accuracy",
+        "description": "Subsampled database - better than 8GB but still LIMITED coverage",
         "url": "https://genome-idx.s3.amazonaws.com/kraken/k2_standard_16gb_20240605.tar.gz",
         "size_gb": 16,
-        "pipelines": ["sr_meta", "lr_meta", "lr_amp"],
+        "pipelines": ["sr_meta", "lr_meta"],
+        "warning": "Limited species coverage. Full Bacteria database (200GB+) recommended for comprehensive analysis.",
     },
     "emu-default": {
         "name": "Emu Default Database",
-        "description": "Default Emu database for full-length 16S classification (rrnDB v5.6 + NCBI 16S RefSeq)",
+        "description": "Default Emu database - 17,555 species from rrnDB v5.6 + NCBI 16S RefSeq",
         "url": "https://osf.io/download/qrbne/",  # emu.tar.gz from OSF
         "size_gb": 0.1,  # ~12 MB compressed, ~85 MB extracted
         "pipelines": ["lr_amp"],
+        "warning": "Limited to ~17K species. For comprehensive coverage, build custom database from SILVA (280K+ species).",
     },
 }
 
@@ -531,8 +538,26 @@ def run_setup(interactive: bool = True, install_docker: bool = False,
             db_info = DATABASES[db_id]
             print(f"   - {db_info['name']}: {db_info['description']}")
             print(f"     Size: ~{db_info['size_gb']} GB, Used by: {', '.join(db_info['pipelines'])}")
+            # Show warning if present
+            if db_info.get('warning'):
+                warning_text = db_info['warning']
+                if is_tty():
+                    print(f"     {Colors.yellow_bold('WARNING')}: {warning_text}")
+                else:
+                    print(f"     [WARNING]: {warning_text}")
 
         print()
+        # Add note about comprehensive databases
+        print("   " + "-" * 50)
+        if is_tty():
+            print(f"   {Colors.yellow_bold('NOTE')}: For comprehensive bacterial analysis:")
+        else:
+            print("   [NOTE]: For comprehensive bacterial analysis:")
+        print("   - Kraken2: Full Bacteria DB (200GB+) requires manual install")
+        print("   - Emu: Build custom SILVA database for 280K+ species coverage")
+        print("   " + "-" * 50)
+        print()
+
         if prompt_yes_no("   Would you like to download any databases now?", default=False):
             # Let user choose which to download
             for db_id in missing_dbs:
