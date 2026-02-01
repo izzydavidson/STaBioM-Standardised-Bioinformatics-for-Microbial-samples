@@ -543,13 +543,21 @@ def run_setup(interactive: bool = True, install_docker: bool = False,
     if docker_ok:
         print()
         print("   Checking Docker images...")
+
+        # Map image names to their Dockerfiles
         required_images = {
-            "stabiom-lr:latest": "Long-read pipelines (lr_amp, lr_meta)",
-            "stabiom-sr:latest": "Short-read pipelines (sr_amp, sr_meta)",
+            "stabiom-lr:latest": {
+                "description": "Long-read pipelines (lr_amp, lr_meta)",
+                "dockerfile": "dockerfile.lr",
+            },
+            "stabiom-sr:latest": {
+                "description": "Short-read pipelines (sr_amp, sr_meta)",
+                "dockerfile": "dockerfile.sr",
+            },
         }
         missing_images = []
 
-        for image, description in required_images.items():
+        for image, info in required_images.items():
             try:
                 result = subprocess.run(
                     ["docker", "image", "inspect", image],
@@ -557,39 +565,56 @@ def run_setup(interactive: bool = True, install_docker: bool = False,
                     timeout=10
                 )
                 if result.returncode == 0:
-                    print(f"   {Colors.green_bold('FOUND')} {image} - {description}" if is_tty()
-                          else f"   [FOUND] {image} - {description}")
+                    print(f"   {Colors.green_bold('FOUND')} {image} - {info['description']}" if is_tty()
+                          else f"   [FOUND] {image} - {info['description']}")
                 else:
-                    print(f"   {Colors.yellow_bold('MISSING')} {image} - {description}" if is_tty()
-                          else f"   [MISSING] {image} - {description}")
-                    missing_images.append(image)
+                    print(f"   {Colors.yellow_bold('MISSING')} {image} - {info['description']}" if is_tty()
+                          else f"   [MISSING] {image} - {info['description']}")
+                    missing_images.append((image, info))
             except Exception:
-                missing_images.append(image)
+                missing_images.append((image, info))
 
         if missing_images and interactive:
             print()
-            print("   Missing Docker images can be pulled from Docker Hub or built locally.")
-            print("   Note: Images will be automatically pulled when running pipelines.")
-            if prompt_yes_no("   Would you like to pull missing images now?", default=False):
-                for image in missing_images:
-                    print(f"   Pulling {image}...")
+            print("   Docker images need to be built from Dockerfiles included in this release.")
+            print("   Building may take 5-10 minutes per image (downloads dependencies).")
+            if prompt_yes_no("   Would you like to build missing images now?", default=True):
+                # Find the container directory
+                if getattr(sys, 'frozen', False):
+                    base = Path(sys.executable).parent
+                    if (base / "_internal" / "main").exists():
+                        container_dir = base / "_internal" / "main" / "pipelines" / "container"
+                    else:
+                        container_dir = base / "main" / "pipelines" / "container"
+                else:
+                    from cli.discovery import find_repo_root
+                    container_dir = find_repo_root() / "main" / "pipelines" / "container"
+
+                for image, info in missing_images:
+                    dockerfile = container_dir / info['dockerfile']
+                    if not dockerfile.exists():
+                        print(f"   {Colors.yellow_bold('WARN')} Dockerfile not found: {dockerfile}" if is_tty()
+                              else f"   [WARN] Dockerfile not found: {dockerfile}")
+                        continue
+
+                    print(f"   Building {image} (this may take several minutes)...")
                     try:
+                        # Build the image
                         result = subprocess.run(
-                            ["docker", "pull", image],
-                            capture_output=True,
-                            text=True,
-                            timeout=600  # 10 min timeout for large images
+                            ["docker", "build", "-t", image, "-f", str(dockerfile), str(container_dir)],
+                            capture_output=False,  # Show build output
+                            timeout=1800  # 30 min timeout for large builds
                         )
                         if result.returncode == 0:
-                            print(f"   {Colors.green_bold('OK')} {image} pulled successfully!" if is_tty()
-                                  else f"   [OK] {image} pulled!")
+                            print(f"   {Colors.green_bold('OK')} {image} built successfully!" if is_tty()
+                                  else f"   [OK] {image} built!")
                         else:
-                            print(f"   {Colors.yellow_bold('WARN')} Could not pull {image} - will build on first use" if is_tty()
-                                  else f"   [WARN] Could not pull {image}")
+                            print(f"   {Colors.yellow_bold('WARN')} Build failed for {image}" if is_tty()
+                                  else f"   [WARN] Build failed for {image}")
                     except subprocess.TimeoutExpired:
-                        print(f"   Timeout pulling {image}")
+                        print(f"   Timeout building {image}")
                     except Exception as e:
-                        print(f"   Error pulling {image}: {e}")
+                        print(f"   Error building {image}: {e}")
 
     print()
 
