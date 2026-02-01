@@ -1717,13 +1717,6 @@ try:
 except Exception as e:
     log(f"[postprocess] Warning: Plot generation failed: {e}")
 
-# Debug: list what's in plots_dir before manifest creation
-if plots_dir.exists():
-    plot_files = list(plots_dir.glob("*.svg"))
-    log(f"[postprocess] DEBUG: Found {len(plot_files)} SVG files in {plots_dir}: {[f.name for f in plot_files]}")
-else:
-    log(f"[postprocess] DEBUG: plots_dir does not exist: {plots_dir}")
-
 manifest = {
     "module": module_name,
     "run_name": run_name,
