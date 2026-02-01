@@ -1421,8 +1421,8 @@ def build_config(config: RunConfig, repo_root: Optional[Path] = None) -> Dict[st
 
         if config.use_container:
             valencia_root = "/work/tools/VALENCIA"
-            # Default container path - will be updated if we need to mount
-            default_centroids = "/valencia/centroids.csv" if valencia_centroids_host_resolved else "/work/tools/VALENCIA/CST_centroids_012920.csv"
+            # Default container path - use actual filename if resolved, otherwise fallback
+            default_centroids = f"/valencia/{valencia_centroids_host_resolved.name}" if valencia_centroids_host_resolved else "/work/tools/VALENCIA/CST_centroids_012920.csv"
         else:
             valencia_root = str(repo_root / "main" / "tools" / "VALENCIA")
             default_centroids = str(valencia_centroids_host_resolved) if valencia_centroids_host_resolved else str(repo_root / "main" / "tools" / "VALENCIA" / "CST_centroids_012920.csv")
@@ -1442,8 +1442,8 @@ def build_config(config: RunConfig, repo_root: Optional[Path] = None) -> Dict[st
                     valencia_centroids = f"/work/{rel_path}"
                     config._valencia_centroids_host = None  # No extra mount needed
                 except ValueError:
-                    # File is outside main/, mount to container
-                    valencia_centroids = "/valencia/centroids.csv"
+                    # File is outside main/, mount to container with actual filename
+                    valencia_centroids = f"/valencia/{user_centroids.name}"
                     config._valencia_centroids_host = user_centroids
             else:
                 valencia_centroids = str(user_centroids)
@@ -2013,9 +2013,11 @@ def run_pipeline(
         # Mount VALENCIA centroids file if it's external to the bundle
         valencia_centroids_host = getattr(config, '_valencia_centroids_host', None)
         if valencia_centroids_host and Path(valencia_centroids_host).exists():
-            valencia_centroids_container = "/valencia/centroids.csv"
-            # Mount the file's directory
-            valencia_dir = Path(valencia_centroids_host).parent
+            # Mount the file's directory and use the actual filename
+            valencia_host_path = Path(valencia_centroids_host)
+            valencia_filename = valencia_host_path.name  # e.g., CST_centroids_012920.csv
+            valencia_dir = valencia_host_path.parent
+            valencia_centroids_container = f"/valencia/{valencia_filename}"
             extra_mounts.append((str(valencia_dir), "/valencia"))
             # Update container config
             if "valencia" not in container_config_dict:
