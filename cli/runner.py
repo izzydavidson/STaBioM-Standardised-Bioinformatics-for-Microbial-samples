@@ -1367,13 +1367,32 @@ def build_config(config: RunConfig, repo_root: Optional[Path] = None) -> Dict[st
         ]
         emu_db_host_resolved = None
         for candidate in emu_db_candidates:
-            if candidate.exists() and (candidate / "species_taxid.fasta").exists():
-                emu_db_host_resolved = candidate
-                break
+            if candidate.exists():
+                # Check for species_taxid.fasta directly or in subdirectories
+                if (candidate / "species_taxid.fasta").exists():
+                    emu_db_host_resolved = candidate
+                    break
+                # Check subdirectories (some databases extract with nested structure)
+                for subdir in candidate.iterdir():
+                    if subdir.is_dir() and (subdir / "species_taxid.fasta").exists():
+                        emu_db_host_resolved = subdir
+                        break
+                if emu_db_host_resolved:
+                    break
 
         # Use CLI arg if provided, otherwise use resolved path
         if config.emu_db:
             emu_db_host_path = Path(config.emu_db)
+            # Check if database files are directly in the path or in a subdirectory
+            # Some Emu databases extract with a nested directory structure
+            if not (emu_db_host_path / "species_taxid.fasta").exists():
+                # Look for species_taxid.fasta in subdirectories
+                for subdir in emu_db_host_path.iterdir():
+                    if subdir.is_dir() and (subdir / "species_taxid.fasta").exists():
+                        emu_db_host_path = subdir
+                        if config.verbose:
+                            print(f"[stabiom] Found Emu DB in subdirectory: {emu_db_host_path}")
+                        break
         elif emu_db_host_resolved:
             emu_db_host_path = emu_db_host_resolved
         else:
