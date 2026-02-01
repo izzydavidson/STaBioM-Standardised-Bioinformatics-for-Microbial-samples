@@ -62,7 +62,7 @@ DATABASES = {
     "qiime2-silva-138": {
         "name": "QIIME2 SILVA 138 Classifier (208MB)",
         "description": "SILVA 138 99% Naive Bayes classifier for QIIME2 - REQUIRED for sr_amp",
-        "url": "https://data.qiime2.org/2024.10/common/silva-138-99-nb-classifier.qza",
+        "url": "https://data.qiime2.org/2024.2/common/silva-138-99-nb-classifier.qza",
         "size_gb": 0.21,  # ~208 MB
         "pipelines": ["sr_amp"],
         "is_single_file": True,  # Not a tarball, just a single .qza file
