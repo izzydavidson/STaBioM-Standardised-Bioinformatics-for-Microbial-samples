@@ -51,6 +51,13 @@ def collect_data_files():
             rel_path = f.relative_to(REPO_ROOT)
             datas.append((str(f), str(rel_path.parent)))
 
+    # Include patches (e.g., patched Emu script)
+    patches_dir = MAIN_DIR / "pipelines" / "patches"
+    if patches_dir.exists():
+        for f in patches_dir.glob("*.py"):
+            rel_path = f.relative_to(REPO_ROOT)
+            datas.append((str(f), str(rel_path.parent)))
+
     # Config files
     configs_dir = MAIN_DIR / "configs"
     if configs_dir.exists():
