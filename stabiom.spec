@@ -44,6 +44,13 @@ def collect_data_files():
             rel_path = f.relative_to(REPO_ROOT)
             datas.append((str(f), str(rel_path.parent)))
 
+    # Include Dockerfiles for building container images
+    container_dir = MAIN_DIR / "pipelines" / "container"
+    if container_dir.exists():
+        for f in container_dir.glob("dockerfile.*"):
+            rel_path = f.relative_to(REPO_ROOT)
+            datas.append((str(f), str(rel_path.parent)))
+
     # Config files
     configs_dir = MAIN_DIR / "configs"
     if configs_dir.exists():
