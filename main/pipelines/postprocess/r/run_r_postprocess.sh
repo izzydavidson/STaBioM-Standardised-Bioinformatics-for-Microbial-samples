@@ -437,13 +437,13 @@ mkdir -p "${FINAL_PLOTS_DIR}" "${FINAL_TABLES_DIR}"
 
 # Count R-generated plots in results/plots/
 shopt -s nullglob
-r_plot_files=( "${RESULTS_PLOTS_DIR}"/*.png "${RESULTS_PLOTS_DIR}"/*.pdf )
+r_plot_files=( "${RESULTS_PLOTS_DIR}"/*.png "${RESULTS_PLOTS_DIR}"/*.pdf "${RESULTS_PLOTS_DIR}"/*.svg )
 shopt -u nullglob
 R_PLOTS_COUNT=${#r_plot_files[@]}
 
 # Count module-generated plots already in final/plots/
 shopt -s nullglob
-module_plot_files=( "${FINAL_PLOTS_DIR}"/*.png "${FINAL_PLOTS_DIR}"/*.pdf )
+module_plot_files=( "${FINAL_PLOTS_DIR}"/*.png "${FINAL_PLOTS_DIR}"/*.pdf "${FINAL_PLOTS_DIR}"/*.svg )
 shopt -u nullglob
 MODULE_PLOTS_COUNT=${#module_plot_files[@]}
 
@@ -641,7 +641,7 @@ qc_dir = results_dir / "qc"
 plots = []
 if plots_dir.exists():
     for f in plots_dir.iterdir():
-        if f.is_file() and f.suffix.lower() in ('.png', '.pdf'):
+        if f.is_file() and f.suffix.lower() in ('.png', '.pdf', '.svg'):
             plots.append(f.name)
 plots = sorted(plots)
 
@@ -733,7 +733,7 @@ qc_dir = final_dir / "qc"
 plots = []
 if plots_dir.exists():
     for f in plots_dir.iterdir():
-        if f.is_file() and f.suffix.lower() in ('.png', '.pdf'):
+        if f.is_file() and f.suffix.lower() in ('.png', '.pdf', '.svg'):
             plots.append(f.name)
 plots = sorted(plots)
 
@@ -827,7 +827,7 @@ echo "[r_postprocess] =============================================="
 
 # Count files in results/
 shopt -s nullglob
-results_plots=( "${RESULTS_PLOTS_DIR}"/*.png "${RESULTS_PLOTS_DIR}"/*.pdf )
+results_plots=( "${RESULTS_PLOTS_DIR}"/*.png "${RESULTS_PLOTS_DIR}"/*.pdf "${RESULTS_PLOTS_DIR}"/*.svg )
 results_tables=( "${RESULTS_TABLES_DIR}"/*.csv "${RESULTS_TABLES_DIR}"/*.tsv "${RESULTS_TABLES_DIR}"/*.kreport )
 results_valencia=( "${RESULTS_VALENCIA_DIR}"/* )
 results_qc=( "${RESULTS_DIR}/qc"/*.html )
@@ -839,7 +839,7 @@ echo "[r_postprocess] results/qc/:       ${#results_qc[@]} files"
 
 # Count files in final/
 shopt -s nullglob
-final_plots=( "${FINAL_PLOTS_DIR}"/*.png "${FINAL_PLOTS_DIR}"/*.pdf )
+final_plots=( "${FINAL_PLOTS_DIR}"/*.png "${FINAL_PLOTS_DIR}"/*.pdf "${FINAL_PLOTS_DIR}"/*.svg )
 final_tables=( "${FINAL_TABLES_DIR}"/*.csv "${FINAL_TABLES_DIR}"/*.tsv "${FINAL_TABLES_DIR}"/*.kreport )
 final_valencia_files=( "${FINAL_DIR}/valencia"/* )
 final_qc_files=( "${FINAL_DIR}/qc"/*.html )
