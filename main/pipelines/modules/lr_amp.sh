@@ -1568,6 +1568,118 @@ if valencia_dir and valencia_dir.exists() and any(valencia_dir.glob("*")):
 plots_dir = final_dir / "plots"
 plots_dir.mkdir(exist_ok=True)
 
+# Generate plots from abundance data
+try:
+    import matplotlib
+    matplotlib.use('Agg')  # Non-interactive backend
+    import matplotlib.pyplot as plt
+    import matplotlib.colors as mcolors
+
+    # Read species tidy CSV for plotting
+    if species_tidy.exists():
+        with open(species_tidy, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            species_data = list(reader)
+
+        if species_data:
+            # Get unique samples and taxa
+            samples = sorted(set(r.get("sample_id", "") for r in species_data if r.get("sample_id")))
+            all_taxa = set()
+            sample_taxa = {s: {} for s in samples}
+
+            for row in species_data:
+                sample = row.get("sample_id", "")
+                taxon = row.get("species", "")
+                try:
+                    abund = float(row.get("abundance", 0))
+                except:
+                    abund = 0
+                if sample and taxon and abund > 0:
+                    sample_taxa[sample][taxon] = sample_taxa[sample].get(taxon, 0) + abund
+                    all_taxa.add(taxon)
+
+            # Get top taxa for visualization (top 15 by total abundance)
+            taxa_totals = {}
+            for s in samples:
+                for t, a in sample_taxa[s].items():
+                    taxa_totals[t] = taxa_totals.get(t, 0) + a
+            top_taxa = sorted(taxa_totals.keys(), key=lambda x: taxa_totals[x], reverse=True)[:15]
+
+            if samples and top_taxa:
+                # Use a colorblind-friendly palette
+                colors = list(mcolors.TABLEAU_COLORS.values()) + list(mcolors.CSS4_COLORS.values())
+
+                # 1. Stacked bar chart
+                fig, ax = plt.subplots(figsize=(max(10, len(samples) * 1.5), 8))
+                bottom = [0] * len(samples)
+
+                for i, taxon in enumerate(top_taxa):
+                    values = [sample_taxa[s].get(taxon, 0) for s in samples]
+                    ax.bar(range(len(samples)), values, bottom=bottom, label=taxon[:30], color=colors[i % len(colors)])
+                    bottom = [b + v for b, v in zip(bottom, values)]
+
+                ax.set_xticks(range(len(samples)))
+                ax.set_xticklabels(samples, rotation=45, ha='right')
+                ax.set_ylabel('Relative Abundance')
+                ax.set_title('Taxonomic Composition (Top 15 Species)')
+                ax.legend(bbox_to_anchor=(1.02, 1), loc='upper left', fontsize=8)
+                plt.tight_layout()
+                stacked_path = plots_dir / "stacked_bar_species.png"
+                plt.savefig(stacked_path, dpi=150, bbox_inches='tight')
+                plt.close()
+                log(f"[postprocess] Generated plot: stacked_bar_species.png")
+
+                # 2. Heatmap
+                if len(samples) > 1:
+                    fig, ax = plt.subplots(figsize=(max(8, len(samples) * 0.8), max(6, len(top_taxa) * 0.4)))
+                    data_matrix = [[sample_taxa[s].get(t, 0) for s in samples] for t in top_taxa]
+
+                    im = ax.imshow(data_matrix, aspect='auto', cmap='YlOrRd')
+                    ax.set_xticks(range(len(samples)))
+                    ax.set_xticklabels(samples, rotation=45, ha='right')
+                    ax.set_yticks(range(len(top_taxa)))
+                    ax.set_yticklabels([t[:40] for t in top_taxa], fontsize=8)
+                    ax.set_title('Abundance Heatmap (Top 15 Species)')
+                    plt.colorbar(im, ax=ax, label='Relative Abundance')
+                    plt.tight_layout()
+                    heatmap_path = plots_dir / "heatmap_species.png"
+                    plt.savefig(heatmap_path, dpi=150, bbox_inches='tight')
+                    plt.close()
+                    log(f"[postprocess] Generated plot: heatmap_species.png")
+
+                # 3. Pie charts for each sample
+                for sample in samples[:10]:  # Limit to 10 samples
+                    taxa = sample_taxa[sample]
+                    if taxa:
+                        # Get top 8 taxa for this sample, rest as "Other"
+                        sorted_taxa = sorted(taxa.items(), key=lambda x: x[1], reverse=True)
+                        top_8 = sorted_taxa[:8]
+                        other = sum(v for k, v in sorted_taxa[8:])
+
+                        labels = [t[:25] for t, _ in top_8]
+                        sizes = [v for _, v in top_8]
+                        if other > 0:
+                            labels.append("Other")
+                            sizes.append(other)
+
+                        fig, ax = plt.subplots(figsize=(10, 8))
+                        wedges, texts, autotexts = ax.pie(sizes, labels=None, autopct='%1.1f%%',
+                                                           colors=colors[:len(sizes)], pctdistance=0.75)
+                        ax.legend(wedges, labels, loc='center left', bbox_to_anchor=(1, 0.5), fontsize=8)
+                        ax.set_title(f'Taxonomic Composition: {sample}')
+                        plt.tight_layout()
+                        pie_path = plots_dir / f"pie_{sample}.png"
+                        plt.savefig(pie_path, dpi=150, bbox_inches='tight')
+                        plt.close()
+                        log(f"[postprocess] Generated plot: pie_{sample}.png")
+
+                log(f"[postprocess] Plot generation complete")
+
+except ImportError as e:
+    log(f"[postprocess] Warning: matplotlib not available, skipping plots: {e}")
+except Exception as e:
+    log(f"[postprocess] Warning: Plot generation failed: {e}")
+
 manifest = {
     "module": module_name,
     "run_name": run_name,
