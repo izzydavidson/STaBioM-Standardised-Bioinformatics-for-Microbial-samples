@@ -1024,10 +1024,13 @@ def parse_emu_abundance(path: str):
     with open(path, "r", encoding="utf-8", errors="replace") as f:
         reader = csv.DictReader(f, delimiter='\t')
         for row in reader:
-            # Emu TSV columns: tax_id, abundance, species, genus, family, ...
+            # Emu TSV columns vary by database:
+            # - Default: tax_id, abundance, species, genus, family, ...
+            # - SILVA/RDP: tax_id, abundance, lineage (semicolon-separated)
             abundance_str = row.get("abundance", "0")
             species = row.get("species", "").strip()
             genus = row.get("genus", "").strip()
+            lineage = row.get("lineage", "").strip()
 
             try:
                 abundance = float(abundance_str)
@@ -1036,6 +1039,17 @@ def parse_emu_abundance(path: str):
 
             if abundance <= 0:
                 continue
+
+            # If species/genus columns are empty, try parsing from lineage
+            # Lineage format: Domain;Phylum;Class;Order;Family;Genus;Species;
+            if (not species or species.lower() in ("", "nan", "none")) and lineage:
+                parts = [p.strip() for p in lineage.rstrip(';').split(';') if p.strip()]
+                if len(parts) >= 7:  # Full lineage with species
+                    genus = parts[-2] if parts[-2] else ""
+                    species = parts[-1] if parts[-1] else ""
+                elif len(parts) >= 6:  # Lineage with genus only
+                    genus = parts[-1] if parts[-1] else ""
+                    species = ""
 
             # Build taxa name for VALENCIA matching
             # Prefer species if available, otherwise use genus
@@ -1435,6 +1449,18 @@ def parse_emu_abundance(path):
             tax_id = row.get("tax_id", "")
             species = row.get("species", "").strip()
             genus = row.get("genus", "").strip()
+            lineage = row.get("lineage", "").strip()
+
+            # If species/genus columns are empty, try parsing from lineage
+            # Lineage format: Domain;Phylum;Class;Order;Family;Genus;Species;
+            if (not species or species.lower() in ("", "nan", "none")) and lineage:
+                parts = [p.strip() for p in lineage.rstrip(';').split(';') if p.strip()]
+                if len(parts) >= 7:  # Full lineage with species
+                    genus = parts[-2] if parts[-2] else ""
+                    species = parts[-1] if parts[-1] else ""
+                elif len(parts) >= 6:  # Lineage with genus only
+                    genus = parts[-1] if parts[-1] else ""
+                    species = ""
 
             if species and species.lower() not in ("", "nan", "none"):
                 species_data.append({
