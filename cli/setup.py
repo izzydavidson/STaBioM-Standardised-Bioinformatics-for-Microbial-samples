@@ -38,12 +38,26 @@ DATABASES = {
         "warning": "Limited species coverage. Full Bacteria database (200GB+) recommended for comprehensive analysis.",
     },
     "emu-default": {
-        "name": "Emu Default Database",
+        "name": "Emu Default (17K species)",
         "description": "Default Emu database - 17,555 species from rrnDB v5.6 + NCBI 16S RefSeq",
-        "url": "https://osf.io/download/qrbne/",  # emu.tar.gz from OSF
+        "url": "https://files.osf.io/v1/resources/56uf7/providers/osfstorage/63da8a656946a0023a7a54ef",  # emu.tar.gz
         "size_gb": 0.1,  # ~12 MB compressed, ~85 MB extracted
         "pipelines": ["lr_amp"],
-        "warning": "Limited to ~17K species. For comprehensive coverage, build custom database from SILVA (280K+ species).",
+        "warning": "Limited coverage. Consider emu-silva or emu-rdp for better results.",
+    },
+    "emu-silva": {
+        "name": "Emu SILVA (100K+ species)",
+        "description": "SILVA-based Emu database - broader bacterial and archaeal coverage",
+        "url": "https://files.osf.io/v1/resources/56uf7/providers/osfstorage/63da837c7d0187023fbc4993",  # silva_database.tar.gz
+        "size_gb": 0.6,  # ~148 MB compressed, ~625 MB extracted
+        "pipelines": ["lr_amp"],
+    },
+    "emu-rdp": {
+        "name": "Emu RDP (280K+ species) - RECOMMENDED",
+        "description": "RDP-based Emu database - most comprehensive coverage for 16S classification",
+        "url": "https://files.osf.io/v1/resources/56uf7/providers/osfstorage/63da84611e96860221b25460",  # rdp.tar.gz
+        "size_gb": 1.3,  # ~110 MB compressed, ~1.2 GB extracted
+        "pipelines": ["lr_amp"],
     },
 }
 
@@ -222,10 +236,22 @@ def download_with_progress(url: str, dest: Path, desc: str = "Downloading") -> b
 
 
 def extract_tarball(archive: Path, dest_dir: Path) -> bool:
-    """Extract a tar.gz archive."""
+    """Extract a tar archive (supports .tar, .tar.gz, .tgz)."""
     try:
         print(f"  Extracting to {dest_dir}...")
-        with tarfile.open(archive, "r:gz") as tar:
+        # Determine compression mode based on filename
+        name = archive.name.lower()
+        if name.endswith('.tar.gz') or name.endswith('.tgz'):
+            mode = "r:gz"
+        elif name.endswith('.tar.bz2'):
+            mode = "r:bz2"
+        elif name.endswith('.tar'):
+            mode = "r:"
+        else:
+            # Try auto-detection
+            mode = "r:*"
+
+        with tarfile.open(archive, mode) as tar:
             tar.extractall(path=dest_dir)
         return True
     except Exception as e:
@@ -513,6 +539,58 @@ def run_setup(interactive: bool = True, install_docker: bool = False,
         if not docker_ok:
             issues.append("Docker not available")
 
+    # Check for required Docker images if Docker is available
+    if docker_ok:
+        print()
+        print("   Checking Docker images...")
+        required_images = {
+            "stabiom-lr:latest": "Long-read pipelines (lr_amp, lr_meta)",
+            "stabiom-sr:latest": "Short-read pipelines (sr_amp, sr_meta)",
+        }
+        missing_images = []
+
+        for image, description in required_images.items():
+            try:
+                result = subprocess.run(
+                    ["docker", "image", "inspect", image],
+                    capture_output=True,
+                    timeout=10
+                )
+                if result.returncode == 0:
+                    print(f"   {Colors.green_bold('FOUND')} {image} - {description}" if is_tty()
+                          else f"   [FOUND] {image} - {description}")
+                else:
+                    print(f"   {Colors.yellow_bold('MISSING')} {image} - {description}" if is_tty()
+                          else f"   [MISSING] {image} - {description}")
+                    missing_images.append(image)
+            except Exception:
+                missing_images.append(image)
+
+        if missing_images and interactive:
+            print()
+            print("   Missing Docker images can be pulled from Docker Hub or built locally.")
+            print("   Note: Images will be automatically pulled when running pipelines.")
+            if prompt_yes_no("   Would you like to pull missing images now?", default=False):
+                for image in missing_images:
+                    print(f"   Pulling {image}...")
+                    try:
+                        result = subprocess.run(
+                            ["docker", "pull", image],
+                            capture_output=True,
+                            text=True,
+                            timeout=600  # 10 min timeout for large images
+                        )
+                        if result.returncode == 0:
+                            print(f"   {Colors.green_bold('OK')} {image} pulled successfully!" if is_tty()
+                                  else f"   [OK] {image} pulled!")
+                        else:
+                            print(f"   {Colors.yellow_bold('WARN')} Could not pull {image} - will build on first use" if is_tty()
+                                  else f"   [WARN] Could not pull {image}")
+                    except subprocess.TimeoutExpired:
+                        print(f"   Timeout pulling {image}")
+                    except Exception as e:
+                        print(f"   Error pulling {image}: {e}")
+
     print()
 
     # Step 3: Check/Download databases
@@ -551,11 +629,11 @@ def run_setup(interactive: bool = True, install_docker: bool = False,
         # Add note about comprehensive databases
         print("   " + "-" * 50)
         if is_tty():
-            print(f"   {Colors.yellow_bold('NOTE')}: For comprehensive bacterial analysis:")
+            print(f"   {Colors.yellow_bold('NOTE')}: Database recommendations:")
         else:
-            print("   [NOTE]: For comprehensive bacterial analysis:")
-        print("   - Kraken2: Full Bacteria DB (200GB+) requires manual install")
-        print("   - Emu: Build custom SILVA database for 280K+ species coverage")
+            print("   [NOTE]: Database recommendations:")
+        print("   - Emu RDP (280K species) - RECOMMENDED for 16S classification")
+        print("   - Kraken2: Full Bacteria DB (200GB+) for metagenomics requires manual install")
         print("   " + "-" * 50)
         print()
 
@@ -571,8 +649,15 @@ def run_setup(interactive: bool = True, install_docker: bool = False,
                         if not prompt_yes_no("   Continue anyway?", default=False):
                             continue
 
-                    # Download
-                    archive_path = data_dir / f"{db_id}.tar.gz"
+                    # Download - determine file extension from URL
+                    url = db_info['url']
+                    if url.endswith('.tar.gz') or url.endswith('.tgz'):
+                        ext = '.tar.gz'
+                    elif url.endswith('.tar'):
+                        ext = '.tar'
+                    else:
+                        ext = '.tar.gz'  # Default
+                    archive_path = data_dir / f"{db_id}{ext}"
                     print(f"   Downloading {db_info['name']}...")
 
                     if download_with_progress(db_info['url'], archive_path, "Downloading"):
@@ -608,7 +693,15 @@ def run_setup(interactive: bool = True, install_docker: bool = False,
                 continue
 
             db_info = DATABASES[db_id]
-            archive_path = data_dir / f"{db_id}.tar.gz"
+            # Determine file extension from URL
+            url = db_info['url']
+            if url.endswith('.tar.gz') or url.endswith('.tgz'):
+                ext = '.tar.gz'
+            elif url.endswith('.tar'):
+                ext = '.tar'
+            else:
+                ext = '.tar.gz'
+            archive_path = data_dir / f"{db_id}{ext}"
             print(f"   Downloading {db_info['name']}...")
 
             if download_with_progress(db_info['url'], archive_path, "Downloading"):
