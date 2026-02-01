@@ -365,8 +365,28 @@ LR_AMP_SAMPLE_TYPE_NORM="$(printf "%s" "${LR_AMP_SAMPLE_TYPE_RAW}" | tr '[:upper
 POSTPROCESS_ENABLED="$(jq_first "${CONFIG_PATH}" '.postprocess.enabled' '.tools.postprocess.enabled' '.postprocess_enabled' || true)"
 [[ -n "${POSTPROCESS_ENABLED}" ]] || POSTPROCESS_ENABLED="1"
 
-# Emu settings (lr_amp uses Emu for taxonomy classification)
+# References + DB
+KRAKEN2_DB="$(jq_first "${CONFIG_PATH}" '.tools.kraken2.db' '.tools.kraken2.db_classify' '.kraken2_db' || true)"
+
+# Emu settings
 EMU_DB="$(jq_first "${CONFIG_PATH}" '.tools.emu.db' '.emu.db' '.emu_db' || true)"
+
+# Kraken params for amplicon
+KRAKEN_CONF_VAGINAL="$(jq_first "${CONFIG_PATH}" '.tools.kraken2.vaginal.confidence' '.kraken_confidence_vaginal' || true)"
+[[ -n "${KRAKEN_CONF_VAGINAL}" ]] || KRAKEN_CONF_VAGINAL="0.1"
+KRAKEN_MHG_VAGINAL="$(jq_first "${CONFIG_PATH}" '.tools.kraken2.vaginal.minimum_hit_groups' '.kraken_min_hit_groups_vaginal' || true)"
+[[ -n "${KRAKEN_MHG_VAGINAL}" ]] || KRAKEN_MHG_VAGINAL="2"
+
+KRAKEN_CONF_NONVAGINAL="$(jq_first "${CONFIG_PATH}" '.tools.kraken2.nonvaginal.confidence' '.kraken_confidence_nonvaginal' || true)"
+[[ -n "${KRAKEN_CONF_NONVAGINAL}" ]] || KRAKEN_CONF_NONVAGINAL="0.05"
+KRAKEN_MHG_NONVAGINAL="$(jq_first "${CONFIG_PATH}" '.tools.kraken2.nonvaginal.minimum_hit_groups' '.kraken_min_hit_groups_nonvaginal' || true)"
+[[ -n "${KRAKEN_MHG_NONVAGINAL}" ]] || KRAKEN_MHG_NONVAGINAL="2"
+
+USE_BRACKEN="$(jq_first "${CONFIG_PATH}" '.tools.bracken.enabled' '.use_bracken' || true)"
+[[ -n "${USE_BRACKEN}" ]] || USE_BRACKEN="1"
+BRACKEN_READLEN="$(jq_first "${CONFIG_PATH}" '.tools.bracken.readlen' '.bracken_readlen' || true)"
+[[ -n "${BRACKEN_READLEN}" ]] || BRACKEN_READLEN="1500"
+BRACKEN_AVAILABLE="1"
 
 # Dorado/Pod5 settings (used when FAST5 input is provided)
 DORADO_MODEL="$(jq_first "${CONFIG_PATH}" '.tools.dorado.model' '.dorado.model' || true)"
@@ -587,6 +607,8 @@ SAMTOOLS_BIN="$(resolve_tool "${CONFIG_PATH}" '.tools.samtools_bin' 'samtools')"
 FASTQC_BIN="$(resolve_tool "${CONFIG_PATH}" '.tools.fastqc_bin' 'fastqc')"
 MULTIQC_BIN="$(resolve_tool "${CONFIG_PATH}" '.tools.multiqc_bin' 'multiqc')"
 NANOFILT_BIN="$(resolve_tool "${CONFIG_PATH}" '.tools.nanofilt_bin' 'NanoFilt')"
+KRAKEN2_BIN="$(resolve_tool "${CONFIG_PATH}" '.tools.kraken2.bin' 'kraken2')"
+BRACKEN_BIN="$(resolve_tool "${CONFIG_PATH}" '.tools.bracken.bin' 'bracken')"
 EMU_BIN="$(resolve_tool "${CONFIG_PATH}" '.tools.emu.bin' 'emu')"
 GIT_BIN="$(resolve_tool "${CONFIG_PATH}" '.tools.git_bin' 'git')"
 RSCRIPT_BIN="$(resolve_tool "${CONFIG_PATH}" '.tools.rscript_bin' 'Rscript')"
@@ -643,6 +665,23 @@ is_vaginal_barcode() {
 get_site_for_barcode() {
   local barcode="${1:-}"
   echo "${SITE_BY_BARCODE[${barcode}]:-unknown}"
+}
+
+check_bracken_available() {
+  if ! command -v "${BRACKEN_BIN}" >/dev/null 2>&1; then
+    BRACKEN_AVAILABLE="0"
+    USE_BRACKEN="0"
+    log_warn "Bracken not found. Bracken will be skipped."
+    return 0
+  fi
+
+  [[ -n "${KRAKEN2_DB}" && "${KRAKEN2_DB}" != "null" ]] || { BRACKEN_AVAILABLE="0"; USE_BRACKEN="0"; log_warn "KRAKEN2_DB not set; bracken disabled."; return 0; }
+  local kmer_file="${KRAKEN2_DB}/database${BRACKEN_READLEN}mers.kmer_distrib"
+  if [[ ! -s "${kmer_file}" ]]; then
+    BRACKEN_AVAILABLE="0"
+    USE_BRACKEN="0"
+    log_warn "Bracken kmer distribution not found at ${kmer_file}; bracken disabled."
+  fi
 }
 
 ############################################
@@ -874,7 +913,7 @@ length_filter_per_barcode() {
 ############################################
 
 emu_classification_per_barcode() {
-  # lr_amp uses Emu for taxonomy classification
+  # lr_amp uses ONLY Emu for classification (no Kraken2)
   if [[ "${FULL_LENGTH}" != "1" ]]; then
     log_warn "Skipping Emu (not full-length amplicons). Note: lr_amp uses Emu only."
     return 0
@@ -921,6 +960,18 @@ emu_classification_per_barcode() {
 }
 
 ############################################
+##  KRAKEN2 - DISABLED FOR lr_amp        ##
+##  (lr_amp uses ONLY Emu classification) ##
+############################################
+
+kraken2_secondary_per_barcode() {
+  # lr_amp uses ONLY Emu for taxonomy classification
+  # Kraken2/Bracken are disabled - use lr_meta for Kraken2-based workflows
+  log_info "Kraken2 disabled for lr_amp (Emu-only pipeline)"
+  return 0
+}
+
+############################################
 ##       VALENCIA (vaginal samples)       ##
 ############################################
 
@@ -928,7 +979,7 @@ emu_classification_per_barcode() {
 # This mirrors the sr_amp approach for consistency across all pipelines
 
 run_valencia() {
-  # lr_amp uses Emu outputs for VALENCIA
+  # lr_amp uses Emu outputs for VALENCIA (not Kraken2 kreports)
   local emu_run_dir="${EMU_DIR}/${RUN_NAME}"
 
   # Determine if VALENCIA should run
@@ -948,7 +999,7 @@ run_valencia() {
     return 0
   fi
 
-  # Check for Emu output files
+  # Check for Emu output files (not kreports - lr_amp is Emu-only)
   if [[ ! -d "${emu_run_dir}" ]]; then
     local started ended
     started="$(iso_now)"; ended="$(iso_now)"
@@ -1024,13 +1075,10 @@ def parse_emu_abundance(path: str):
     with open(path, "r", encoding="utf-8", errors="replace") as f:
         reader = csv.DictReader(f, delimiter='\t')
         for row in reader:
-            # Emu TSV columns vary by database:
-            # - Default: tax_id, abundance, species, genus, family, ...
-            # - SILVA/RDP: tax_id, abundance, lineage (semicolon-separated)
+            # Emu TSV columns: tax_id, abundance, species, genus, family, ...
             abundance_str = row.get("abundance", "0")
             species = row.get("species", "").strip()
             genus = row.get("genus", "").strip()
-            lineage = row.get("lineage", "").strip()
 
             try:
                 abundance = float(abundance_str)
@@ -1039,17 +1087,6 @@ def parse_emu_abundance(path: str):
 
             if abundance <= 0:
                 continue
-
-            # If species/genus columns are empty, try parsing from lineage
-            # Lineage format: Domain;Phylum;Class;Order;Family;Genus;Species;
-            if (not species or species.lower() in ("", "nan", "none")) and lineage:
-                parts = [p.strip() for p in lineage.rstrip(';').split(';') if p.strip()]
-                if len(parts) >= 7:  # Full lineage with species
-                    genus = parts[-2] if parts[-2] else ""
-                    species = parts[-1] if parts[-1] else ""
-                elif len(parts) >= 6:  # Lineage with genus only
-                    genus = parts[-1] if parts[-1] else ""
-                    species = ""
 
             # Build taxa name for VALENCIA matching
             # Prefer species if available, otherwise use genus
@@ -1391,7 +1428,7 @@ VALENCIA_PY
 run_postprocess() {
   [[ "${POSTPROCESS_ENABLED}" == "1" ]] || { log_warn "Skipping postprocess (postprocess.enabled=0)"; return 0; }
 
-  # Check for Emu outputs
+  # lr_amp uses ONLY Emu - check for Emu outputs (not Kraken2)
   local emu_run_dir="${EMU_DIR}/${RUN_NAME}"
   if [[ ! -d "${emu_run_dir}" ]]; then
     log_warn "Skipping postprocess - no Emu results found at ${emu_run_dir}"
@@ -1408,7 +1445,6 @@ import os
 import sys
 import csv
 import json
-import math
 import shutil
 from pathlib import Path
 from collections import defaultdict
@@ -1428,7 +1464,7 @@ def log(msg):
     print(msg)
 
 log(f"[postprocess] Starting postprocessing for {module_name} run: {run_name}")
-log(f"[postprocess] Using Emu classifier")
+log(f"[postprocess] lr_amp uses Emu-only (no Kraken2)")
 
 # Parse Emu rel-abundance TSV files
 def parse_emu_abundance(path):
@@ -1450,18 +1486,6 @@ def parse_emu_abundance(path):
             tax_id = row.get("tax_id", "")
             species = row.get("species", "").strip()
             genus = row.get("genus", "").strip()
-            lineage = row.get("lineage", "").strip()
-
-            # If species/genus columns are empty, try parsing from lineage
-            # Lineage format: Domain;Phylum;Class;Order;Family;Genus;Species;
-            if (not species or species.lower() in ("", "nan", "none")) and lineage:
-                parts = [p.strip() for p in lineage.rstrip(';').split(';') if p.strip()]
-                if len(parts) >= 7:  # Full lineage with species
-                    genus = parts[-2] if parts[-2] else ""
-                    species = parts[-1] if parts[-1] else ""
-                elif len(parts) >= 6:  # Lineage with genus only
-                    genus = parts[-1] if parts[-1] else ""
-                    species = ""
 
             if species and species.lower() not in ("", "nan", "none"):
                 species_data.append({
@@ -1569,309 +1593,13 @@ if valencia_dir and valencia_dir.exists() and any(valencia_dir.glob("*")):
 plots_dir = final_dir / "plots"
 plots_dir.mkdir(exist_ok=True)
 
-# Generate SVG plots from abundance data (no external dependencies)
-try:
-    # Color palette (colorblind-friendly)
-    COLORS = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
-              '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf',
-              '#aec7e8', '#ffbb78', '#98df8a', '#ff9896', '#c5b0d5']
-
-    # Heatmap color scale (white to dark blue)
-    def heatmap_color(value, max_val):
-        if max_val == 0:
-            return '#ffffff'
-        intensity = min(1.0, value / max_val)
-        r = int(255 * (1 - intensity * 0.8))
-        g = int(255 * (1 - intensity * 0.8))
-        b = int(255 * (1 - intensity * 0.3))
-        return f'#{r:02x}{g:02x}{b:02x}'
-
-    def generate_stacked_bar(sample_taxa, samples, top_taxa, title, filename):
-        """Generate stacked bar chart SVG"""
-        bar_width = 60
-        bar_gap = 20
-        chart_height = 350
-        legend_width = 300
-        margin_left = 60
-        margin_bottom = 120
-        chart_width = len(samples) * (bar_width + bar_gap) + margin_left + 40
-        total_width = chart_width + legend_width
-        total_height = chart_height + margin_bottom + 50
-
-        svg = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{total_width}" height="{total_height}">']
-        svg.append('<style>text { font-family: Arial, sans-serif; font-size: 11px; }</style>')
-        svg.append(f'<text x="{chart_width//2}" y="25" text-anchor="middle" font-size="14" font-weight="bold">{title}</text>')
-
-        # Y-axis
-        svg.append(f'<line x1="{margin_left}" y1="40" x2="{margin_left}" y2="{chart_height + 40}" stroke="#333" stroke-width="1"/>')
-        for tick in [0, 0.25, 0.5, 0.75, 1.0]:
-            y = chart_height + 40 - tick * chart_height
-            svg.append(f'<line x1="{margin_left-5}" y1="{y}" x2="{margin_left}" y2="{y}" stroke="#333"/>')
-            svg.append(f'<text x="{margin_left-8}" y="{y+4}" text-anchor="end" font-size="10">{tick:.0%}</text>')
-
-        # Draw bars
-        for i, sample in enumerate(samples):
-            x = margin_left + 10 + i * (bar_width + bar_gap)
-            y_bottom = chart_height + 40
-            for j, taxon in enumerate(top_taxa):
-                abund = sample_taxa[sample].get(taxon, 0)
-                bar_h = abund * chart_height
-                if bar_h > 1:
-                    y = y_bottom - bar_h
-                    color = COLORS[j % len(COLORS)]
-                    svg.append(f'<rect x="{x}" y="{y}" width="{bar_width}" height="{bar_h}" fill="{color}"/>')
-                    y_bottom = y
-            # Sample label (rotated)
-            lbl_x = x + bar_width//2
-            lbl_y = chart_height + 55
-            svg.append(f'<text x="{lbl_x}" y="{lbl_y}" text-anchor="end" transform="rotate(-45 {lbl_x} {lbl_y})" font-size="10">{sample[:15]}</text>')
-
-        # Legend
-        leg_x = chart_width + 10
-        svg.append(f'<text x="{leg_x}" y="50" font-weight="bold" font-size="11">Legend</text>')
-        for j, taxon in enumerate(top_taxa):
-            leg_y = 65 + j * 22
-            color = COLORS[j % len(COLORS)]
-            svg.append(f'<rect x="{leg_x}" y="{leg_y}" width="14" height="14" fill="{color}"/>')
-            svg.append(f'<text x="{leg_x + 18}" y="{leg_y + 11}" font-size="10">{taxon[:40]}</text>')
-
-        svg.append('</svg>')
-        with open(plots_dir / filename, "w") as f:
-            f.write('\n'.join(svg))
-        log(f"[postprocess] Generated plot: {filename}")
-
-    def generate_heatmap(sample_taxa, samples, top_taxa, title, filename):
-        """Generate heatmap SVG"""
-        cell_w = 60
-        cell_h = 25
-        label_width = 200
-        margin_top = 120
-        margin_left = label_width + 10
-        chart_width = len(samples) * cell_w + margin_left + 80
-        chart_height = len(top_taxa) * cell_h + margin_top + 50
-
-        # Find max value for color scaling
-        max_val = max((sample_taxa[s].get(t, 0) for s in samples for t in top_taxa), default=0.01)
-
-        svg = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{chart_width}" height="{chart_height}">']
-        svg.append('<style>text { font-family: Arial, sans-serif; font-size: 10px; }</style>')
-        svg.append(f'<text x="{chart_width//2}" y="25" text-anchor="middle" font-size="14" font-weight="bold">{title}</text>')
-
-        # Sample labels (rotated at top)
-        for i, sample in enumerate(samples):
-            x = margin_left + i * cell_w + cell_w // 2
-            svg.append(f'<text x="{x}" y="{margin_top - 10}" text-anchor="end" transform="rotate(-45 {x} {margin_top - 10})" font-size="9">{sample[:15]}</text>')
-
-        # Draw heatmap cells
-        for j, taxon in enumerate(top_taxa):
-            y = margin_top + j * cell_h
-            # Taxon label
-            svg.append(f'<text x="{label_width}" y="{y + cell_h//2 + 4}" text-anchor="end" font-size="9">{taxon[:30]}</text>')
-            for i, sample in enumerate(samples):
-                x = margin_left + i * cell_w
-                val = sample_taxa[sample].get(taxon, 0)
-                color = heatmap_color(val, max_val)
-                svg.append(f'<rect x="{x}" y="{y}" width="{cell_w-1}" height="{cell_h-1}" fill="{color}" stroke="#ddd"/>')
-                if val > 0.01:
-                    svg.append(f'<text x="{x + cell_w//2}" y="{y + cell_h//2 + 3}" text-anchor="middle" font-size="8">{val:.1%}</text>')
-
-        # Color scale legend
-        leg_x = margin_left + len(samples) * cell_w + 20
-        svg.append(f'<text x="{leg_x}" y="{margin_top}" font-weight="bold" font-size="10">Abundance</text>')
-        for i, pct in enumerate([0, 0.25, 0.5, 0.75, 1.0]):
-            leg_y = margin_top + 15 + i * 20
-            color = heatmap_color(pct * max_val, max_val)
-            svg.append(f'<rect x="{leg_x}" y="{leg_y}" width="20" height="15" fill="{color}" stroke="#999"/>')
-            svg.append(f'<text x="{leg_x + 25}" y="{leg_y + 12}" font-size="9">{pct * max_val:.1%}</text>')
-
-        svg.append('</svg>')
-        with open(plots_dir / filename, "w") as f:
-            f.write('\n'.join(svg))
-        log(f"[postprocess] Generated plot: {filename}")
-
-    def generate_rel_abundance_bar(sample_taxa, samples, top_taxa, title, filename):
-        """Generate relative abundance bar chart (horizontal bars per taxon)"""
-        bar_height = 25
-        bar_gap = 5
-        chart_width = 600
-        label_width = 180
-        margin_top = 50
-        margin_left = label_width + 10
-        total_height = len(top_taxa) * (bar_height + bar_gap) + margin_top + 30
-
-        svg = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{chart_width + 150}" height="{total_height}">']
-        svg.append('<style>text { font-family: Arial, sans-serif; font-size: 10px; }</style>')
-        svg.append(f'<text x="{chart_width//2}" y="25" text-anchor="middle" font-size="14" font-weight="bold">{title}</text>')
-
-        # Calculate mean abundance per taxon
-        mean_abund = {}
-        for taxon in top_taxa:
-            vals = [sample_taxa[s].get(taxon, 0) for s in samples]
-            mean_abund[taxon] = sum(vals) / len(vals) if vals else 0
-
-        max_val = max(mean_abund.values()) if mean_abund else 0.01
-        bar_max_width = chart_width - margin_left - 50
-
-        for j, taxon in enumerate(top_taxa):
-            y = margin_top + j * (bar_height + bar_gap)
-            # Taxon label
-            svg.append(f'<text x="{label_width}" y="{y + bar_height//2 + 4}" text-anchor="end" font-size="9">{taxon[:28]}</text>')
-            # Bar
-            val = mean_abund[taxon]
-            bar_w = (val / max_val) * bar_max_width if max_val > 0 else 0
-            color = COLORS[j % len(COLORS)]
-            svg.append(f'<rect x="{margin_left}" y="{y}" width="{bar_w}" height="{bar_height}" fill="{color}"/>')
-            svg.append(f'<text x="{margin_left + bar_w + 5}" y="{y + bar_height//2 + 4}" font-size="9">{val:.1%}</text>')
-
-        svg.append('</svg>')
-        with open(plots_dir / filename, "w") as f:
-            f.write('\n'.join(svg))
-        log(f"[postprocess] Generated plot: {filename}")
-
-    def generate_pie_chart(taxa_dict, sample_name, filename):
-        """Generate pie chart SVG for a single sample"""
-        sorted_taxa = sorted(taxa_dict.items(), key=lambda x: x[1], reverse=True)
-        top_8 = sorted_taxa[:8]
-        other = sum(v for k, v in sorted_taxa[8:])
-        if other > 0.001:
-            top_8.append(("Other", other))
-
-        svg = ['<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400">']
-        svg.append('<style>text { font-family: Arial, sans-serif; }</style>')
-        svg.append(f'<text x="200" y="25" text-anchor="middle" font-size="14" font-weight="bold">Species Composition: {sample_name}</text>')
-
-        cx, cy, r = 160, 210, 130
-        total = sum(v for _, v in top_8)
-        if total > 0:
-            angle = -90
-            for j, (taxon, abund) in enumerate(top_8):
-                pct = abund / total
-                sweep = pct * 360
-                large = 1 if sweep > 180 else 0
-
-                start_rad = math.radians(angle)
-                end_rad = math.radians(angle + sweep)
-                x1 = cx + r * math.cos(start_rad)
-                y1 = cy + r * math.sin(start_rad)
-                x2 = cx + r * math.cos(end_rad)
-                y2 = cy + r * math.sin(end_rad)
-
-                color = COLORS[j % len(COLORS)]
-                path = f'M {cx} {cy} L {x1:.1f} {y1:.1f} A {r} {r} 0 {large} 1 {x2:.1f} {y2:.1f} Z'
-                svg.append(f'<path d="{path}" fill="{color}"/>')
-                angle += sweep
-
-            # Legend
-            svg.append(f'<text x="340" y="60" font-weight="bold" font-size="11">Legend</text>')
-            for j, (taxon, abund) in enumerate(top_8):
-                leg_y = 80 + j * 32
-                color = COLORS[j % len(COLORS)]
-                pct = 100 * abund / total
-                svg.append(f'<rect x="340" y="{leg_y}" width="16" height="16" fill="{color}"/>')
-                svg.append(f'<text x="362" y="{leg_y + 13}" font-size="10">{taxon[:25]} ({pct:.1f}%)</text>')
-
-        svg.append('</svg>')
-        with open(plots_dir / filename, "w") as f:
-            f.write('\n'.join(svg))
-        log(f"[postprocess] Generated plot: {filename}")
-
-    # Process SPECIES data
-    if species_tidy.exists():
-        with open(species_tidy, "r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            species_data = list(reader)
-
-        if species_data:
-            samples = sorted(set(r.get("sample_id", "") for r in species_data if r.get("sample_id")))
-            sample_species = {s: {} for s in samples}
-
-            for row in species_data:
-                sample = row.get("sample_id", "")
-                taxon = row.get("species", "")
-                try:
-                    abund = float(row.get("abundance", 0))
-                except:
-                    abund = 0
-                if sample and taxon and abund > 0:
-                    sample_species[sample][taxon] = sample_species[sample].get(taxon, 0) + abund
-
-            # Get top species
-            species_totals = {}
-            for s in samples:
-                for t, a in sample_species[s].items():
-                    species_totals[t] = species_totals.get(t, 0) + a
-            top_species = sorted(species_totals.keys(), key=lambda x: species_totals[x], reverse=True)[:15]
-
-            if samples and top_species:
-                # 1. Stacked bar chart - Species
-                generate_stacked_bar(sample_species, samples, top_species,
-                                    "Taxonomic Composition (Top Species)", "stacked_bar_species.svg")
-
-                # 2. Heatmap - Species
-                generate_heatmap(sample_species, samples, top_species,
-                                "Species Abundance Heatmap", "heatmap_species.svg")
-
-                # 3. Relative abundance - Species
-                generate_rel_abundance_bar(sample_species, samples, top_species,
-                                          "Mean Relative Abundance (Species)", "rel_abundance_species.svg")
-
-                # 4. Pie charts per sample
-                for sample in samples[:10]:
-                    if sample_species[sample]:
-                        generate_pie_chart(sample_species[sample], sample, f"pie_species_{sample}.svg")
-
-    # Process GENUS data
-    if genus_tidy.exists():
-        with open(genus_tidy, "r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            genus_data = list(reader)
-
-        if genus_data:
-            samples = sorted(set(r.get("sample_id", "") for r in genus_data if r.get("sample_id")))
-            sample_genus = {s: {} for s in samples}
-
-            for row in genus_data:
-                sample = row.get("sample_id", "")
-                taxon = row.get("genus", "")
-                try:
-                    abund = float(row.get("abundance", 0))
-                except:
-                    abund = 0
-                if sample and taxon and abund > 0:
-                    sample_genus[sample][taxon] = sample_genus[sample].get(taxon, 0) + abund
-
-            # Get top genera
-            genus_totals = {}
-            for s in samples:
-                for t, a in sample_genus[s].items():
-                    genus_totals[t] = genus_totals.get(t, 0) + a
-            top_genera = sorted(genus_totals.keys(), key=lambda x: genus_totals[x], reverse=True)[:15]
-
-            if samples and top_genera:
-                # 5. Stacked bar chart - Genus
-                generate_stacked_bar(sample_genus, samples, top_genera,
-                                    "Taxonomic Composition (Top Genera)", "stacked_bar_genus.svg")
-
-                # 6. Heatmap - Genus
-                generate_heatmap(sample_genus, samples, top_genera,
-                                "Genus Abundance Heatmap", "heatmap_genus.svg")
-
-                # 7. Relative abundance - Genus
-                generate_rel_abundance_bar(sample_genus, samples, top_genera,
-                                          "Mean Relative Abundance (Genus)", "rel_abundance_genus.svg")
-
-    log(f"[postprocess] Plot generation complete")
-
-except Exception as e:
-    log(f"[postprocess] Warning: Plot generation failed: {e}")
-
 manifest = {
     "module": module_name,
     "run_name": run_name,
-    "classifier": "emu",
+    "classifier": "emu",  # lr_amp is Emu-only
     "outputs": {
         "tables": sorted([f.name for f in tables_dir.glob("*")]) if tables_dir.exists() else [],
-        "plots": sorted([f.name for f in plots_dir.glob("*.svg")]) if plots_dir.exists() else [],
+        "plots": sorted([f.name for f in plots_dir.iterdir() if f.suffix.lower() in ('.png', '.svg', '.pdf')]) if plots_dir.exists() else [],
         "valencia": sorted([f.name for f in valencia_final.glob("*")]) if valencia_final.exists() else []
     }
 }
@@ -1890,7 +1618,7 @@ PY
 ############################################
 
 main() {
-  log_info "=== lr_amp Pipeline ==="
+  log_info "=== lr_amp Pipeline (Emu-only) ==="
   log_info "Technology: ${TECHNOLOGY}"
   log_info "Seq type (minimap2 preset): ${SEQ_TYPE}"
   log_info "Full-length: ${FULL_LENGTH}"
@@ -2015,9 +1743,9 @@ main() {
   set -e
   ended="$(iso_now)"
   if [[ $ec -eq 0 ]]; then
-    steps_append "${STEPS_JSON}" "qfilter" "succeeded" "Q-filter completed (min_q=${QFILTER_MIN_Q})" "${NANOFILT_BIN}" "NanoFilt" "${ec}" "${started}" "${ended}"
+    steps_append "${STEPS_JSON}" "qfilter" "succeeded" "qfilter completed or skipped" "${NANOFILT_BIN}" "NanoFilt" "${ec}" "${started}" "${ended}"
   else
-    steps_append "${STEPS_JSON}" "qfilter" "failed" "Q-filter failed (min_q=${QFILTER_MIN_Q})" "${NANOFILT_BIN}" "NanoFilt" "${ec}" "${started}" "${ended}"
+    steps_append "${STEPS_JSON}" "qfilter" "failed" "qfilter failed" "${NANOFILT_BIN}" "NanoFilt" "${ec}" "${started}" "${ended}"
     exit $ec
   fi
 
@@ -2046,6 +1774,12 @@ main() {
     steps_append "${STEPS_JSON}" "emu_primary" "skipped" "Emu classification skipped" "${EMU_BIN}" "emu abundance" "${ec}" "${started}" "${ended}"
   fi
 
+  # Kraken2 is disabled for lr_amp (Emu-only pipeline)
+  started="$(iso_now)"
+  kraken2_secondary_per_barcode  # This is now a no-op that logs "disabled"
+  ended="$(iso_now)"
+  steps_append "${STEPS_JSON}" "taxonomy_kraken2" "skipped" "Kraken2 disabled for lr_amp (Emu-only)" "" "" "0" "${started}" "${ended}"
+
   # Run VALENCIA (inline Python, mirrors sr_amp approach)
   run_valencia
 
@@ -2065,7 +1799,7 @@ main() {
     steps_append "${STEPS_JSON}" "postprocess" "failed" "postprocess failed" "python3" "python3 postprocess" "${ec}" "${started}" "${ended}"
   fi
 
-  # Collect Emu outputs
+  # lr_amp is Emu-only - collect Emu outputs
   local emu_run_dir="${EMU_DIR}/${RUN_NAME}"
   local emu_files_json="[]"
   if [[ -d "${emu_run_dir}" ]]; then
@@ -2110,7 +1844,7 @@ main() {
 
 main "$@"
 
-echo "[${MODULE_NAME}] Step staging complete"
+echo "[${MODULE_NAME}] Step staging complete (Emu-only pipeline)"
 if [[ "${INPUT_STYLE}" == "FAST5_DIR" || "${INPUT_STYLE}" == "FAST5" ]]; then
   print_step_status "${STEPS_JSON}" "fast5_to_pod5"
   print_step_status "${STEPS_JSON}" "dorado_basecall"
@@ -2121,6 +1855,7 @@ print_step_status "${STEPS_JSON}" "raw_fastqc_multiqc"
 print_step_status "${STEPS_JSON}" "qfilter"
 print_step_status "${STEPS_JSON}" "length_filter"
 print_step_status "${STEPS_JSON}" "emu_primary"
+print_step_status "${STEPS_JSON}" "taxonomy_kraken2"
 print_step_status "${STEPS_JSON}" "valencia"
 print_step_status "${STEPS_JSON}" "postprocess"
 echo "[${MODULE_NAME}] seq_type: ${SEQ_TYPE}"
