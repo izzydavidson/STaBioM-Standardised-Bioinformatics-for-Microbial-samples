@@ -47,10 +47,22 @@ def collect_data_files():
     # Postprocess R scripts (required for plotting and results generation)
     postprocess_dir = MAIN_DIR / "pipelines" / "postprocess"
     if postprocess_dir.exists():
-        for pattern in ["*.R", "*.py"]:
+        # Collect R and Python scripts from postprocess directory and subdirectories
+        # Include both uppercase and lowercase patterns for cross-platform compatibility
+        for pattern in ["*.R", "*.r", "*.py"]:
             for f in postprocess_dir.rglob(pattern):
                 rel_path = f.relative_to(REPO_ROOT)
                 datas.append((str(f), str(rel_path.parent)))
+        # Explicitly walk all subdirectories to ensure R scripts are bundled
+        for subdir in postprocess_dir.rglob("*"):
+            if subdir.is_dir():
+                for f in subdir.iterdir():
+                    if f.is_file() and f.suffix.lower() in (".r", ".py"):
+                        rel_path = f.relative_to(REPO_ROOT)
+                        # Avoid duplicates by checking if already added
+                        entry = (str(f), str(rel_path.parent))
+                        if entry not in datas:
+                            datas.append(entry)
 
     # Include Dockerfiles for building container images
     container_dir = MAIN_DIR / "pipelines" / "container"
