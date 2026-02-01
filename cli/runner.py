@@ -772,7 +772,7 @@ class RunConfig:
     postprocess: bool = True
     finalize: bool = True
     use_container: bool = True
-    verbose: bool = False
+    verbose: bool = True  # Enable real-time logging by default
     force_overwrite: bool = True
     valencia: bool = False  # Enable Valencia CST analysis
     no_valencia: bool = False  # Disable Valencia even for vaginal samples
