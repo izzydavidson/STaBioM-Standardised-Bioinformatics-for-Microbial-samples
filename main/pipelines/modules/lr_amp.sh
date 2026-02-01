@@ -1568,12 +1568,12 @@ if valencia_dir and valencia_dir.exists() and any(valencia_dir.glob("*")):
 plots_dir = final_dir / "plots"
 plots_dir.mkdir(exist_ok=True)
 
-# Generate plots from abundance data
+# Generate SVG plots from abundance data (no external dependencies)
 try:
-    import matplotlib
-    matplotlib.use('Agg')  # Non-interactive backend
-    import matplotlib.pyplot as plt
-    import matplotlib.colors as mcolors
+    # Color palette (colorblind-friendly)
+    COLORS = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
+              '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf',
+              '#aec7e8', '#ffbb78', '#98df8a', '#ff9896', '#c5b0d5']
 
     # Read species tidy CSV for plotting
     if species_tidy.exists():
@@ -1584,7 +1584,6 @@ try:
         if species_data:
             # Get unique samples and taxa
             samples = sorted(set(r.get("sample_id", "") for r in species_data if r.get("sample_id")))
-            all_taxa = set()
             sample_taxa = {s: {} for s in samples}
 
             for row in species_data:
@@ -1596,87 +1595,124 @@ try:
                     abund = 0
                 if sample and taxon and abund > 0:
                     sample_taxa[sample][taxon] = sample_taxa[sample].get(taxon, 0) + abund
-                    all_taxa.add(taxon)
 
-            # Get top taxa for visualization (top 15 by total abundance)
+            # Get top taxa by total abundance
             taxa_totals = {}
             for s in samples:
                 for t, a in sample_taxa[s].items():
                     taxa_totals[t] = taxa_totals.get(t, 0) + a
-            top_taxa = sorted(taxa_totals.keys(), key=lambda x: taxa_totals[x], reverse=True)[:15]
+            top_taxa = sorted(taxa_totals.keys(), key=lambda x: taxa_totals[x], reverse=True)[:12]
 
             if samples and top_taxa:
-                # Use a colorblind-friendly palette
-                colors = list(mcolors.TABLEAU_COLORS.values()) + list(mcolors.CSS4_COLORS.values())
+                # 1. Stacked bar chart (SVG)
+                bar_width = 60
+                bar_gap = 20
+                chart_height = 350
+                legend_width = 280
+                margin_left = 60
+                margin_bottom = 100
+                chart_width = len(samples) * (bar_width + bar_gap) + margin_left + 40
+                total_width = chart_width + legend_width
+                total_height = chart_height + margin_bottom + 50
 
-                # 1. Stacked bar chart
-                fig, ax = plt.subplots(figsize=(max(10, len(samples) * 1.5), 8))
-                bottom = [0] * len(samples)
+                svg_lines = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{total_width}" height="{total_height}">']
+                svg_lines.append('<style>text { font-family: Arial, sans-serif; font-size: 11px; }</style>')
+                svg_lines.append(f'<text x="{chart_width//2}" y="25" text-anchor="middle" font-size="14" font-weight="bold">Taxonomic Composition (Top Species)</text>')
 
-                for i, taxon in enumerate(top_taxa):
-                    values = [sample_taxa[s].get(taxon, 0) for s in samples]
-                    ax.bar(range(len(samples)), values, bottom=bottom, label=taxon[:30], color=colors[i % len(colors)])
-                    bottom = [b + v for b, v in zip(bottom, values)]
+                # Y-axis
+                svg_lines.append(f'<line x1="{margin_left}" y1="40" x2="{margin_left}" y2="{chart_height + 40}" stroke="#333" stroke-width="1"/>')
+                for tick in [0, 0.25, 0.5, 0.75, 1.0]:
+                    y = chart_height + 40 - tick * chart_height
+                    svg_lines.append(f'<line x1="{margin_left-5}" y1="{y}" x2="{margin_left}" y2="{y}" stroke="#333"/>')
+                    svg_lines.append(f'<text x="{margin_left-8}" y="{y+4}" text-anchor="end" font-size="10">{tick:.0%}</text>')
 
-                ax.set_xticks(range(len(samples)))
-                ax.set_xticklabels(samples, rotation=45, ha='right')
-                ax.set_ylabel('Relative Abundance')
-                ax.set_title('Taxonomic Composition (Top 15 Species)')
-                ax.legend(bbox_to_anchor=(1.02, 1), loc='upper left', fontsize=8)
-                plt.tight_layout()
-                stacked_path = plots_dir / "stacked_bar_species.png"
-                plt.savefig(stacked_path, dpi=150, bbox_inches='tight')
-                plt.close()
-                log(f"[postprocess] Generated plot: stacked_bar_species.png")
+                # Draw bars
+                for i, sample in enumerate(samples):
+                    x = margin_left + 10 + i * (bar_width + bar_gap)
+                    y_bottom = chart_height + 40
+                    for j, taxon in enumerate(top_taxa):
+                        abund = sample_taxa[sample].get(taxon, 0)
+                        bar_h = abund * chart_height
+                        if bar_h > 1:
+                            y = y_bottom - bar_h
+                            color = COLORS[j % len(COLORS)]
+                            svg_lines.append(f'<rect x="{x}" y="{y}" width="{bar_width}" height="{bar_h}" fill="{color}"/>')
+                            y_bottom = y
+                    # Sample label (rotated)
+                    lbl_x = x + bar_width//2
+                    lbl_y = chart_height + 55
+                    svg_lines.append(f'<text x="{lbl_x}" y="{lbl_y}" text-anchor="end" transform="rotate(-45 {lbl_x} {lbl_y})" font-size="10">{sample[:15]}</text>')
 
-                # 2. Heatmap
-                if len(samples) > 1:
-                    fig, ax = plt.subplots(figsize=(max(8, len(samples) * 0.8), max(6, len(top_taxa) * 0.4)))
-                    data_matrix = [[sample_taxa[s].get(t, 0) for s in samples] for t in top_taxa]
+                # Legend
+                leg_x = chart_width + 10
+                svg_lines.append(f'<text x="{leg_x}" y="50" font-weight="bold" font-size="11">Legend</text>')
+                for j, taxon in enumerate(top_taxa):
+                    leg_y = 65 + j * 22
+                    color = COLORS[j % len(COLORS)]
+                    svg_lines.append(f'<rect x="{leg_x}" y="{leg_y}" width="14" height="14" fill="{color}"/>')
+                    svg_lines.append(f'<text x="{leg_x + 18}" y="{leg_y + 11}" font-size="10">{taxon[:35]}</text>')
 
-                    im = ax.imshow(data_matrix, aspect='auto', cmap='YlOrRd')
-                    ax.set_xticks(range(len(samples)))
-                    ax.set_xticklabels(samples, rotation=45, ha='right')
-                    ax.set_yticks(range(len(top_taxa)))
-                    ax.set_yticklabels([t[:40] for t in top_taxa], fontsize=8)
-                    ax.set_title('Abundance Heatmap (Top 15 Species)')
-                    plt.colorbar(im, ax=ax, label='Relative Abundance')
-                    plt.tight_layout()
-                    heatmap_path = plots_dir / "heatmap_species.png"
-                    plt.savefig(heatmap_path, dpi=150, bbox_inches='tight')
-                    plt.close()
-                    log(f"[postprocess] Generated plot: heatmap_species.png")
+                svg_lines.append('</svg>')
+                stacked_path = plots_dir / "stacked_bar_species.svg"
+                with open(stacked_path, "w") as f:
+                    f.write('\n'.join(svg_lines))
+                log(f"[postprocess] Generated plot: stacked_bar_species.svg")
 
-                # 3. Pie charts for each sample
-                for sample in samples[:10]:  # Limit to 10 samples
+                # 2. Pie charts for each sample (SVG)
+                for sample in samples[:8]:
                     taxa = sample_taxa[sample]
-                    if taxa:
-                        # Get top 8 taxa for this sample, rest as "Other"
-                        sorted_taxa = sorted(taxa.items(), key=lambda x: x[1], reverse=True)
-                        top_8 = sorted_taxa[:8]
-                        other = sum(v for k, v in sorted_taxa[8:])
+                    if not taxa:
+                        continue
 
-                        labels = [t[:25] for t, _ in top_8]
-                        sizes = [v for _, v in top_8]
-                        if other > 0:
-                            labels.append("Other")
-                            sizes.append(other)
+                    sorted_taxa = sorted(taxa.items(), key=lambda x: x[1], reverse=True)
+                    top_8 = sorted_taxa[:8]
+                    other = sum(v for k, v in sorted_taxa[8:])
+                    if other > 0.001:
+                        top_8.append(("Other", other))
 
-                        fig, ax = plt.subplots(figsize=(10, 8))
-                        wedges, texts, autotexts = ax.pie(sizes, labels=None, autopct='%1.1f%%',
-                                                           colors=colors[:len(sizes)], pctdistance=0.75)
-                        ax.legend(wedges, labels, loc='center left', bbox_to_anchor=(1, 0.5), fontsize=8)
-                        ax.set_title(f'Taxonomic Composition: {sample}')
-                        plt.tight_layout()
-                        pie_path = plots_dir / f"pie_{sample}.png"
-                        plt.savefig(pie_path, dpi=150, bbox_inches='tight')
-                        plt.close()
-                        log(f"[postprocess] Generated plot: pie_{sample}.png")
+                    # SVG pie chart
+                    svg_lines = ['<svg xmlns="http://www.w3.org/2000/svg" width="600" height="380">']
+                    svg_lines.append('<style>text { font-family: Arial, sans-serif; }</style>')
+                    svg_lines.append(f'<text x="200" y="25" text-anchor="middle" font-size="14" font-weight="bold">Composition: {sample}</text>')
+
+                    cx, cy, r = 160, 200, 120
+                    total = sum(v for _, v in top_8)
+                    if total > 0:
+                        angle = -90  # Start at top
+                        for j, (taxon, abund) in enumerate(top_8):
+                            pct = abund / total
+                            sweep = pct * 360
+                            large = 1 if sweep > 180 else 0
+
+                            start_rad = math.radians(angle)
+                            end_rad = math.radians(angle + sweep)
+                            x1 = cx + r * math.cos(start_rad)
+                            y1 = cy + r * math.sin(start_rad)
+                            x2 = cx + r * math.cos(end_rad)
+                            y2 = cy + r * math.sin(end_rad)
+
+                            color = COLORS[j % len(COLORS)]
+                            path = f'M {cx} {cy} L {x1:.1f} {y1:.1f} A {r} {r} 0 {large} 1 {x2:.1f} {y2:.1f} Z'
+                            svg_lines.append(f'<path d="{path}" fill="{color}"/>')
+                            angle += sweep
+
+                        # Legend
+                        svg_lines.append(f'<text x="330" y="55" font-weight="bold" font-size="11">Legend</text>')
+                        for j, (taxon, abund) in enumerate(top_8):
+                            leg_y = 70 + j * 28
+                            color = COLORS[j % len(COLORS)]
+                            pct = 100 * abund / total
+                            svg_lines.append(f'<rect x="330" y="{leg_y}" width="14" height="14" fill="{color}"/>')
+                            svg_lines.append(f'<text x="350" y="{leg_y + 11}" font-size="10">{taxon[:22]} ({pct:.1f}%)</text>')
+
+                    svg_lines.append('</svg>')
+                    pie_path = plots_dir / f"pie_{sample}.svg"
+                    with open(pie_path, "w") as f:
+                        f.write('\n'.join(svg_lines))
+                    log(f"[postprocess] Generated plot: pie_{sample}.svg")
 
                 log(f"[postprocess] Plot generation complete")
 
-except ImportError as e:
-    log(f"[postprocess] Warning: matplotlib not available, skipping plots: {e}")
 except Exception as e:
     log(f"[postprocess] Warning: Plot generation failed: {e}")
 
@@ -1686,7 +1722,7 @@ manifest = {
     "classifier": "emu",
     "outputs": {
         "tables": sorted([f.name for f in tables_dir.glob("*")]) if tables_dir.exists() else [],
-        "plots": sorted([f.name for f in plots_dir.glob("*.png")]) if plots_dir.exists() else [],
+        "plots": sorted([f.name for f in plots_dir.glob("*.svg")]) if plots_dir.exists() else [],
         "valencia": sorted([f.name for f in valencia_final.glob("*")]) if valencia_final.exists() else []
     }
 }
