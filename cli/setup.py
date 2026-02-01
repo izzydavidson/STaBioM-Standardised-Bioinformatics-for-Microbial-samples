@@ -437,6 +437,7 @@ def run_setup(interactive: bool = True, install_docker: bool = False,
 
     issues = []
     needs_shell_restart = False
+    downloaded_items = []  # Track downloaded databases and tools for final summary
 
     # Step 1: Add to PATH
     print(Colors.cyan_bold("1. Adding stabiom to PATH...") if is_tty() else "1. Adding stabiom to PATH...")
@@ -577,7 +578,20 @@ def run_setup(interactive: bool = True, install_docker: bool = False,
                     if download_with_progress(db_info['url'], archive_path, "Downloading"):
                         if extract_tarball(archive_path, data_dir / db_id):
                             archive_path.unlink()  # Remove archive after extraction
+                            db_path = data_dir / db_id
                             print(f"   {Colors.green_bold('OK')} {db_info['name']} installed!" if is_tty() else f"   [OK] Installed!")
+                            print()
+                            print(f"   {Colors.cyan_bold('Database path:')} " if is_tty() else "   Database path:")
+                            print(f"   {db_path}")
+                            # Print usage hint based on database type
+                            if "emu" in db_id:
+                                emu_subdir = db_path / "emu" if (db_path / "emu").exists() else db_path
+                                print(f"   Use with: --emu-db {emu_subdir}")
+                                downloaded_items.append(("Emu Database", str(emu_subdir), f"--emu-db {emu_subdir}"))
+                            elif "kraken2" in db_id:
+                                print(f"   Use with: --db {db_path}")
+                                downloaded_items.append(("Kraken2 Database", str(db_path), f"--db {db_path}"))
+                            print()
                         else:
                             print(f"   Failed to extract database")
                     else:
@@ -600,7 +614,14 @@ def run_setup(interactive: bool = True, install_docker: bool = False,
             if download_with_progress(db_info['url'], archive_path, "Downloading"):
                 if extract_tarball(archive_path, data_dir / db_id):
                     archive_path.unlink()
+                    db_path = data_dir / db_id
                     print(f"   Installed {db_info['name']}")
+                    print(f"   Path: {db_path}")
+                    if "emu" in db_id:
+                        emu_subdir = db_path / "emu" if (db_path / "emu").exists() else db_path
+                        downloaded_items.append(("Emu Database", str(emu_subdir), f"--emu-db {emu_subdir}"))
+                    elif "kraken2" in db_id:
+                        downloaded_items.append(("Kraken2 Database", str(db_path), f"--db {db_path}"))
 
     print()
 
@@ -654,6 +675,7 @@ def run_setup(interactive: bool = True, install_docker: bool = False,
                                     print()
                                     print("   Use with: --valencia-centroids " + str(centroids_file))
                                     print()
+                                    downloaded_items.append(("VALENCIA Centroids", str(centroids_file), f"--valencia-centroids {centroids_file}"))
                         else:
                             print(f"   Failed to extract tool")
                     else:
@@ -664,6 +686,16 @@ def run_setup(interactive: bool = True, install_docker: bool = False,
     # Step 5: Summary
     print(Colors.cyan_bold("5. Summary") if is_tty() else "5. Summary")
     print()
+
+    # Print downloaded items summary
+    if downloaded_items:
+        print(f"   {Colors.cyan_bold('Downloaded Resources:')} " if is_tty() else "   Downloaded Resources:")
+        print()
+        for name, path, usage in downloaded_items:
+            print(f"   {Colors.green_bold(name)}:" if is_tty() else f"   {name}:")
+            print(f"     Path:  {path}")
+            print(f"     Usage: {usage}")
+            print()
 
     if not issues:
         print(f"   {Colors.green_bold('All checks passed!')} STaBioM is ready to use." if is_tty()
