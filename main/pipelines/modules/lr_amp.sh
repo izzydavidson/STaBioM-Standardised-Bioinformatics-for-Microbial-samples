@@ -1576,16 +1576,214 @@ try:
               '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf',
               '#aec7e8', '#ffbb78', '#98df8a', '#ff9896', '#c5b0d5']
 
-    # Read species tidy CSV for plotting
+    # Heatmap color scale (white to dark blue)
+    def heatmap_color(value, max_val):
+        if max_val == 0:
+            return '#ffffff'
+        intensity = min(1.0, value / max_val)
+        r = int(255 * (1 - intensity * 0.8))
+        g = int(255 * (1 - intensity * 0.8))
+        b = int(255 * (1 - intensity * 0.3))
+        return f'#{r:02x}{g:02x}{b:02x}'
+
+    def generate_stacked_bar(sample_taxa, samples, top_taxa, title, filename):
+        """Generate stacked bar chart SVG"""
+        bar_width = 60
+        bar_gap = 20
+        chart_height = 350
+        legend_width = 300
+        margin_left = 60
+        margin_bottom = 120
+        chart_width = len(samples) * (bar_width + bar_gap) + margin_left + 40
+        total_width = chart_width + legend_width
+        total_height = chart_height + margin_bottom + 50
+
+        svg = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{total_width}" height="{total_height}">']
+        svg.append('<style>text { font-family: Arial, sans-serif; font-size: 11px; }</style>')
+        svg.append(f'<text x="{chart_width//2}" y="25" text-anchor="middle" font-size="14" font-weight="bold">{title}</text>')
+
+        # Y-axis
+        svg.append(f'<line x1="{margin_left}" y1="40" x2="{margin_left}" y2="{chart_height + 40}" stroke="#333" stroke-width="1"/>')
+        for tick in [0, 0.25, 0.5, 0.75, 1.0]:
+            y = chart_height + 40 - tick * chart_height
+            svg.append(f'<line x1="{margin_left-5}" y1="{y}" x2="{margin_left}" y2="{y}" stroke="#333"/>')
+            svg.append(f'<text x="{margin_left-8}" y="{y+4}" text-anchor="end" font-size="10">{tick:.0%}</text>')
+
+        # Draw bars
+        for i, sample in enumerate(samples):
+            x = margin_left + 10 + i * (bar_width + bar_gap)
+            y_bottom = chart_height + 40
+            for j, taxon in enumerate(top_taxa):
+                abund = sample_taxa[sample].get(taxon, 0)
+                bar_h = abund * chart_height
+                if bar_h > 1:
+                    y = y_bottom - bar_h
+                    color = COLORS[j % len(COLORS)]
+                    svg.append(f'<rect x="{x}" y="{y}" width="{bar_width}" height="{bar_h}" fill="{color}"/>')
+                    y_bottom = y
+            # Sample label (rotated)
+            lbl_x = x + bar_width//2
+            lbl_y = chart_height + 55
+            svg.append(f'<text x="{lbl_x}" y="{lbl_y}" text-anchor="end" transform="rotate(-45 {lbl_x} {lbl_y})" font-size="10">{sample[:15]}</text>')
+
+        # Legend
+        leg_x = chart_width + 10
+        svg.append(f'<text x="{leg_x}" y="50" font-weight="bold" font-size="11">Legend</text>')
+        for j, taxon in enumerate(top_taxa):
+            leg_y = 65 + j * 22
+            color = COLORS[j % len(COLORS)]
+            svg.append(f'<rect x="{leg_x}" y="{leg_y}" width="14" height="14" fill="{color}"/>')
+            svg.append(f'<text x="{leg_x + 18}" y="{leg_y + 11}" font-size="10">{taxon[:40]}</text>')
+
+        svg.append('</svg>')
+        with open(plots_dir / filename, "w") as f:
+            f.write('\n'.join(svg))
+        log(f"[postprocess] Generated plot: {filename}")
+
+    def generate_heatmap(sample_taxa, samples, top_taxa, title, filename):
+        """Generate heatmap SVG"""
+        cell_w = 60
+        cell_h = 25
+        label_width = 200
+        margin_top = 120
+        margin_left = label_width + 10
+        chart_width = len(samples) * cell_w + margin_left + 80
+        chart_height = len(top_taxa) * cell_h + margin_top + 50
+
+        # Find max value for color scaling
+        max_val = max((sample_taxa[s].get(t, 0) for s in samples for t in top_taxa), default=0.01)
+
+        svg = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{chart_width}" height="{chart_height}">']
+        svg.append('<style>text { font-family: Arial, sans-serif; font-size: 10px; }</style>')
+        svg.append(f'<text x="{chart_width//2}" y="25" text-anchor="middle" font-size="14" font-weight="bold">{title}</text>')
+
+        # Sample labels (rotated at top)
+        for i, sample in enumerate(samples):
+            x = margin_left + i * cell_w + cell_w // 2
+            svg.append(f'<text x="{x}" y="{margin_top - 10}" text-anchor="end" transform="rotate(-45 {x} {margin_top - 10})" font-size="9">{sample[:15]}</text>')
+
+        # Draw heatmap cells
+        for j, taxon in enumerate(top_taxa):
+            y = margin_top + j * cell_h
+            # Taxon label
+            svg.append(f'<text x="{label_width}" y="{y + cell_h//2 + 4}" text-anchor="end" font-size="9">{taxon[:30]}</text>')
+            for i, sample in enumerate(samples):
+                x = margin_left + i * cell_w
+                val = sample_taxa[sample].get(taxon, 0)
+                color = heatmap_color(val, max_val)
+                svg.append(f'<rect x="{x}" y="{y}" width="{cell_w-1}" height="{cell_h-1}" fill="{color}" stroke="#ddd"/>')
+                if val > 0.01:
+                    svg.append(f'<text x="{x + cell_w//2}" y="{y + cell_h//2 + 3}" text-anchor="middle" font-size="8">{val:.1%}</text>')
+
+        # Color scale legend
+        leg_x = margin_left + len(samples) * cell_w + 20
+        svg.append(f'<text x="{leg_x}" y="{margin_top}" font-weight="bold" font-size="10">Abundance</text>')
+        for i, pct in enumerate([0, 0.25, 0.5, 0.75, 1.0]):
+            leg_y = margin_top + 15 + i * 20
+            color = heatmap_color(pct * max_val, max_val)
+            svg.append(f'<rect x="{leg_x}" y="{leg_y}" width="20" height="15" fill="{color}" stroke="#999"/>')
+            svg.append(f'<text x="{leg_x + 25}" y="{leg_y + 12}" font-size="9">{pct * max_val:.1%}</text>')
+
+        svg.append('</svg>')
+        with open(plots_dir / filename, "w") as f:
+            f.write('\n'.join(svg))
+        log(f"[postprocess] Generated plot: {filename}")
+
+    def generate_rel_abundance_bar(sample_taxa, samples, top_taxa, title, filename):
+        """Generate relative abundance bar chart (horizontal bars per taxon)"""
+        bar_height = 25
+        bar_gap = 5
+        chart_width = 600
+        label_width = 180
+        margin_top = 50
+        margin_left = label_width + 10
+        total_height = len(top_taxa) * (bar_height + bar_gap) + margin_top + 30
+
+        svg = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{chart_width + 150}" height="{total_height}">']
+        svg.append('<style>text { font-family: Arial, sans-serif; font-size: 10px; }</style>')
+        svg.append(f'<text x="{chart_width//2}" y="25" text-anchor="middle" font-size="14" font-weight="bold">{title}</text>')
+
+        # Calculate mean abundance per taxon
+        mean_abund = {}
+        for taxon in top_taxa:
+            vals = [sample_taxa[s].get(taxon, 0) for s in samples]
+            mean_abund[taxon] = sum(vals) / len(vals) if vals else 0
+
+        max_val = max(mean_abund.values()) if mean_abund else 0.01
+        bar_max_width = chart_width - margin_left - 50
+
+        for j, taxon in enumerate(top_taxa):
+            y = margin_top + j * (bar_height + bar_gap)
+            # Taxon label
+            svg.append(f'<text x="{label_width}" y="{y + bar_height//2 + 4}" text-anchor="end" font-size="9">{taxon[:28]}</text>')
+            # Bar
+            val = mean_abund[taxon]
+            bar_w = (val / max_val) * bar_max_width if max_val > 0 else 0
+            color = COLORS[j % len(COLORS)]
+            svg.append(f'<rect x="{margin_left}" y="{y}" width="{bar_w}" height="{bar_height}" fill="{color}"/>')
+            svg.append(f'<text x="{margin_left + bar_w + 5}" y="{y + bar_height//2 + 4}" font-size="9">{val:.1%}</text>')
+
+        svg.append('</svg>')
+        with open(plots_dir / filename, "w") as f:
+            f.write('\n'.join(svg))
+        log(f"[postprocess] Generated plot: {filename}")
+
+    def generate_pie_chart(taxa_dict, sample_name, filename):
+        """Generate pie chart SVG for a single sample"""
+        sorted_taxa = sorted(taxa_dict.items(), key=lambda x: x[1], reverse=True)
+        top_8 = sorted_taxa[:8]
+        other = sum(v for k, v in sorted_taxa[8:])
+        if other > 0.001:
+            top_8.append(("Other", other))
+
+        svg = ['<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400">']
+        svg.append('<style>text { font-family: Arial, sans-serif; }</style>')
+        svg.append(f'<text x="200" y="25" text-anchor="middle" font-size="14" font-weight="bold">Species Composition: {sample_name}</text>')
+
+        cx, cy, r = 160, 210, 130
+        total = sum(v for _, v in top_8)
+        if total > 0:
+            angle = -90
+            for j, (taxon, abund) in enumerate(top_8):
+                pct = abund / total
+                sweep = pct * 360
+                large = 1 if sweep > 180 else 0
+
+                start_rad = math.radians(angle)
+                end_rad = math.radians(angle + sweep)
+                x1 = cx + r * math.cos(start_rad)
+                y1 = cy + r * math.sin(start_rad)
+                x2 = cx + r * math.cos(end_rad)
+                y2 = cy + r * math.sin(end_rad)
+
+                color = COLORS[j % len(COLORS)]
+                path = f'M {cx} {cy} L {x1:.1f} {y1:.1f} A {r} {r} 0 {large} 1 {x2:.1f} {y2:.1f} Z'
+                svg.append(f'<path d="{path}" fill="{color}"/>')
+                angle += sweep
+
+            # Legend
+            svg.append(f'<text x="340" y="60" font-weight="bold" font-size="11">Legend</text>')
+            for j, (taxon, abund) in enumerate(top_8):
+                leg_y = 80 + j * 32
+                color = COLORS[j % len(COLORS)]
+                pct = 100 * abund / total
+                svg.append(f'<rect x="340" y="{leg_y}" width="16" height="16" fill="{color}"/>')
+                svg.append(f'<text x="362" y="{leg_y + 13}" font-size="10">{taxon[:25]} ({pct:.1f}%)</text>')
+
+        svg.append('</svg>')
+        with open(plots_dir / filename, "w") as f:
+            f.write('\n'.join(svg))
+        log(f"[postprocess] Generated plot: {filename}")
+
+    # Process SPECIES data
     if species_tidy.exists():
         with open(species_tidy, "r", encoding="utf-8") as f:
             reader = csv.DictReader(f)
             species_data = list(reader)
 
         if species_data:
-            # Get unique samples and taxa
             samples = sorted(set(r.get("sample_id", "") for r in species_data if r.get("sample_id")))
-            sample_taxa = {s: {} for s in samples}
+            sample_species = {s: {} for s in samples}
 
             for row in species_data:
                 sample = row.get("sample_id", "")
@@ -1595,124 +1793,74 @@ try:
                 except:
                     abund = 0
                 if sample and taxon and abund > 0:
-                    sample_taxa[sample][taxon] = sample_taxa[sample].get(taxon, 0) + abund
+                    sample_species[sample][taxon] = sample_species[sample].get(taxon, 0) + abund
 
-            # Get top taxa by total abundance
-            taxa_totals = {}
+            # Get top species
+            species_totals = {}
             for s in samples:
-                for t, a in sample_taxa[s].items():
-                    taxa_totals[t] = taxa_totals.get(t, 0) + a
-            top_taxa = sorted(taxa_totals.keys(), key=lambda x: taxa_totals[x], reverse=True)[:12]
+                for t, a in sample_species[s].items():
+                    species_totals[t] = species_totals.get(t, 0) + a
+            top_species = sorted(species_totals.keys(), key=lambda x: species_totals[x], reverse=True)[:15]
 
-            if samples and top_taxa:
-                # 1. Stacked bar chart (SVG)
-                bar_width = 60
-                bar_gap = 20
-                chart_height = 350
-                legend_width = 280
-                margin_left = 60
-                margin_bottom = 100
-                chart_width = len(samples) * (bar_width + bar_gap) + margin_left + 40
-                total_width = chart_width + legend_width
-                total_height = chart_height + margin_bottom + 50
+            if samples and top_species:
+                # 1. Stacked bar chart - Species
+                generate_stacked_bar(sample_species, samples, top_species,
+                                    "Taxonomic Composition (Top Species)", "stacked_bar_species.svg")
 
-                svg_lines = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{total_width}" height="{total_height}">']
-                svg_lines.append('<style>text { font-family: Arial, sans-serif; font-size: 11px; }</style>')
-                svg_lines.append(f'<text x="{chart_width//2}" y="25" text-anchor="middle" font-size="14" font-weight="bold">Taxonomic Composition (Top Species)</text>')
+                # 2. Heatmap - Species
+                generate_heatmap(sample_species, samples, top_species,
+                                "Species Abundance Heatmap", "heatmap_species.svg")
 
-                # Y-axis
-                svg_lines.append(f'<line x1="{margin_left}" y1="40" x2="{margin_left}" y2="{chart_height + 40}" stroke="#333" stroke-width="1"/>')
-                for tick in [0, 0.25, 0.5, 0.75, 1.0]:
-                    y = chart_height + 40 - tick * chart_height
-                    svg_lines.append(f'<line x1="{margin_left-5}" y1="{y}" x2="{margin_left}" y2="{y}" stroke="#333"/>')
-                    svg_lines.append(f'<text x="{margin_left-8}" y="{y+4}" text-anchor="end" font-size="10">{tick:.0%}</text>')
+                # 3. Relative abundance - Species
+                generate_rel_abundance_bar(sample_species, samples, top_species,
+                                          "Mean Relative Abundance (Species)", "rel_abundance_species.svg")
 
-                # Draw bars
-                for i, sample in enumerate(samples):
-                    x = margin_left + 10 + i * (bar_width + bar_gap)
-                    y_bottom = chart_height + 40
-                    for j, taxon in enumerate(top_taxa):
-                        abund = sample_taxa[sample].get(taxon, 0)
-                        bar_h = abund * chart_height
-                        if bar_h > 1:
-                            y = y_bottom - bar_h
-                            color = COLORS[j % len(COLORS)]
-                            svg_lines.append(f'<rect x="{x}" y="{y}" width="{bar_width}" height="{bar_h}" fill="{color}"/>')
-                            y_bottom = y
-                    # Sample label (rotated)
-                    lbl_x = x + bar_width//2
-                    lbl_y = chart_height + 55
-                    svg_lines.append(f'<text x="{lbl_x}" y="{lbl_y}" text-anchor="end" transform="rotate(-45 {lbl_x} {lbl_y})" font-size="10">{sample[:15]}</text>')
+                # 4. Pie charts per sample
+                for sample in samples[:10]:
+                    if sample_species[sample]:
+                        generate_pie_chart(sample_species[sample], sample, f"pie_species_{sample}.svg")
 
-                # Legend
-                leg_x = chart_width + 10
-                svg_lines.append(f'<text x="{leg_x}" y="50" font-weight="bold" font-size="11">Legend</text>')
-                for j, taxon in enumerate(top_taxa):
-                    leg_y = 65 + j * 22
-                    color = COLORS[j % len(COLORS)]
-                    svg_lines.append(f'<rect x="{leg_x}" y="{leg_y}" width="14" height="14" fill="{color}"/>')
-                    svg_lines.append(f'<text x="{leg_x + 18}" y="{leg_y + 11}" font-size="10">{taxon[:35]}</text>')
+    # Process GENUS data
+    if genus_tidy.exists():
+        with open(genus_tidy, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            genus_data = list(reader)
 
-                svg_lines.append('</svg>')
-                stacked_path = plots_dir / "stacked_bar_species.svg"
-                with open(stacked_path, "w") as f:
-                    f.write('\n'.join(svg_lines))
-                log(f"[postprocess] Generated plot: stacked_bar_species.svg")
+        if genus_data:
+            samples = sorted(set(r.get("sample_id", "") for r in genus_data if r.get("sample_id")))
+            sample_genus = {s: {} for s in samples}
 
-                # 2. Pie charts for each sample (SVG)
-                for sample in samples[:8]:
-                    taxa = sample_taxa[sample]
-                    if not taxa:
-                        continue
+            for row in genus_data:
+                sample = row.get("sample_id", "")
+                taxon = row.get("genus", "")
+                try:
+                    abund = float(row.get("abundance", 0))
+                except:
+                    abund = 0
+                if sample and taxon and abund > 0:
+                    sample_genus[sample][taxon] = sample_genus[sample].get(taxon, 0) + abund
 
-                    sorted_taxa = sorted(taxa.items(), key=lambda x: x[1], reverse=True)
-                    top_8 = sorted_taxa[:8]
-                    other = sum(v for k, v in sorted_taxa[8:])
-                    if other > 0.001:
-                        top_8.append(("Other", other))
+            # Get top genera
+            genus_totals = {}
+            for s in samples:
+                for t, a in sample_genus[s].items():
+                    genus_totals[t] = genus_totals.get(t, 0) + a
+            top_genera = sorted(genus_totals.keys(), key=lambda x: genus_totals[x], reverse=True)[:15]
 
-                    # SVG pie chart
-                    svg_lines = ['<svg xmlns="http://www.w3.org/2000/svg" width="600" height="380">']
-                    svg_lines.append('<style>text { font-family: Arial, sans-serif; }</style>')
-                    svg_lines.append(f'<text x="200" y="25" text-anchor="middle" font-size="14" font-weight="bold">Composition: {sample}</text>')
+            if samples and top_genera:
+                # 5. Stacked bar chart - Genus
+                generate_stacked_bar(sample_genus, samples, top_genera,
+                                    "Taxonomic Composition (Top Genera)", "stacked_bar_genus.svg")
 
-                    cx, cy, r = 160, 200, 120
-                    total = sum(v for _, v in top_8)
-                    if total > 0:
-                        angle = -90  # Start at top
-                        for j, (taxon, abund) in enumerate(top_8):
-                            pct = abund / total
-                            sweep = pct * 360
-                            large = 1 if sweep > 180 else 0
+                # 6. Heatmap - Genus
+                generate_heatmap(sample_genus, samples, top_genera,
+                                "Genus Abundance Heatmap", "heatmap_genus.svg")
 
-                            start_rad = math.radians(angle)
-                            end_rad = math.radians(angle + sweep)
-                            x1 = cx + r * math.cos(start_rad)
-                            y1 = cy + r * math.sin(start_rad)
-                            x2 = cx + r * math.cos(end_rad)
-                            y2 = cy + r * math.sin(end_rad)
+                # 7. Relative abundance - Genus
+                generate_rel_abundance_bar(sample_genus, samples, top_genera,
+                                          "Mean Relative Abundance (Genus)", "rel_abundance_genus.svg")
 
-                            color = COLORS[j % len(COLORS)]
-                            path = f'M {cx} {cy} L {x1:.1f} {y1:.1f} A {r} {r} 0 {large} 1 {x2:.1f} {y2:.1f} Z'
-                            svg_lines.append(f'<path d="{path}" fill="{color}"/>')
-                            angle += sweep
-
-                        # Legend
-                        svg_lines.append(f'<text x="330" y="55" font-weight="bold" font-size="11">Legend</text>')
-                        for j, (taxon, abund) in enumerate(top_8):
-                            leg_y = 70 + j * 28
-                            color = COLORS[j % len(COLORS)]
-                            pct = 100 * abund / total
-                            svg_lines.append(f'<rect x="330" y="{leg_y}" width="14" height="14" fill="{color}"/>')
-                            svg_lines.append(f'<text x="350" y="{leg_y + 11}" font-size="10">{taxon[:22]} ({pct:.1f}%)</text>')
-
-                    svg_lines.append('</svg>')
-                    pie_path = plots_dir / f"pie_{sample}.svg"
-                    with open(pie_path, "w") as f:
-                        f.write('\n'.join(svg_lines))
-                    log(f"[postprocess] Generated plot: pie_{sample}.svg")
-
-                log(f"[postprocess] Plot generation complete")
+    log(f"[postprocess] Plot generation complete")
 
 except Exception as e:
     log(f"[postprocess] Warning: Plot generation failed: {e}")
