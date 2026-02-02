@@ -15,6 +15,118 @@ from typing import Dict, List, Optional, Tuple
 from cli.progress import Colors, is_tty
 
 
+def build_minimap2_index(fasta_path: Path, output_dir: Path, interactive: bool = True) -> Optional[List[Tuple[str, str]]]:
+    """
+    Build minimap2 index from FASTA file with user-selected options.
+
+    Returns list of (index_name, index_path) tuples for successful builds, or None if cancelled/failed.
+    """
+    import gzip
+
+    # Check if minimap2 is available
+    if not shutil.which("minimap2"):
+        print(f"\n   {Colors.yellow_bold('Warning')}: minimap2 not found in PATH")
+        print("   Cannot build indexes. Install minimap2 or provide pre-built .mmi files.")
+        return None
+
+    # Decompress if needed
+    if fasta_path.suffix == '.gz':
+        print(f"\n   Decompressing reference genome...")
+        uncompressed = fasta_path.with_suffix('')
+        if not uncompressed.exists():
+            try:
+                with gzip.open(fasta_path, 'rb') as f_in:
+                    with open(uncompressed, 'wb') as f_out:
+                        shutil.copyfileobj(f_in, f_out)
+                print(f"   {Colors.green_bold('OK')} Decompressed to {uncompressed.name}")
+            except Exception as e:
+                print(f"   {Colors.red_bold('Error')}: Failed to decompress: {e}")
+                return None
+        fasta_path = uncompressed
+
+    built_indexes = []
+
+    if interactive:
+        print(f"\n   {Colors.cyan_bold('Build minimap2 indexes?')}")
+        print("   Choose which index types to build:")
+        print()
+        print("   1. Standard index (fastest, ~6-8GB RAM)")
+        print("   2. Low-memory index (moderate, ~4GB RAM)")
+        print("   3. Split index 2GB chunks (lowest RAM, use with --minimap2-split-index)")
+        print("   4. Split index 4GB chunks (low RAM, use with --minimap2-split-index)")
+        print("   5. Skip indexing (use FASTA directly)")
+        print()
+
+        choices = input("   Select options (e.g., '1,3' or 'all' or 'skip'): ").strip().lower()
+
+        if choices in ['skip', '5', '']:
+            return []
+
+        if choices == 'all':
+            choices = '1,2,3,4'
+
+        selected = [c.strip() for c in choices.split(',')]
+
+        index_configs = {
+            '1': ('standard', 'GRCh38.primary_assembly.genome.mmi', []),
+            '2': ('lowmem', 'GRCh38.primary_assembly.genome.lowmem.mmi', ['-I', '4G']),
+            '3': ('split2G', 'GRCh38.primary_assembly.genome.split2G.mmi', ['-I', '2G']),
+            '4': ('split4G', 'GRCh38.primary_assembly.genome.split4G.mmi', ['-I', '4G']),
+        }
+
+        for choice in selected:
+            if choice not in index_configs:
+                continue
+
+            index_type, index_name, mm2_flags = index_configs[choice]
+            index_path = output_dir / index_name
+
+            print(f"\n   Building {index_type} index...")
+            print(f"   Output: {index_path}")
+
+            cmd = ['minimap2', '-x', 'map-ont', '-d', str(index_path)] + mm2_flags + [str(fasta_path)]
+
+            try:
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=3600  # 1 hour timeout
+                )
+
+                if result.returncode == 0 and index_path.exists():
+                    print(f"   {Colors.green_bold('OK')} {index_type} index built successfully")
+                    built_indexes.append((f"Human Reference ({index_type})", str(index_path)))
+                else:
+                    print(f"   {Colors.red_bold('Error')}: Failed to build {index_type} index")
+                    if result.stderr:
+                        print(f"   {result.stderr[:200]}")
+            except subprocess.TimeoutExpired:
+                print(f"   {Colors.red_bold('Error')}: Indexing timed out (>1 hour)")
+            except Exception as e:
+                print(f"   {Colors.red_bold('Error')}: {e}")
+
+        return built_indexes if built_indexes else None
+    else:
+        # Non-interactive: build standard index only
+        index_path = output_dir / 'GRCh38.primary_assembly.genome.mmi'
+        print(f"\n   Building standard minimap2 index...")
+
+        cmd = ['minimap2', '-x', 'map-ont', '-d', str(index_path), str(fasta_path)]
+
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+            if result.returncode == 0 and index_path.exists():
+                print(f"   {Colors.green_bold('OK')} Index built: {index_path}")
+                return [("Human Reference", str(index_path))]
+            else:
+                print(f"   {Colors.red_bold('Error')}: Failed to build index")
+                return None
+        except Exception as e:
+            print(f"   {Colors.red_bold('Error')}: {e}")
+            return None
+
+
 # Database download URLs and sizes
 # NOTE: Kraken2 Standard databases are subsampled and have LIMITED coverage.
 # For comprehensive bacterial classification, the full Kraken2 Bacteria database
@@ -69,35 +181,16 @@ DATABASES = {
         "dest_subdir": "reference/qiime2",  # Goes to main/data/reference/qiime2/
         "dest_filename": "silva-138-99-nb-classifier.qza",
     },
-    "human-grch38-lowmem": {
-        "name": "Human GRCh38 Primary (Low Memory)",
-        "description": "GRCh38 primary assembly - low memory minimap2 index for host depletion",
-        "url": "https://zenodo.org/records/14601539/files/GRCh38.primary_assembly.genome.lowmem.mmi",
-        "size_gb": 2.8,  # ~2.8 GB
-        "pipelines": ["sr_meta", "lr_meta"],
-        "is_single_file": True,
-        "dest_subdir": "reference/human/grch38",  # Goes to main/data/reference/human/grch38/
-        "dest_filename": "GRCh38.primary_assembly.genome.lowmem.mmi",
-    },
-    "human-grch38-split2g": {
-        "name": "Human GRCh38 Primary (Split 2GB)",
-        "description": "GRCh38 primary assembly - 2GB split index for very low RAM (use with --minimap2-split-index)",
-        "url": "https://zenodo.org/records/14601539/files/GRCh38.primary_assembly.genome.split2G.mmi",
-        "size_gb": 2.8,  # ~2.8 GB
+    "human-grch38": {
+        "name": "Human GRCh38 Primary Assembly",
+        "description": "GRCh38 primary assembly reference genome for host depletion (FASTA format)",
+        "url": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/seqs_for_alignment_pipelines.ucsc_ids/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.gz",
+        "size_gb": 0.9,  # ~900 MB compressed, ~3 GB uncompressed
         "pipelines": ["sr_meta", "lr_meta"],
         "is_single_file": True,
         "dest_subdir": "reference/human/grch38",
-        "dest_filename": "GRCh38.primary_assembly.genome.split2G.mmi",
-    },
-    "human-grch38-split4g": {
-        "name": "Human GRCh38 Primary (Split 4GB)",
-        "description": "GRCh38 primary assembly - 4GB split index for low RAM (use with --minimap2-split-index)",
-        "url": "https://zenodo.org/records/14601539/files/GRCh38.primary_assembly.genome.split4G.mmi",
-        "size_gb": 2.8,  # ~2.8 GB
-        "pipelines": ["sr_meta", "lr_meta"],
-        "is_single_file": True,
-        "dest_subdir": "reference/human/grch38",
-        "dest_filename": "GRCh38.primary_assembly.genome.split4G.mmi",
+        "dest_filename": "GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.gz",
+        "requires_indexing": True,  # Will prompt user to build minimap2 indexes
     },
 }
 
@@ -741,11 +834,22 @@ def run_setup(interactive: bool = True, install_docker: bool = False,
                                 print(f"   (Auto-detected by sr_amp pipeline)")
                                 downloaded_items.append(("QIIME2 Classifier", str(dest_path), "(auto-detected)"))
                             elif "human" in db_id:
-                                usage_hint = "--human-index" if "split" not in db_id else "--human-index (use with --minimap2-split-index)"
-                                print(f"   Use with: {usage_hint} {dest_path}")
-                                print(f"   (Auto-detected by sr_meta/lr_meta if not specified)")
-                                ref_name = db_info['name']
-                                downloaded_items.append((ref_name, str(dest_path), "(auto-detected)"))
+                                # Check if this requires indexing
+                                if db_info.get('requires_indexing', False):
+                                    # Build minimap2 indexes
+                                    indexes = build_minimap2_index(dest_path, dest_path.parent, interactive=True)
+                                    if indexes:
+                                        for idx_name, idx_path in indexes:
+                                            print(f"   Index: {idx_path}")
+                                            print(f"   Use with: --human-index {idx_path}")
+                                            print(f"   (Auto-detected by sr_meta/lr_meta if not specified)")
+                                            downloaded_items.append((idx_name, idx_path, "(auto-detected)"))
+                                else:
+                                    usage_hint = "--human-index" if "split" not in db_id else "--human-index (use with --minimap2-split-index)"
+                                    print(f"   Use with: {usage_hint} {dest_path}")
+                                    print(f"   (Auto-detected by sr_meta/lr_meta if not specified)")
+                                    ref_name = db_info['name']
+                                    downloaded_items.append((ref_name, str(dest_path), "(auto-detected)"))
                             print()
                         else:
                             print(f"   Failed to download classifier")
@@ -813,11 +917,22 @@ def run_setup(interactive: bool = True, install_docker: bool = False,
                         print(f"   {Colors.cyan_bold('(Auto-detected by sr_amp pipeline)')} " if is_tty() else "   (Auto-detected by sr_amp pipeline)")
                         downloaded_items.append(("QIIME2 Classifier", str(dest_path), "(auto-detected)"))
                     elif "human" in db_id:
-                        usage_hint = "--human-index" if "split" not in db_id else "--human-index (use with --minimap2-split-index)"
-                        print(f"   Use with: {usage_hint} {dest_path}")
-                        print(f"   {Colors.cyan_bold('(Auto-detected by sr_meta/lr_meta if not specified)')} " if is_tty() else "   (Auto-detected by sr_meta/lr_meta if not specified)")
-                        ref_name = "Human Reference (Split)" if "split" in db_id else "Human Reference (Low Memory)"
-                        downloaded_items.append((ref_name, str(dest_path), "(auto-detected)"))
+                        # Check if this requires indexing
+                        if db_info.get('requires_indexing', False):
+                            # Build minimap2 indexes (non-interactive: standard only)
+                            indexes = build_minimap2_index(dest_path, dest_path.parent, interactive=False)
+                            if indexes:
+                                for idx_name, idx_path in indexes:
+                                    print(f"   Index: {idx_path}")
+                                    print(f"   Use with: --human-index {idx_path}")
+                                    print(f"   {Colors.cyan_bold('(Auto-detected by sr_meta/lr_meta if not specified)')} " if is_tty() else "   (Auto-detected by sr_meta/lr_meta if not specified)")
+                                    downloaded_items.append((idx_name, idx_path, "(auto-detected)"))
+                        else:
+                            usage_hint = "--human-index" if "split" not in db_id else "--human-index (use with --minimap2-split-index)"
+                            print(f"   Use with: {usage_hint} {dest_path}")
+                            print(f"   {Colors.cyan_bold('(Auto-detected by sr_meta/lr_meta if not specified)')} " if is_tty() else "   (Auto-detected by sr_meta/lr_meta if not specified)")
+                            ref_name = "Human Reference (Split)" if "split" in db_id else "Human Reference (Low Memory)"
+                            downloaded_items.append((ref_name, str(dest_path), "(auto-detected)"))
                     print()
             else:
                 # Determine file extension from URL
