@@ -1357,19 +1357,55 @@ def build_config(config: RunConfig, repo_root: Optional[Path] = None) -> Dict[st
                 "split_prefix": 1 if config.minimap2_split_index else 0,  # Use split-prefix for low-RAM
             },
         }
-        # Valencia centroids path - use user-provided path if available
+        # Valencia centroids path - auto-detect from multiple locations
+        # Check multiple locations for VALENCIA centroids:
+        # 1. tools/VALENCIA/ (installed by setup in bundle)
+        # 2. main/tools/VALENCIA/ (legacy/development location)
+        # 3. Parent directory (edge case for bundle structure)
+        valencia_centroids_candidates = [
+            repo_root / "tools" / "VALENCIA" / "CST_centroids_012920.csv",
+            repo_root / "main" / "tools" / "VALENCIA" / "CST_centroids_012920.csv",
+            repo_root.parent / "tools" / "VALENCIA" / "CST_centroids_012920.csv",
+        ]
+        # For PyInstaller bundle, also check executable's sibling _internal/tools
+        if getattr(sys, 'frozen', False):
+            bundle_base = Path(sys.executable).parent
+            valencia_centroids_candidates.insert(0, bundle_base / "_internal" / "tools" / "VALENCIA" / "CST_centroids_012920.csv")
+            valencia_centroids_candidates.insert(0, bundle_base / "tools" / "VALENCIA" / "CST_centroids_012920.csv")
+
+        valencia_centroids_host_resolved = None
+        for candidate in valencia_centroids_candidates:
+            if candidate.exists():
+                valencia_centroids_host_resolved = candidate
+                break
+
+        # Store the host path for mounting later (needed for container mode)
+        config._valencia_centroids_host = valencia_centroids_host_resolved
+
         if config.valencia_centroids:
             # Convert relative paths to absolute
             user_centroids = Path(config.valencia_centroids)
             if not user_centroids.is_absolute():
                 user_centroids = Path.cwd() / user_centroids
-            valencia_centroids = str(user_centroids.resolve())
+            user_centroids = user_centroids.resolve()
+            config._valencia_centroids_host = user_centroids
+            if config.use_container:
+                valencia_centroids = f"/valencia/{user_centroids.name}"
+            else:
+                valencia_centroids = str(user_centroids)
+        elif valencia_centroids_host_resolved:
+            if config.use_container:
+                valencia_centroids = f"/valencia/{valencia_centroids_host_resolved.name}"
+            else:
+                valencia_centroids = str(valencia_centroids_host_resolved)
         else:
+            # Default path (may not exist)
             valencia_centroids_host = repo_root / "main" / "tools" / "VALENCIA" / "CST_centroids_012920.csv"
             if config.use_container:
-                valencia_centroids = "/work/tools/VALENCIA/CST_centroids_012920.csv"
+                valencia_centroids = "/valencia/CST_centroids_012920.csv"
             else:
                 valencia_centroids = str(valencia_centroids_host)
+
         cfg["valencia"] = {
             "enabled": 1 if valencia_enabled else 0,
             "mode": "auto",
