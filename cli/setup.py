@@ -735,11 +735,17 @@ def run_setup(interactive: bool = True, install_docker: bool = False,
                         if download_with_progress(db_info['url'], dest_path, "Downloading"):
                             print(f"   {Colors.green_bold('OK')} {db_info['name']} installed!" if is_tty() else f"   [OK] Installed!")
                             print()
-                            print(f"   {Colors.cyan_bold('Classifier path:')} " if is_tty() else "   Classifier path:")
+                            print(f"   {Colors.cyan_bold('File path:')} " if is_tty() else "   File path:")
                             print(f"   {dest_path}")
                             if "qiime2" in db_id:
                                 print(f"   (Auto-detected by sr_amp pipeline)")
                                 downloaded_items.append(("QIIME2 Classifier", str(dest_path), "(auto-detected)"))
+                            elif "human" in db_id:
+                                usage_hint = "--human-index" if "split" not in db_id else "--human-index (use with --minimap2-split-index)"
+                                print(f"   Use with: {usage_hint} {dest_path}")
+                                print(f"   (Auto-detected by sr_meta/lr_meta if not specified)")
+                                ref_name = db_info['name']
+                                downloaded_items.append((ref_name, str(dest_path), "(auto-detected)"))
                             print()
                         else:
                             print(f"   Failed to download classifier")
@@ -799,10 +805,20 @@ def run_setup(interactive: bool = True, install_docker: bool = False,
                 print(f"   Downloading {db_info['name']}...")
 
                 if download_with_progress(db_info['url'], dest_path, "Downloading"):
-                    print(f"   Installed {db_info['name']}")
-                    print(f"   Path: {dest_path}")
+                    print(f"   {Colors.green_bold('OK')} {db_info['name']} installed!" if is_tty() else f"   [OK] {db_info['name']} installed!")
+                    print()
+                    print(f"   {Colors.cyan_bold('File path:')} " if is_tty() else "   File path:")
+                    print(f"   {dest_path}")
                     if "qiime2" in db_id:
+                        print(f"   {Colors.cyan_bold('(Auto-detected by sr_amp pipeline)')} " if is_tty() else "   (Auto-detected by sr_amp pipeline)")
                         downloaded_items.append(("QIIME2 Classifier", str(dest_path), "(auto-detected)"))
+                    elif "human" in db_id:
+                        usage_hint = "--human-index" if "split" not in db_id else "--human-index (use with --minimap2-split-index)"
+                        print(f"   Use with: {usage_hint} {dest_path}")
+                        print(f"   {Colors.cyan_bold('(Auto-detected by sr_meta/lr_meta if not specified)')} " if is_tty() else "   (Auto-detected by sr_meta/lr_meta if not specified)")
+                        ref_name = "Human Reference (Split)" if "split" in db_id else "Human Reference (Low Memory)"
+                        downloaded_items.append((ref_name, str(dest_path), "(auto-detected)"))
+                    print()
             else:
                 # Determine file extension from URL
                 url = db_info['url']
