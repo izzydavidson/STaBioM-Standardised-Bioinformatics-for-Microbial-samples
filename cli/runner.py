@@ -1246,12 +1246,27 @@ def build_config(config: RunConfig, repo_root: Optional[Path] = None) -> Dict[st
         # This means we always use host paths, not container paths
         use_host_paths = not config.use_container or pipeline_spawns_containers(config.pipeline)
 
-        # Check if default classifier exists on host
-        default_classifier_host = repo_root / "main" / "data" / "reference" / "qiime2" / "silva-138-99-nb-classifier.qza"
+        # Check for default classifier in multiple locations
+        # For PyInstaller bundles, check both direct and _internal paths
+        classifier_candidates = [
+            repo_root / "main" / "data" / "reference" / "qiime2" / "silva-138-99-nb-classifier.qza",
+        ]
+        # For PyInstaller bundle, also check executable's sibling _internal paths
+        if getattr(sys, 'frozen', False):
+            bundle_base = Path(sys.executable).parent
+            classifier_candidates.insert(0, bundle_base / "_internal" / "main" / "data" / "reference" / "qiime2" / "silva-138-99-nb-classifier.qza")
+            classifier_candidates.insert(0, bundle_base / "main" / "data" / "reference" / "qiime2" / "silva-138-99-nb-classifier.qza")
+
+        classifier_host_resolved = None
+        for candidate in classifier_candidates:
+            if candidate.exists():
+                classifier_host_resolved = candidate
+                break
+
         classifier_path = ""
-        if default_classifier_host.exists():
+        if classifier_host_resolved:
             if use_host_paths:
-                classifier_path = str(default_classifier_host)
+                classifier_path = str(classifier_host_resolved)
             else:
                 classifier_path = "/work/data/reference/qiime2/silva-138-99-nb-classifier.qza"
 
@@ -1259,10 +1274,17 @@ def build_config(config: RunConfig, repo_root: Optional[Path] = None) -> Dict[st
         # Check multiple locations for VALENCIA centroids:
         # 1. tools/VALENCIA/ (installed by setup in bundle)
         # 2. main/tools/VALENCIA/ (legacy/development location)
+        # 3. Parent directory (edge case for bundle structure)
         valencia_centroids_candidates = [
             repo_root / "tools" / "VALENCIA" / "CST_centroids_012920.csv",
             repo_root / "main" / "tools" / "VALENCIA" / "CST_centroids_012920.csv",
+            repo_root.parent / "tools" / "VALENCIA" / "CST_centroids_012920.csv",
         ]
+        # For PyInstaller bundle, also check executable's sibling _internal/tools
+        if getattr(sys, 'frozen', False):
+            bundle_base = Path(sys.executable).parent
+            valencia_centroids_candidates.insert(0, bundle_base / "_internal" / "tools" / "VALENCIA" / "CST_centroids_012920.csv")
+            valencia_centroids_candidates.insert(0, bundle_base / "tools" / "VALENCIA" / "CST_centroids_012920.csv")
         valencia_centroids_host_resolved = None
         for candidate in valencia_centroids_candidates:
             if candidate.exists():
