@@ -69,6 +69,36 @@ DATABASES = {
         "dest_subdir": "reference/qiime2",  # Goes to main/data/reference/qiime2/
         "dest_filename": "silva-138-99-nb-classifier.qza",
     },
+    "human-grch38-lowmem": {
+        "name": "Human GRCh38 Primary (Low Memory)",
+        "description": "GRCh38 primary assembly - low memory minimap2 index for host depletion",
+        "url": "https://zenodo.org/records/14601539/files/GRCh38.primary_assembly.genome.lowmem.mmi",
+        "size_gb": 2.8,  # ~2.8 GB
+        "pipelines": ["sr_meta", "lr_meta"],
+        "is_single_file": True,
+        "dest_subdir": "reference/human/grch38",  # Goes to main/data/reference/human/grch38/
+        "dest_filename": "GRCh38.primary_assembly.genome.lowmem.mmi",
+    },
+    "human-grch38-split2g": {
+        "name": "Human GRCh38 Primary (Split 2GB)",
+        "description": "GRCh38 primary assembly - 2GB split index for very low RAM (use with --minimap2-split-index)",
+        "url": "https://zenodo.org/records/14601539/files/GRCh38.primary_assembly.genome.split2G.mmi",
+        "size_gb": 2.8,  # ~2.8 GB
+        "pipelines": ["sr_meta", "lr_meta"],
+        "is_single_file": True,
+        "dest_subdir": "reference/human/grch38",
+        "dest_filename": "GRCh38.primary_assembly.genome.split2G.mmi",
+    },
+    "human-grch38-split4g": {
+        "name": "Human GRCh38 Primary (Split 4GB)",
+        "description": "GRCh38 primary assembly - 4GB split index for low RAM (use with --minimap2-split-index)",
+        "url": "https://zenodo.org/records/14601539/files/GRCh38.primary_assembly.genome.split4G.mmi",
+        "size_gb": 2.8,  # ~2.8 GB
+        "pipelines": ["sr_meta", "lr_meta"],
+        "is_single_file": True,
+        "dest_subdir": "reference/human/grch38",
+        "dest_filename": "GRCh38.primary_assembly.genome.split4G.mmi",
+    },
 }
 
 # Analysis tools that can be downloaded

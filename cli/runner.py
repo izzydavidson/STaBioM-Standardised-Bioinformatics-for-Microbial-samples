@@ -1348,12 +1348,33 @@ def build_config(config: RunConfig, repo_root: Optional[Path] = None) -> Dict[st
         }
 
     elif config.pipeline == "sr_meta":
+        # Auto-detect human reference if not provided
+        human_index_resolved = config.human_index
+        if not human_index_resolved:
+            # Check for downloaded human references (prefer split indexes for low RAM)
+            human_ref_candidates = [
+                repo_root / "main" / "data" / "reference" / "human" / "grch38" / "GRCh38.primary_assembly.genome.split2G.mmi",
+                repo_root / "main" / "data" / "reference" / "human" / "grch38" / "GRCh38.primary_assembly.genome.split4G.mmi",
+                repo_root / "main" / "data" / "reference" / "human" / "grch38" / "GRCh38.primary_assembly.genome.lowmem.mmi",
+            ]
+            # For PyInstaller bundle, also check _internal path
+            if getattr(sys, 'frozen', False):
+                bundle_base = Path(sys.executable).parent
+                human_ref_candidates.insert(0, bundle_base / "_internal" / "main" / "data" / "reference" / "human" / "grch38" / "GRCh38.primary_assembly.genome.split2G.mmi")
+                human_ref_candidates.insert(0, bundle_base / "_internal" / "main" / "data" / "reference" / "human" / "grch38" / "GRCh38.primary_assembly.genome.split4G.mmi")
+                human_ref_candidates.insert(0, bundle_base / "_internal" / "main" / "data" / "reference" / "human" / "grch38" / "GRCh38.primary_assembly.genome.lowmem.mmi")
+
+            for candidate in human_ref_candidates:
+                if candidate.exists():
+                    human_index_resolved = str(candidate)
+                    break
+
         cfg["tools"] = {
             "kraken2": {
                 "db": config.kraken2_db,  # Path to Kraken2 database (e.g., /data/kraken2/k2_standard_08gb)
             },
             "minimap2": {
-                "human_mmi": config.human_index,  # Path to human genome .mmi index
+                "human_mmi": human_index_resolved,  # Path to human genome .mmi index
                 "split_prefix": 1 if config.minimap2_split_index else 0,  # Use split-prefix for low-RAM
             },
         }
@@ -1528,6 +1549,27 @@ def build_config(config: RunConfig, repo_root: Optional[Path] = None) -> Dict[st
         else:
             valencia_centroids = default_centroids
 
+        # Auto-detect human reference if not provided
+        human_index_resolved = config.human_index
+        if not human_index_resolved:
+            # Check for downloaded human references (prefer split indexes for low RAM)
+            human_ref_candidates = [
+                repo_root / "main" / "data" / "reference" / "human" / "grch38" / "GRCh38.primary_assembly.genome.split2G.mmi",
+                repo_root / "main" / "data" / "reference" / "human" / "grch38" / "GRCh38.primary_assembly.genome.split4G.mmi",
+                repo_root / "main" / "data" / "reference" / "human" / "grch38" / "GRCh38.primary_assembly.genome.lowmem.mmi",
+            ]
+            # For PyInstaller bundle, also check _internal path
+            if getattr(sys, 'frozen', False):
+                bundle_base = Path(sys.executable).parent
+                human_ref_candidates.insert(0, bundle_base / "_internal" / "main" / "data" / "reference" / "human" / "grch38" / "GRCh38.primary_assembly.genome.split2G.mmi")
+                human_ref_candidates.insert(0, bundle_base / "_internal" / "main" / "data" / "reference" / "human" / "grch38" / "GRCh38.primary_assembly.genome.split4G.mmi")
+                human_ref_candidates.insert(0, bundle_base / "_internal" / "main" / "data" / "reference" / "human" / "grch38" / "GRCh38.primary_assembly.genome.lowmem.mmi")
+
+            for candidate in human_ref_candidates:
+                if candidate.exists():
+                    human_index_resolved = str(candidate)
+                    break
+
         cfg["tools"] = {
             "emu": {
                 "db": emu_db,
@@ -1536,7 +1578,7 @@ def build_config(config: RunConfig, repo_root: Optional[Path] = None) -> Dict[st
                 "db": config.kraken2_db,  # Use CLI arg if provided
             },
             "minimap2": {
-                "human_mmi": config.human_index,  # Path to human genome .mmi index for host depletion
+                "human_mmi": human_index_resolved,  # Path to human genome .mmi index for host depletion
                 "split_prefix": 1 if config.minimap2_split_index else 0,  # Use split-prefix for low-RAM
             },
             "dorado": {
