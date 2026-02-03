@@ -952,6 +952,7 @@ emu_classification_per_barcode() {
       --db "${EMU_DB}" \
       --type "${SEQ_TYPE}" \
       --threads "${THREADS}" \
+      --K 100000000 \
       --output-dir "${out_dir}" \
       "${fq}" || log_warn "Emu failed for ${barcode}"
   done
