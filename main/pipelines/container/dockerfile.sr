@@ -80,4 +80,14 @@ RUN install -d /usr/local/bin \
   && ln -sf /opt/krona/bin/ktImportBLAST /usr/local/bin/ktImportBLAST \
   && ln -sf /opt/krona/bin/ktImportXML /usr/local/bin/ktImportXML
 
+# Install Python packages for sr pipelines
+RUN python3 -m pip install --no-cache-dir \
+    pandas \
+    matplotlib \
+    numpy \
+    "multiqc==1.25.1" \
+    kaleido \
+    tqdm \
+    pysam
+
 WORKDIR /work
