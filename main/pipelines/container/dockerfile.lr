@@ -72,4 +72,24 @@ RUN install -d /usr/local/bin \
   && ln -sf /opt/krona/bin/ktImportBLAST /usr/local/bin/ktImportBLAST \
   && ln -sf /opt/krona/bin/ktImportXML /usr/local/bin/ktImportXML
 
+# Install Python packages for lr_amp pipeline
+RUN python3 -m pip install --no-cache-dir \
+    "multiqc==1.25.1" \
+    NanoFilt \
+    matplotlib \
+    numpy \
+    pandas \
+    pysam \
+    biopython
+
+# Install Emu via conda (miniforge for arm64 support)
+RUN curl -L https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-aarch64.sh -o /tmp/miniforge.sh \
+    && bash /tmp/miniforge.sh -b -p /opt/miniforge \
+    && rm /tmp/miniforge.sh \
+    && /opt/miniforge/bin/conda install -y -c conda-forge -c bioconda emu \
+    && /opt/miniforge/bin/conda clean -afy \
+    && ln -sf /opt/miniforge/bin/emu /usr/local/bin/emu
+
+ENV PATH="/opt/miniforge/bin:${PATH}"
+
 WORKDIR /work
