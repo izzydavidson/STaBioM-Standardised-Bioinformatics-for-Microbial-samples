@@ -13,21 +13,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libbz2-dev \
     liblzma-dev \
     perl \
+    libxml-simple-perl \
+    libjson-perl \
+    liblist-moreutils-perl \
   && rm -rf /var/lib/apt/lists/*
 
-# Kraken2 (compile + install)
+# Kraken2
 RUN git clone --depth 1 --branch "v2.17.1" https://github.com/DerrickWood/kraken2.git /tmp/kraken2 \
   && cd /tmp/kraken2 \
   && ./install_kraken2.sh /opt/kraken2
 
-# Bracken (no installer; just ship the repo)
+# Bracken
 RUN git clone --depth 1 --branch "v3.1" https://github.com/jenniferlu717/Bracken.git /opt/bracken
 
 # Krona
-RUN git clone --depth 1 --branch "v2.8.1" https://github.com/marbl/Krona.git /tmp/krona \
-  && cd /tmp/krona/KronaTools \
-  && ./install.pl --prefix /opt/krona
-
+RUN git clone --depth 1 --branch "v2.8.1" https://github.com/marbl/Krona.git /opt/krona-src \
+ && cd /opt/krona-src/KronaTools \
+ && ./install.pl --prefix /opt/krona
 
 FROM ubuntu:22.04
 
@@ -35,7 +37,6 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Install base tools including FastQC (for sr_amp) and QC dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
     ca-certificates \
@@ -52,6 +53,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
     perl \
+    libxml-simple-perl \
+    libjson-perl \
+    liblist-moreutils-perl \
     samtools \
     minimap2 \
     fastp \
@@ -70,79 +74,10 @@ RUN install -d /usr/local/bin \
   && ln -sf /opt/kraken2/kraken2 /usr/local/bin/kraken2 \
   && ln -sf /opt/kraken2/kraken2-build /usr/local/bin/kraken2-build \
   && ln -sf /opt/kraken2/kraken2-inspect /usr/local/bin/kraken2-inspect \
+  && ln -sf /opt/bracken/bracken /usr/local/bin/bracken \
   && ln -sf /opt/krona/bin/ktImportText /usr/local/bin/ktImportText \
   && ln -sf /opt/krona/bin/ktImportTaxonomy /usr/local/bin/ktImportTaxonomy \
   && ln -sf /opt/krona/bin/ktImportBLAST /usr/local/bin/ktImportBLAST \
-  && ln -sf /opt/krona/bin/ktImportXML /usr/local/bin/ktImportXML \
-  && ln -sf /opt/bracken/bracken /usr/local/bin/bracken
-
-# Create minimap2 wrapper for low-memory operation
-# Injects -I flag to load index in chunks when MINIMAP2_SPLIT_INDEX is set
-RUN REAL_MM2="$(which minimap2)" \
-  && mv "${REAL_MM2}" "${REAL_MM2}.real" \
-  && printf '%s\n' \
-    '#!/bin/bash' \
-    '# minimap2 wrapper: adds -I flag for split index loading to reduce peak memory' \
-    'REAL_MINIMAP2="$(dirname "$0")/minimap2.real"' \
-    'SPLIT_SIZE="${MINIMAP2_SPLIT_INDEX:-}"' \
-    'if [[ -n "${SPLIT_SIZE}" ]]; then' \
-    '  is_alignment=0' \
-    '  for arg in "$@"; do' \
-    '    case "${arg}" in' \
-    '      -a|-ax) is_alignment=1 ;;' \
-    '      -d) is_alignment=0; break ;;' \
-    '    esac' \
-    '  done' \
-    '  if [[ "${is_alignment}" == "1" ]]; then' \
-    '    exec "${REAL_MINIMAP2}" -I "${SPLIT_SIZE}" "$@"' \
-    '  fi' \
-    'fi' \
-    'exec "${REAL_MINIMAP2}" "$@"' \
-    > "${REAL_MM2}" \
-  && chmod +x "${REAL_MM2}"
+  && ln -sf /opt/krona/bin/ktImportXML /usr/local/bin/ktImportXML
 
 WORKDIR /work
-
-RUN python3 --version || true
-RUN jq --version || true
-RUN minimap2 --version || true
-RUN bash -lc "samtools --version | head -n 1" || true
-RUN fastp --version || true
-RUN fastqc --version || true
-RUN multiqc --version || true
-RUN kraken2 --version || true
-RUN bash -lc "bracken -v 2>&1 | head -n 1" || true
-RUN ktImportText 2>&1 | head -n 1 || true
-RUN docker version >/dev/null 2>&1 || true
-
-RUN python3 - <<'PY'
-import json, subprocess, os
-
-def v(cmd):
-    try:
-        out = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True)
-        out = (out or "").strip()
-        return out.splitlines()[0] if out else ""
-    except Exception:
-        return ""
-
-manifest = {
-    "python3": {"cmd": "python3 --version", "version": v(["python3", "--version"])},
-    "jq": {"cmd": "jq --version", "version": v(["jq", "--version"])},
-    "samtools": {"cmd": "samtools --version", "version": v(["bash", "-lc", "samtools --version | head -n 1"])},
-    "minimap2": {"cmd": "minimap2 --version", "version": v(["minimap2", "--version"])},
-    "fastp": {"cmd": "fastp --version", "version": v(["fastp", "--version"])},
-    "fastqc": {"cmd": "fastqc --version", "version": v(["fastqc", "--version"])},
-    "multiqc": {"cmd": "multiqc --version", "version": v(["multiqc", "--version"])},
-    "kraken2": {"cmd": "kraken2 --version", "version": v(["kraken2", "--version"])},
-    "bracken": {"cmd": "bracken -v", "version": v(["bash", "-lc", "bracken -v 2>&1 | head -n 1"])},
-    "krona": {"cmd": "ktImportText", "version": v(["bash", "-lc", "ktImportText 2>&1 | head -n 1"])},
-    "docker": {"cmd": "docker version", "version": v(["bash", "-lc", "docker version 2>/dev/null | head -n 1 || true"])},
-}
-
-os.makedirs("/opt/stabiom", exist_ok=True)
-with open("/opt/stabiom/tool_manifest.json", "w", encoding="utf-8") as f:
-    json.dump(manifest, f, indent=2)
-
-print("Wrote /opt/stabiom/tool_manifest.json")
-PY
