@@ -71,6 +71,9 @@ RUN install -d /usr/local/bin \
   && ln -sf /opt/kraken2/kraken2-build /usr/local/bin/kraken2-build \
   && ln -sf /opt/kraken2/kraken2-inspect /usr/local/bin/kraken2-inspect \
   && ln -sf /opt/krona/bin/ktImportText /usr/local/bin/ktImportText \
+  && ln -sf /opt/krona/bin/ktImportTaxonomy /usr/local/bin/ktImportTaxonomy \
+  && ln -sf /opt/krona/bin/ktImportBLAST /usr/local/bin/ktImportBLAST \
+  && ln -sf /opt/krona/bin/ktImportXML /usr/local/bin/ktImportXML \
   && ln -sf /opt/bracken/bracken /usr/local/bin/bracken
 
 # Create minimap2 wrapper for low-memory operation
