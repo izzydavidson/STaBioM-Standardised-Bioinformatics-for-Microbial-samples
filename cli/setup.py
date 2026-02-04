@@ -205,6 +205,31 @@ TOOLS = {
     },
 }
 
+# Dorado basecalling models
+DORADO_MODELS = {
+    "dna_r10.4.1_e8.2_400bps_hac@v4.1.0": {
+        "name": "DNA R10.4.1 HAC 400bps v4.1.0",
+        "description": "High-accuracy model for R10.4.1 flow cells, 400bps, v4.1.0 - RECOMMENDED",
+        "model_id": "dna_r10.4.1_e8.2_400bps_hac@v4.1.0",
+        "size_gb": 0.4,
+        "pipelines": ["lr_amp", "lr_meta"],
+    },
+    "dna_r10.4.1_e8.2_400bps_sup@v4.1.0": {
+        "name": "DNA R10.4.1 SUP 400bps v4.1.0",
+        "description": "Super-accuracy model for R10.4.1 flow cells, 400bps, v4.1.0 (slower but more accurate)",
+        "model_id": "dna_r10.4.1_e8.2_400bps_sup@v4.1.0",
+        "size_gb": 0.4,
+        "pipelines": ["lr_amp", "lr_meta"],
+    },
+    "dna_r9.4.1_e8_hac@v3.3": {
+        "name": "DNA R9.4.1 HAC v3.3",
+        "description": "High-accuracy model for R9.4.1 flow cells, v3.3",
+        "model_id": "dna_r9.4.1_e8_hac@v3.3",
+        "size_gb": 0.3,
+        "pipelines": ["lr_amp", "lr_meta"],
+    },
+}
+
 # Docker install instructions by platform
 DOCKER_INSTALL = {
     "Darwin": {
@@ -297,6 +322,14 @@ def get_tools_dir() -> Path:
     tools_dir = base / "tools"
     tools_dir.mkdir(parents=True, exist_ok=True)
     return tools_dir
+
+
+def get_models_dir() -> Path:
+    """Get the models directory for basecalling models like Dorado."""
+    tools_dir = get_tools_dir()
+    models_dir = tools_dir / "models" / "dorado"
+    models_dir.mkdir(parents=True, exist_ok=True)
+    return models_dir
 
 
 def get_ssl_context() -> ssl.SSLContext:
@@ -1015,6 +1048,98 @@ def run_setup(interactive: bool = True, install_docker: bool = False,
                             print(f"   Failed to extract tool")
                     else:
                         print(f"   Failed to download tool")
+
+    print()
+
+    # Step 4.5: Dorado Basecalling Models
+    print(Colors.cyan_bold("4.5. Dorado Basecalling Models") if is_tty() else "4.5. Dorado Basecalling Models")
+
+    models_dir = get_models_dir()
+    print(f"   Models directory: {models_dir}")
+    print()
+
+    # Check existing models
+    existing_models = []
+    for model_id, model_info in DORADO_MODELS.items():
+        model_path = models_dir / model_id
+        if model_path.exists() and any(model_path.iterdir()):
+            existing_models.append(model_id)
+            print(f"   {Colors.green_bold('FOUND')} {model_info['name']}" if is_tty() else f"   [FOUND] {model_info['name']}")
+
+    missing_models = [model_id for model_id in DORADO_MODELS if model_id not in existing_models]
+
+    if missing_models:
+        print()
+        if not docker_ok:
+            print(f"   {Colors.yellow_bold('Note:')} Docker is required to download Dorado models" if is_tty() else "   [Note] Docker is required to download Dorado models")
+            print("   Please install Docker and re-run setup to download models.")
+        else:
+            # Check if stabiom-lr image is available
+            try:
+                result = subprocess.run(
+                    ["docker", "image", "inspect", "stabiom-lr:latest"],
+                    capture_output=True,
+                    timeout=10
+                )
+                lr_image_available = (result.returncode == 0)
+            except Exception:
+                lr_image_available = False
+
+            if not lr_image_available:
+                print(f"   {Colors.yellow_bold('Note:')} stabiom-lr Docker image not found" if is_tty() else "   [Note] stabiom-lr Docker image not found")
+                print("   Dorado models require stabiom-lr image to download.")
+                print("   Please build the image first (see Step 2) and re-run setup.")
+            elif interactive:
+                print("   Available Dorado models to download:")
+                for model_id in missing_models:
+                    model_info = DORADO_MODELS[model_id]
+                    print(f"   - {model_info['name']}: {model_info['description']}")
+                    print(f"     Size: ~{model_info['size_gb']} GB, Used by: {', '.join(model_info['pipelines'])}")
+
+                print()
+                if prompt_yes_no("   Would you like to download Dorado models now?", default=True):
+                    for model_id in missing_models:
+                        model_info = DORADO_MODELS[model_id]
+                        default_download = "RECOMMENDED" in model_info['description']
+                        if prompt_yes_no(f"   Download {model_info['name']}?", default=default_download):
+                            # Use Docker to download the model
+                            model_dest = models_dir / model_id
+                            model_dest.mkdir(parents=True, exist_ok=True)
+                            print(f"   Downloading {model_info['name']} using Docker container...")
+
+                            try:
+                                # Run dorado download inside the container, mounting the models directory
+                                cmd = [
+                                    "docker", "run", "--rm",
+                                    "-v", f"{models_dir}:/models",
+                                    "stabiom-lr:latest",
+                                    "dorado", "download",
+                                    "--model", model_info['model_id'],
+                                    "--directory", "/models"
+                                ]
+                                result = subprocess.run(
+                                    cmd,
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=600  # 10 minute timeout
+                                )
+
+                                if result.returncode == 0:
+                                    print(f"   {Colors.green_bold('OK')} {model_info['name']} downloaded!" if is_tty() else f"   [OK] Downloaded!")
+                                    print()
+                                    print(f"   {Colors.cyan_bold('Model path:')} " if is_tty() else "   Model path:")
+                                    print(f"   {model_dest}")
+                                    print(f"   (Auto-detected by lr_amp/lr_meta pipelines)")
+                                    print()
+                                    downloaded_items.append((f"Dorado Model ({model_info['name']})", str(model_dest), "(auto-detected)"))
+                                else:
+                                    print(f"   {Colors.red_bold('Error')} Failed to download model" if is_tty() else "   [Error] Failed to download")
+                                    if result.stderr:
+                                        print(f"   {result.stderr[:300]}")
+                            except subprocess.TimeoutExpired:
+                                print(f"   {Colors.red_bold('Error')} Download timed out" if is_tty() else "   [Error] Timeout")
+                            except Exception as e:
+                                print(f"   {Colors.red_bold('Error')} {e}" if is_tty() else f"   [Error] {e}")
 
     print()
 
