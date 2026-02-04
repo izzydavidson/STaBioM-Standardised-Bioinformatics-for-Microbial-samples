@@ -740,14 +740,14 @@ load_barcode_site_map() {
   SITE_BY_BARCODE=()
   NAME_BY_BARCODE=()
 
-  # For FASTQ_SINGLE mode: if input.sample_type is set, apply it to barcode00
-  if [[ "${INPUT_STYLE}" == "FASTQ_SINGLE" && -n "${SAMPLE_TYPE_NORM}" && "${SAMPLE_TYPE_NORM}" != "unknown" ]]; then
-    log_info "Using input.sample_type='${SAMPLE_TYPE_RAW}' for barcode00 (FASTQ_SINGLE mode)"
-    SITE_BY_BARCODE["barcode00"]="${SAMPLE_TYPE_NORM}"
-  fi
-
+  # If no sample sheet provided but sample_type is set globally, will fall back to SAMPLE_TYPE_NORM
+  # This allows --sample-type vaginal to apply to all barcodes without a sample sheet
   if [[ -z "${sheet}" || "${sheet}" == "null" ]]; then
-    log_info "No sample sheet provided; all barcodes treated as unknown site."
+    if [[ -n "${SAMPLE_TYPE_NORM}" && "${SAMPLE_TYPE_NORM}" != "unknown" ]]; then
+      log_info "No sample sheet provided; using global sample_type='${SAMPLE_TYPE_RAW}' for all barcodes."
+    else
+      log_info "No sample sheet provided; all barcodes treated as unknown site."
+    fi
     return 0
   fi
 
@@ -773,16 +773,17 @@ load_barcode_site_map() {
 
 # Check if a barcode should be treated as a vaginal sample
 # Returns 0 (true) if vaginal, 1 (false) otherwise
+# Falls back to global SAMPLE_TYPE_NORM if barcode not in mapping
 is_vaginal_barcode() {
   local barcode="${1:-}"
-  local site="${SITE_BY_BARCODE[${barcode}]:-unknown}"
+  local site="${SITE_BY_BARCODE[${barcode}]:-${SAMPLE_TYPE_NORM:-unknown}}"
   [[ "${site}" == "vaginal" || "${site}" == "vag" || "${site}" == "v" ]]
 }
 
-# Get site name for a barcode (returns "unknown" if not mapped)
+# Get site name for a barcode (returns global SAMPLE_TYPE_NORM or "unknown" if not mapped)
 get_site_for_barcode() {
   local barcode="${1:-}"
-  echo "${SITE_BY_BARCODE[${barcode}]:-unknown}"
+  echo "${SITE_BY_BARCODE[${barcode}]:-${SAMPLE_TYPE_NORM:-unknown}}"
 }
 
 # Get friendly name for a barcode (returns barcode ID if no name mapped)
