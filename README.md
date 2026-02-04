@@ -76,6 +76,8 @@ stabiom run -p sr_amp -i /path/to/reads/ --dry-run
 | `lr_amp` | Long-read 16S amplicon (ONT, PacBio) | Emu or Kraken2 |
 | `lr_meta` | Long-read shotgun metagenomics | Kraken2/Bracken |
 
+**Note:** Long-read pipelines support FAST5, POD5, and FASTQ input. For FAST5 input, Dorado basecalling models must be downloaded manually (see Dorado Models section below).
+
 ## Commands
 
 ### `stabiom setup`
@@ -173,6 +175,31 @@ Shows status of:
 | Kraken2 Standard-8 | ~8 GB | sr_meta, lr_meta, lr_amp (partial) |
 | Kraken2 Standard-16 | ~16 GB | sr_meta, lr_meta, lr_amp (partial) |
 | Emu Default | ~0.5 GB | lr_amp (full-length 16S) |
+
+### Dorado Models (Manual Download Required)
+
+For FAST5 input with long-read pipelines, Dorado basecalling models are required. These must be downloaded manually:
+
+**Option 1: Using Docker (Recommended)**
+```bash
+# Download a specific model
+docker run -v $(pwd)/models:/models ontresearch/dorado:latest \
+  dorado download --model dna_r10.4.1_e8.2_400bps_hac@v5.2.0 --models-directory /models
+
+# Move to STaBioM models directory
+mv models/* /path/to/stabiom/tools/models/dorado/
+```
+
+**Option 2: Using Dorado Binary**
+
+Install Dorado from [GitHub releases](https://github.com/nanoporetech/dorado/releases) and follow the [official download instructions](https://github.com/nanoporetech/dorado#downloading-models).
+
+**Available Models:**
+- `dna_r10.4.1_e8.2_400bps_hac@v5.2.0` - High-accuracy (recommended)
+- `dna_r10.4.1_e8.2_400bps_sup@v5.2.0` - Super-accuracy (slower)
+- `dna_r10.4.1_e8.2_400bps_fast@v5.2.0` - Fast (less accurate)
+
+For a full list of available models, see the [Dorado models documentation](https://github.com/nanoporetech/dorado#models).
 
 ## Sample Types
 
