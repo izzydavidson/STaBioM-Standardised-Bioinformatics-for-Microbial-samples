@@ -816,8 +816,10 @@ class RunConfig:
     min_qscore: int = 10  # Minimum quality score for filtering (default: 10)
     no_qfilter: bool = False  # Disable quality filtering
 
-    # Dorado basecalling model (for FAST5/POD5 input)
-    dorado_model: str = ""  # e.g., "dna_r10.4.1_e8.2_400bps_hac@v4.1.0"
+    # Dorado basecalling (for FAST5/POD5 input)
+    dorado_model: str = ""  # e.g., "dna_r10.4.1_e8.2_400bps_hac@v5.2.0"
+    dorado_bin: str = ""  # Absolute path to Dorado binary
+    dorado_models_dir: str = ""  # Absolute path to directory containing Dorado models
 
     # QC reports in final directory
     qc_in_final: bool = True  # Copy FastQC/MultiQC reports to final/qc/
