@@ -112,7 +112,20 @@ stabiom run -p sr_meta -i reads/ --db /path/to/kraken2/db -o ./results
   --threads           Number of CPU threads (default: 4)
   --dry-run           Preview configuration without running
   --no-container      Run without Docker (use local tools)
+
+# FAST5 input (requires Dorado)
+stabiom run -p lr_amp -i fast5/*.fast5 \
+  --dorado-bin /path/to/dorado/bin/dorado \
+  --dorado-models-dir /path/to/models \
+  --dorado-model dna_r10.4.1_e8.2_400bps_hac@v5.2.0
 ```
+
+**Note**: FAST5 input requires:
+- `--dorado-bin`: Absolute path to Dorado binary
+- `--dorado-models-dir`: Absolute path to directory containing Dorado models
+- `--dorado-model`: Model name (must exist in the models directory)
+
+See [Dorado Models](#dorado-models-manual-download-required) section for download instructions.
 
 ### `stabiom compare`
 

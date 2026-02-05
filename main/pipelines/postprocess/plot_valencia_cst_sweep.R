@@ -85,8 +85,8 @@ p1 <- ggplot(df_plot, aes(x = param, y = proportion, fill = CST_plot)) +
 
 out_png1 <- file.path(val_dir, paste0(run_base, "_valencia_cst_sweep_stacked.png"))
 out_pdf1 <- file.path(val_dir, paste0(run_base, "_valencia_cst_sweep_stacked.pdf"))
-ggsave(out_png1, p1, width = 12, height = 6, dpi = 300, bg = "white")
-ggsave(out_pdf1, p1, width = 12, height = 6, bg = "white")
+ggsave(out_png1, p1, width = 12, height = 6, dpi = 300)
+ggsave(out_pdf1, p1, width = 12, height = 6)
 
 # Dominant CST per param (simple summary plot)
 dom <- df %>%
@@ -111,8 +111,8 @@ p2 <- ggplot(dom, aes(x = param, y = proportion, group = 1)) +
 
 out_png2 <- file.path(val_dir, paste0(run_base, "_valencia_cst_sweep_dominant.png"))
 out_pdf2 <- file.path(val_dir, paste0(run_base, "_valencia_cst_sweep_dominant.pdf"))
-ggsave(out_png2, p2, width = 12, height = 5, dpi = 300, bg = "white")
-ggsave(out_pdf2, p2, width = 12, height = 5, bg = "white")
+ggsave(out_png2, p2, width = 12, height = 5, dpi = 300)
+ggsave(out_pdf2, p2, width = 12, height = 5)
 
 cat("Saved plots:\n")
 cat(" ", out_png1, "\n")
