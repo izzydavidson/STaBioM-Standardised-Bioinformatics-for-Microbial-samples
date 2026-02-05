@@ -2175,8 +2175,25 @@ def run_pipeline(
                         print(f"           - {mmi.relative_to(repo_root)}")
 
         # Mount Dorado binary and models directory if specified (for FAST5 basecalling)
+        # Auto-detect setup-installed Dorado if not provided by user
         dorado_bin_host = config.dorado_bin
         dorado_models_dir_host = config.dorado_models_dir
+
+        if not dorado_bin_host or not dorado_models_dir_host:
+            # Try to use setup-installed Dorado
+            tools_dir = repo_root / "tools"
+            setup_dorado_bin = tools_dir / "dorado" / "bin" / "dorado"
+            setup_models_dir = tools_dir / "models" / "dorado"
+
+            if not dorado_bin_host and setup_dorado_bin.exists() and os.access(setup_dorado_bin, os.X_OK):
+                dorado_bin_host = str(setup_dorado_bin)
+                if config.verbose:
+                    print(f"[stabiom] Auto-detected Dorado binary: {dorado_bin_host}")
+
+            if not dorado_models_dir_host and setup_models_dir.exists() and any(setup_models_dir.iterdir()):
+                dorado_models_dir_host = str(setup_models_dir)
+                if config.verbose:
+                    print(f"[stabiom] Auto-detected Dorado models: {dorado_models_dir_host}")
 
         if dorado_bin_host and Path(dorado_bin_host).exists():
             # Mount the Dorado binary

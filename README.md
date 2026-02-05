@@ -45,6 +45,7 @@ This will:
 2. **Check for Docker** - and provide installation instructions if missing
 3. **Download reference databases** - Kraken2 and Emu databases (optional, interactive)
 4. **Download analysis tools** - VALENCIA for vaginal CST classification (optional, interactive)
+5. **Download Dorado models** - For FAST5/POD5 basecalling (optional, interactive)
 
 After setup completes, restart your terminal or run:
 ```bash
@@ -113,19 +114,21 @@ stabiom run -p sr_meta -i reads/ --db /path/to/kraken2/db -o ./results
   --dry-run           Preview configuration without running
   --no-container      Run without Docker (use local tools)
 
-# FAST5 input (requires Dorado)
+# FAST5 input (auto-detected if models installed via setup)
+stabiom run -p lr_amp -i fast5/*.fast5
+
+# Or specify paths manually
 stabiom run -p lr_amp -i fast5/*.fast5 \
   --dorado-bin /path/to/dorado/bin/dorado \
   --dorado-models-dir /path/to/models \
   --dorado-model dna_r10.4.1_e8.2_400bps_hac@v5.2.0
 ```
 
-**Note**: FAST5 input requires:
-- `--dorado-bin`: Absolute path to Dorado binary
-- `--dorado-models-dir`: Absolute path to directory containing Dorado models
-- `--dorado-model`: Model name (must exist in the models directory)
+**Note**: FAST5 input requires Dorado and models:
+- If installed via `stabiom setup`: Auto-detected (no flags needed)
+- If manually installed: Use `--dorado-bin`, `--dorado-models-dir`, and `--dorado-model`
 
-See [Dorado Models](#dorado-models-manual-download-required) section for download instructions.
+See [Dorado Models](#dorado-models-for-fast5-input) section for installation instructions.
 
 ### `stabiom compare`
 
@@ -189,23 +192,35 @@ Shows status of:
 | Kraken2 Standard-16 | ~16 GB | sr_meta, lr_meta, lr_amp (partial) |
 | Emu Default | ~0.5 GB | lr_amp (full-length 16S) |
 
-### Dorado Models (Manual Download Required)
+### Dorado Models (For FAST5 Input)
 
-For FAST5 input with long-read pipelines, Dorado basecalling models are required. These must be downloaded manually:
+For FAST5 input with long-read pipelines, Dorado basecalling models are required.
 
-**Option 1: Using Docker (Recommended)**
+**Option 1: Download via Setup (Recommended)**
+
+Run the setup wizard and select Dorado models to download:
+
 ```bash
-# Download a specific model
+stabiom setup
+```
+
+The wizard will:
+- Download the Dorado binary automatically
+- Let you select which models to download (HAC, SUP, or FAST)
+- Auto-detect models for FAST5 input (no --dorado-model flag needed if only one model is installed)
+
+**Option 2: Manual Download**
+
+If you prefer manual installation:
+
+```bash
+# Using Docker
 docker run -v $(pwd)/models:/models ontresearch/dorado:latest \
   dorado download --model dna_r10.4.1_e8.2_400bps_hac@v5.2.0 --models-directory /models
 
-# Move to STaBioM models directory
-mv models/* /path/to/stabiom/tools/models/dorado/
+# Or download Dorado binary and models from:
+# https://github.com/nanoporetech/dorado/releases
 ```
-
-**Option 2: Using Dorado Binary**
-
-Install Dorado from [GitHub releases](https://github.com/nanoporetech/dorado/releases) and follow the [official download instructions](https://github.com/nanoporetech/dorado#downloading-models).
 
 **Available Models:**
 - `dna_r10.4.1_e8.2_400bps_hac@v5.2.0` - High-accuracy (recommended)

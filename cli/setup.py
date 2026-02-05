@@ -1143,8 +1143,8 @@ def run_setup(interactive: bool = True, install_docker: bool = False,
 
     print()
 
-    # Step 4.5: Dorado Basecalling Models (Manual Download)
-    print(Colors.cyan_bold("4.5. Dorado Basecalling Models (Manual Download)") if is_tty() else "4.5. Dorado Basecalling Models (Manual Download)")
+    # Step 4.5: Dorado Basecalling Models
+    print(Colors.cyan_bold("4.5. Dorado Basecalling Models") if is_tty() else "4.5. Dorado Basecalling Models")
     print()
 
     models_dir = get_models_dir()
@@ -1159,20 +1159,70 @@ def run_setup(interactive: bool = True, install_docker: bool = False,
             existing_models.append(model_id)
             print(f"   {Colors.green_bold('FOUND')} {model_info['name']}" if is_tty() else f"   [FOUND] {model_info['name']}")
 
-    if not existing_models:
-        print(f"   {Colors.yellow_bold('Note:')} Dorado models are required for FAST5 input processing." if is_tty() else "   [Note] Dorado models are required for FAST5 input processing.")
+    missing_models = [model_id for model_id in DORADO_MODELS if model_id not in existing_models]
+
+    if missing_models and interactive:
         print()
-        print("   Dorado models must be downloaded manually using one of these methods:")
+        print("   Available Dorado models to download:")
+        for model_id in missing_models:
+            model_info = DORADO_MODELS[model_id]
+            print(f"   - {model_info['name']}: {model_info['description']}")
+            print(f"     Size: ~{model_info['size_gb']} GB, Used by: {', '.join(model_info['pipelines'])}")
+
         print()
-        print("   1. Using Docker (Recommended):")
-        print("      docker run -v $(pwd)/models:/models ontresearch/dorado:latest \\")
-        print("        dorado download --model dna_r10.4.1_e8.2_400bps_hac@v5.2.0 --models-directory /models")
-        print()
-        print("   2. Using Dorado binary:")
-        print("      Download from: https://github.com/nanoporetech/dorado/releases")
-        print("      Follow instructions: https://github.com/nanoporetech/dorado#downloading-models")
-        print()
-        print("   See README for full instructions and available models.")
+        if prompt_yes_no("   Would you like to download Dorado models now?", default=True):
+            # First, ensure we have the Dorado binary
+            dorado_bin = get_dorado_binary()
+
+            if not dorado_bin:
+                print(f"   {Colors.red_bold('Error')} Failed to download Dorado binary" if is_tty() else "   [Error] Failed to download Dorado binary")
+                print()
+                print("   You can download models manually using Docker:")
+                print("      docker run -v $(pwd)/models:/models ontresearch/dorado:latest \\")
+                print("        dorado download --model dna_r10.4.1_e8.2_400bps_hac@v5.2.0 --models-directory /models")
+                print()
+            else:
+                print(f"   {Colors.green_bold('OK')} Dorado binary ready: {dorado_bin}" if is_tty() else f"   [OK] Dorado binary ready")
+                print()
+
+                # Download selected models
+                for model_id in missing_models:
+                    model_info = DORADO_MODELS[model_id]
+                    if prompt_yes_no(f"   Download {model_info['name']}?", default=(model_id == "dna_r10.4.1_e8.2_400bps_hac@v5.2.0")):
+                        print(f"   Downloading {model_info['name']}...")
+
+                        try:
+                            # Use Dorado to download the model
+                            result = subprocess.run(
+                                [str(dorado_bin), "download", "--model", model_id, "--directory", str(models_dir)],
+                                capture_output=True,
+                                text=True,
+                                timeout=600  # 10 minute timeout
+                            )
+
+                            if result.returncode == 0:
+                                model_path = models_dir / model_id
+                                if model_path.exists():
+                                    print(f"   {Colors.green_bold('OK')} {model_info['name']} installed!" if is_tty() else f"   [OK] {model_info['name']} installed!")
+                                    print()
+                                    print(f"   {Colors.cyan_bold('Model path:')} " if is_tty() else "   Model path:")
+                                    print(f"   {model_path}")
+                                    print(f"   Use with: --dorado-model {model_id}")
+                                    print(f"   (Auto-detected if only one model is downloaded)")
+                                    print()
+                                    downloaded_items.append((f"Dorado Model: {model_info['name']}", str(model_path), f"--dorado-model {model_id} (auto-detected)"))
+                                else:
+                                    print(f"   {Colors.red_bold('Error')} Model directory not found after download" if is_tty() else "   [Error] Model not found")
+                            else:
+                                print(f"   {Colors.red_bold('Error')} Download failed: {result.stderr[:200]}" if is_tty() else f"   [Error] Download failed")
+
+                        except subprocess.TimeoutExpired:
+                            print(f"   {Colors.red_bold('Error')} Download timed out (>10 minutes)" if is_tty() else "   [Error] Download timed out")
+                        except Exception as e:
+                            print(f"   {Colors.red_bold('Error')} {e}" if is_tty() else f"   [Error] {e}")
+
+    elif not existing_models and not interactive:
+        print(f"   {Colors.yellow_bold('Note:')} No Dorado models found. Run 'stabiom setup' interactively to download." if is_tty() else "   [Note] No models found")
 
     print()
 
