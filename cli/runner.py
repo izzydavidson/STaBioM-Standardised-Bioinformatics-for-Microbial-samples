@@ -2182,10 +2182,13 @@ def run_pipeline(
 
         # Mount Dorado binary and models directory if specified (for FAST5 basecalling)
         # Auto-detect setup-installed Dorado if not provided by user
-        dorado_bin_host = config.dorado_bin
-        dorado_models_dir_host = config.dorado_models_dir
+        # Skip if STABIOM_SKIP_DORADO_MOUNT is set (container has built-in Dorado)
+        skip_dorado_mount = os.environ.get('STABIOM_SKIP_DORADO_MOUNT')
 
-        if not dorado_bin_host or not dorado_models_dir_host:
+        dorado_bin_host = config.dorado_bin if not skip_dorado_mount else None
+        dorado_models_dir_host = config.dorado_models_dir if not skip_dorado_mount else None
+
+        if not skip_dorado_mount and (not dorado_bin_host or not dorado_models_dir_host):
             # Try to use setup-installed Dorado
             tools_dir = repo_root / "tools"
             setup_dorado_bin = tools_dir / "dorado" / "bin" / "dorado"

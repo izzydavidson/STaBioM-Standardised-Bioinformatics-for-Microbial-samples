@@ -209,7 +209,7 @@ TOOLS = {
 DORADO_MODELS = {
     "dna_r10.4.1_e8.2_400bps_hac@v5.2.0": {
         "name": "DNA R10.4.1 HAC 400bps v5.2.0",
-        "description": "High-accuracy model for R10.4.1 flow cells, 400bps, v5.2.0 - RECOMMENDED",
+        "description": "High-accuracy model for R10.4.1 flow cells, 400bps, v5.2.0 - RECOMMENDED for modern 5kHz data",
         "model_id": "dna_r10.4.1_e8.2_400bps_hac@v5.2.0",
         "size_gb": 0.4,
         "pipelines": ["lr_amp", "lr_meta"],
@@ -226,6 +226,13 @@ DORADO_MODELS = {
         "description": "Fast model for R10.4.1 flow cells, 400bps, v5.2.0 (faster but less accurate)",
         "model_id": "dna_r10.4.1_e8.2_400bps_fast@v5.2.0",
         "size_gb": 0.3,
+        "pipelines": ["lr_amp", "lr_meta"],
+    },
+    "dna_r10.4.1_e8.2_400bps_hac@v4.1.0": {
+        "name": "DNA R10.4.1 HAC 400bps v4.1.0 (Legacy 4kHz)",
+        "description": "High-accuracy model for LEGACY 4kHz R10.4.1 E8.2 data - Last version supporting 4kHz sample rate",
+        "model_id": "dna_r10.4.1_e8.2_400bps_hac@v4.1.0",
+        "size_gb": 0.4,
         "pipelines": ["lr_amp", "lr_meta"],
     },
 }
