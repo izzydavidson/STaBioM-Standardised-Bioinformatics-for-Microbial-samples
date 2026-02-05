@@ -912,6 +912,10 @@ def detect_input_style(input_paths: List[str], pipeline: str) -> str:
     elif path.is_file():
         name = path.name.lower()
 
+        # FAST5 files (single file)
+        if name.endswith(".fast5"):
+            return "FAST5_DIR"
+
         # FAST5 archives
         if name.endswith((".fast5.tar.gz", ".fast5.zip")):
             return "FAST5_ARCHIVE"
