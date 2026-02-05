@@ -862,6 +862,8 @@ Use 'stabiom <command> --help' for more information on a specific command.
             min_qscore=args.min_qscore,
             no_qfilter=args.no_qfilter,
             dorado_model=args.dorado_model,
+            dorado_bin=args.dorado_bin,
+            dorado_models_dir=args.dorado_models_dir,
             postprocess=not args.no_postprocess,
             finalize=not args.no_finalize,
             qc_in_final=not args.no_qc_in_final,
