@@ -460,15 +460,25 @@ def download_with_progress(url: str, dest: Path, desc: str = "Downloading") -> b
     try:
         ssl_context = get_ssl_context()
 
+        # Create request with User-Agent header to avoid 403 errors
+        req = urllib.request.Request(
+            url,
+            headers={'User-Agent': 'STaBioM/1.0 (https://github.com/izzydavidson/STaBioM)'}
+        )
+
         # Get file size
-        with urllib.request.urlopen(url, context=ssl_context) as response:
+        with urllib.request.urlopen(req, context=ssl_context) as response:
             total_size = int(response.headers.get('content-length', 0))
 
         # Download with progress
         downloaded = 0
         chunk_size = 1024 * 1024  # 1MB chunks
 
-        with urllib.request.urlopen(url, context=ssl_context) as response:
+        req = urllib.request.Request(
+            url,
+            headers={'User-Agent': 'STaBioM/1.0 (https://github.com/izzydavidson/STaBioM)'}
+        )
+        with urllib.request.urlopen(req, context=ssl_context) as response:
             with open(dest, 'wb') as f:
                 while True:
                     chunk = response.read(chunk_size)
