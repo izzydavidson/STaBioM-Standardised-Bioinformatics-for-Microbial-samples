@@ -52,7 +52,7 @@ dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 # ----------------------------
 # Legend sizing controls
 # ----------------------------
-legend_cex <- 0.3
+legend_cex <- 0.65
 legend_inset <- c(-0.60, 0)
 legend_ncol <- 1
 legend_x <- "topright"
