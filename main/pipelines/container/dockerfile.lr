@@ -84,13 +84,19 @@ RUN python3 -m pip install --no-cache-dir \
     pod5
 
 # Install Emu via conda (miniforge for arm64 support)
-# Note: POD5 is installed via pip above. Dorado should be mounted at runtime for basecalling.
 RUN curl -L https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-aarch64.sh -o /tmp/miniforge.sh \
     && bash /tmp/miniforge.sh -b -p /opt/miniforge \
     && rm /tmp/miniforge.sh \
     && /opt/miniforge/bin/conda install -y -c conda-forge -c bioconda emu \
     && /opt/miniforge/bin/conda clean -afy \
     && ln -sf /opt/miniforge/bin/emu /usr/local/bin/emu
+
+# Install Dorado for basecalling (Linux ARM64 version)
+RUN curl -L https://cdn.oxfordnanoportal.com/software/analysis/dorado-1.0.0-linux-arm64.tar.gz -o /tmp/dorado.tar.gz \
+    && mkdir -p /opt/dorado \
+    && tar -xzf /tmp/dorado.tar.gz -C /opt/dorado --strip-components=1 \
+    && rm /tmp/dorado.tar.gz \
+    && ln -sf /opt/dorado/bin/dorado /usr/local/bin/dorado
 
 ENV PATH="/opt/miniforge/bin:${PATH}"
 
