@@ -63,6 +63,13 @@ def find_repo_root(start_path: Optional[Path] = None) -> Path:
     For PyInstaller bundles, returns the directory containing the executable
     where bundled resources (pipelines, configs, etc.) are located.
     """
+    # Check for environment variable override (used by wrapper scripts)
+    import os
+    if 'STABIOM_REPO_ROOT' in os.environ:
+        repo_root = Path(os.environ['STABIOM_REPO_ROOT']).resolve()
+        if repo_root.exists():
+            return repo_root
+
     # Check if running as PyInstaller bundle
     if getattr(sys, 'frozen', False):
         # When frozen, sys.executable is the path to the binary

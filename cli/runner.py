@@ -2220,9 +2220,7 @@ def run_pipeline(
                 # Update container config to use container path
                 if "tools" not in container_config_dict:
                     container_config_dict["tools"] = {}
-                if "dorado" not in container_config_dict["tools"]:
-                    container_config_dict["tools"]["dorado"] = {}
-                container_config_dict["tools"]["dorado"]["dorado_bin"] = dorado_bin_container
+                container_config_dict["tools"]["dorado_bin"] = dorado_bin_container
 
                 if config.verbose:
                     print(f"[stabiom] Mounting Dorado binary: {dorado_bin_path} -> {dorado_bin_container}")
@@ -2241,9 +2239,7 @@ def run_pipeline(
                 # Update container config to use container path
                 if "tools" not in container_config_dict:
                     container_config_dict["tools"] = {}
-                if "dorado" not in container_config_dict["tools"]:
-                    container_config_dict["tools"]["dorado"] = {}
-                container_config_dict["tools"]["dorado"]["dorado_models_dir"] = dorado_models_container
+                container_config_dict["tools"]["dorado_models_dir"] = dorado_models_container
 
                 if config.verbose:
                     print(f"[stabiom] Mounting Dorado models: {dorado_models_path} -> {dorado_models_container}")
