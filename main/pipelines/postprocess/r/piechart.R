@@ -201,15 +201,9 @@ generate_piechart_grid <- function(data, sample_col, taxon_col, count_col, rank_
   # Add overall title
   mtext(paste(rank_label, "Composition (Top", top_n, ")"), outer = TRUE, cex = 1.2, font = 2)
 
-  dev.off()
-  cat("[piechart] Generated:", out_png, "\n")
-
-  # Generate a separate legend image
-  out_legend <- file.path(out_dir, paste0("piechart_", tolower(rank_label), "_legend.png"))
-  png(out_legend, width = 400, height = 600, res = 150, bg = "white")
-
-  par(mar = c(1, 1, 2, 1))
+  # Add legend in the last available plot area (or create a new one if needed)
   plot.new()
+  par(mar = c(1, 1, 2, 1))
 
   # Build legend with global top taxa
   legend_taxa <- c(top_taxa_global, "Other")
@@ -228,7 +222,7 @@ generate_piechart_grid <- function(data, sample_col, taxon_col, count_col, rank_
   )
 
   dev.off()
-  cat("[piechart] Generated legend:", out_legend, "\n")
+  cat("[piechart] Generated:", out_png, "\n")
 
   # Generate CSV with per-sample data
   out_csv <- file.path(out_dir, paste0("piechart_", tolower(rank_label), "_data.csv"))

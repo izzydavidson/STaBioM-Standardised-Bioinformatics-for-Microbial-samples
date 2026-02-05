@@ -69,10 +69,10 @@ dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 # ----------------------------
 # Legend sizing controls
 # ----------------------------
-legend_title_size <- 7
-legend_text_size <- 5
-legend_key_cm <- 0.10
-legend_spacing_y_cm <- 0.05
+legend_title_size <- 9
+legend_text_size <- 7
+legend_key_cm <- 0.15
+legend_spacing_y_cm <- 0.08
 legend_columns <- 1
 # ----------------------------
 
@@ -104,6 +104,12 @@ generate_stacked_bar <- function(data, taxon_col, abundance_col, rank_label, top
   plot_data <- data %>%
     group_by(sample_id, taxon_grouped) %>%
     summarise(abundance = sum(!!sym(abundance_col)), .groups = "drop")
+
+  # Normalize to proportions (ensure each sample sums to 1)
+  plot_data <- plot_data %>%
+    group_by(sample_id) %>%
+    mutate(abundance = abundance / sum(abundance)) %>%
+    ungroup()
 
   # Order taxa by total abundance (Other last)
   taxa_order <- plot_data %>%
