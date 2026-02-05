@@ -228,10 +228,10 @@ DORADO_MODELS = {
         "size_gb": 0.3,
         "pipelines": ["lr_amp", "lr_meta"],
     },
-    "dna_r10.4.1_e8.2_400bps_hac@v4.1.0": {
-        "name": "DNA R10.4.1 HAC 400bps v4.1.0 (Legacy 4kHz)",
-        "description": "High-accuracy model for LEGACY 4kHz R10.4.1 E8.2 data - Last version supporting 4kHz sample rate",
-        "model_id": "dna_r10.4.1_e8.2_400bps_hac@v4.1.0",
+    "dna_r10.4.1_e8.2_400bps_hac@v3.5.2": {
+        "name": "DNA R10.4.1 HAC 400bps v3.5.2 (Legacy 4kHz)",
+        "description": "High-accuracy model for LEGACY 4kHz R10.4.1 E8.2 data - Working model for legacy sample rates",
+        "model_id": "dna_r10.4.1_e8.2_400bps_hac@v3.5.2",
         "size_gb": 0.4,
         "pipelines": ["lr_amp", "lr_meta"],
     },
