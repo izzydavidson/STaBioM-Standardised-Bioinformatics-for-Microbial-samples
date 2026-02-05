@@ -90,8 +90,7 @@ RUN curl -L https://github.com/conda-forge/miniforge/releases/latest/download/Mi
     && rm /tmp/miniforge.sh \
     && /opt/miniforge/bin/conda install -y -c conda-forge -c bioconda emu \
     && /opt/miniforge/bin/conda clean -afy \
-    && ln -sf /opt/miniforge/bin/emu /usr/local/bin/emu \
-    && ln -sf /opt/miniforge/bin/pod5 /usr/local/bin/pod5
+    && ln -sf /opt/miniforge/bin/emu /usr/local/bin/emu
 
 ENV PATH="/opt/miniforge/bin:${PATH}"
 

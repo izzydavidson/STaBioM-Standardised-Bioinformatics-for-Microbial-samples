@@ -50,3 +50,5 @@ main/tools/VALENCIA/
 *.tmp
 *.temp
 .cache/
+dist/
+build/

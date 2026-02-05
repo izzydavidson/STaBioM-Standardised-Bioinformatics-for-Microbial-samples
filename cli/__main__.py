@@ -357,6 +357,20 @@ Use 'stabiom <command> --help' for more information on a specific command.
         help="Dorado basecalling model for FAST5/POD5 input (e.g., 'dna_r10.4.1_e8.2_400bps_hac@v4.1.0'). "
              "Required when input is FAST5/POD5 raw signal data.",
     )
+    demux_group.add_argument(
+        "--dorado-bin",
+        default="",
+        metavar="PATH",
+        help="Absolute path to Dorado binary (e.g., '/path/to/dorado-1.0.0/bin/dorado'). "
+             "Required for FAST5 input. Download from https://github.com/nanoporetech/dorado/releases",
+    )
+    demux_group.add_argument(
+        "--dorado-models-dir",
+        default="",
+        metavar="DIR",
+        help="Absolute path to directory containing Dorado models (e.g., '/path/to/models'). "
+             "Required for FAST5 input. The model specified by --dorado-model must exist in this directory.",
+    )
 
     # --- EXECUTION options ---
     exec_group = run_parser.add_argument_group(

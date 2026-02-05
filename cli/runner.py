@@ -2174,6 +2174,59 @@ def run_pipeline(
                     for mmi in human_ref_dir.rglob("*.mmi"):
                         print(f"           - {mmi.relative_to(repo_root)}")
 
+        # Mount Dorado binary and models directory if specified (for FAST5 basecalling)
+        dorado_bin_host = config.dorado_bin
+        dorado_models_dir_host = config.dorado_models_dir
+
+        if dorado_bin_host and Path(dorado_bin_host).exists():
+            # Mount the Dorado binary
+            dorado_bin_path = Path(dorado_bin_host).resolve()
+            if dorado_bin_path.is_file():
+                # Mount the directory containing the binary
+                dorado_bin_dir = dorado_bin_path.parent
+                dorado_bin_filename = dorado_bin_path.name
+                dorado_bin_container_dir = "/opt/dorado/bin"
+                dorado_bin_container = f"{dorado_bin_container_dir}/{dorado_bin_filename}"
+                extra_mounts.append((str(dorado_bin_dir), dorado_bin_container_dir))
+
+                # Also mount the lib directory if it exists (for shared libraries)
+                dorado_lib_dir = dorado_bin_dir.parent / "lib"
+                if dorado_lib_dir.exists():
+                    extra_mounts.append((str(dorado_lib_dir), "/opt/dorado/lib"))
+
+                # Update container config to use container path
+                if "tools" not in container_config_dict:
+                    container_config_dict["tools"] = {}
+                if "dorado" not in container_config_dict["tools"]:
+                    container_config_dict["tools"]["dorado"] = {}
+                container_config_dict["tools"]["dorado"]["bin"] = dorado_bin_container
+
+                if config.verbose:
+                    print(f"[stabiom] Mounting Dorado binary: {dorado_bin_path} -> {dorado_bin_container}")
+                    if dorado_lib_dir.exists():
+                        print(f"[stabiom] Mounting Dorado lib: {dorado_lib_dir} -> /opt/dorado/lib")
+            else:
+                print(f"{Colors.yellow_bold('Warning')}: Dorado binary not found or not a file: {dorado_bin_path}")
+
+        if dorado_models_dir_host and Path(dorado_models_dir_host).exists():
+            # Mount the models directory
+            dorado_models_path = Path(dorado_models_dir_host).resolve()
+            if dorado_models_path.is_dir():
+                dorado_models_container = "/dorado_models"
+                extra_mounts.append((str(dorado_models_path), dorado_models_container))
+
+                # Update container config to use container path
+                if "tools" not in container_config_dict:
+                    container_config_dict["tools"] = {}
+                if "dorado" not in container_config_dict["tools"]:
+                    container_config_dict["tools"]["dorado"] = {}
+                container_config_dict["tools"]["dorado"]["models_dir"] = dorado_models_container
+
+                if config.verbose:
+                    print(f"[stabiom] Mounting Dorado models: {dorado_models_path} -> {dorado_models_container}")
+            else:
+                print(f"{Colors.yellow_bold('Warning')}: Dorado models directory not found or not a directory: {dorado_models_path}")
+
         # Write container config into run_dir
         container_config_host = run_dir / "docker_config.json"
         write_config(container_config_dict, container_config_host)
