@@ -392,6 +392,7 @@ BRACKEN_AVAILABLE="1"
 DORADO_MODEL="$(jq_first "${CONFIG_PATH}" '.tools.dorado.model' '.dorado.model' || true)"
 LIGATION_KIT="$(jq_first "${CONFIG_PATH}" '.tools.dorado.ligation_kit' '.dorado.ligation_kit' || true)"
 BARCODE_KIT="$(jq_first "${CONFIG_PATH}" '.tools.dorado.barcode_kit' '.dorado.barcode_kit' || true)"
+SEQUENCING_KIT="$(jq_first "${CONFIG_PATH}" '.tools.dorado.sequencing_kit' '.dorado.sequencing_kit' || true)"
 PRIMER_FASTA="$(jq_first "${CONFIG_PATH}" '.tools.dorado.primer_fasta' '.dorado.primer_fasta' || true)"
 
 ############################################
@@ -479,8 +480,23 @@ case "${INPUT_STYLE}" in
     STAGED_FAST5_DIR="${FAST5_STAGE_DIR}/fast5"
     ln -sfn "${FAST5_DIR_SRC}" "${STAGED_FAST5_DIR}"
     ;;
+  BAM)
+    # BAM input - basecalled reads, skip basecalling step
+    BAM_INPUT="$(jq_first "${CONFIG_PATH}" '.input.bam' '.inputs.bam' '.bam' || true)"
+    [[ -n "${BAM_INPUT}" ]] || { echo "ERROR: BAM input style selected but no BAM file found in config" >&2; exit 2; }
+    # Convert to absolute path
+    if [[ "${BAM_INPUT}" != /* ]]; then
+      BAM_INPUT="$(cd "$(dirname "${BAM_INPUT}")" && pwd)/$(basename "${BAM_INPUT}")"
+    fi
+    [[ -f "${BAM_INPUT}" ]] || { echo "ERROR: BAM file not found: ${BAM_INPUT}" >&2; exit 2; }
+    # Stage BAM file for processing
+    STAGED_BAM="${BAM_STAGE_DIR}/$(basename "${BAM_INPUT}")"
+    make_dir "${BAM_STAGE_DIR}"
+    ln -sfn "${BAM_INPUT}" "${STAGED_BAM}" 2>/dev/null || cp "${BAM_INPUT}" "${STAGED_BAM}"
+    log_info "Staged BAM input: ${STAGED_BAM}"
+    ;;
   *)
-    echo "ERROR: Unsupported input style: ${INPUT_STYLE}. lr_amp supports FASTQ_SINGLE or FAST5_DIR." >&2
+    echo "ERROR: Unsupported input style: ${INPUT_STYLE}. lr_amp supports FASTQ_SINGLE, FAST5_DIR, or BAM." >&2
     exit 2
     ;;
 esac
@@ -782,6 +798,9 @@ dorado_trim_bam_to_fastq_per_barcode() {
     local trimmed_bam="${TRIM_DIR}/${RUN_NAME}_${barcode}_trimmed.bam"
     # Note: dorado trim auto-detects adapters/primers. Custom primers can be provided via --primer-sequences.
     local cmd=( "${DORADO_BIN}" trim "${bbam}" )
+    if [[ -n "${SEQUENCING_KIT:-}" && "${SEQUENCING_KIT}" != "null" ]]; then
+      cmd+=( --sequencing-kit "${SEQUENCING_KIT}" )
+    fi
     if [[ -n "${PRIMER_FASTA:-}" && "${PRIMER_FASTA}" != "null" && -s "${PRIMER_FASTA}" ]]; then
       cmd+=( --primer-sequences "${PRIMER_FASTA}" )
     fi
@@ -1713,6 +1732,103 @@ main() {
             "pod5_file": $pod5_file,
             "bam_file": $bam_file,
             "demux_dir": $demux_dir
+          },
+          "inputs": (.inputs + { "per_barcode_root": $per_barcode_root })
+        }' "${OUTPUTS_JSON}" > "${tmp}"
+    mv "${tmp}" "${OUTPUTS_JSON}"
+  elif [[ "${INPUT_STYLE}" == "BAM" ]]; then
+    log_info "BAM input detected - skipping basecalling, starting from demux/trim..."
+
+    local bam_file="${STAGED_BAM}"
+
+    # Step 1: Dorado demux (if barcode kit specified)
+    if [[ -n "${BARCODE_KIT}" && "${BARCODE_KIT}" != "null" ]]; then
+      started="$(iso_now)"
+      set +e
+      local demux_dir
+      demux_dir="$(dorado_demux_to_per_barcode_bam "${bam_file}")"
+      ec=$?
+      set -e
+      ended="$(iso_now)"
+      if [[ $ec -ne 0 || -z "${demux_dir}" ]]; then
+        steps_append "${STEPS_JSON}" "dorado_demux" "failed" "Dorado demux failed" "${DORADO_BIN}" "dorado demux" "${ec}" "${started}" "${ended}"
+        die "Dorado demux failed"
+      fi
+      steps_append "${STEPS_JSON}" "dorado_demux" "succeeded" "Dorado demux completed" "${DORADO_BIN}" "dorado demux" "${ec}" "${started}" "${ended}"
+      log_ok "Demux complete: ${demux_dir}"
+
+      # Step 2: Dorado trim + BAM to FASTQ
+      started="$(iso_now)"
+      set +e
+      PER_BARCODE_FASTQ_ROOT="$(dorado_trim_bam_to_fastq_per_barcode "${demux_dir}")"
+      ec=$?
+      set -e
+      ended="$(iso_now)"
+      if [[ $ec -ne 0 || -z "${PER_BARCODE_FASTQ_ROOT}" ]]; then
+        steps_append "${STEPS_JSON}" "dorado_trim_bam2fq" "failed" "Dorado trim + BAM to FASTQ failed" "${DORADO_BIN}" "dorado trim + samtools bam2fq" "${ec}" "${started}" "${ended}"
+        die "Dorado trim + BAM to FASTQ failed"
+      fi
+      steps_append "${STEPS_JSON}" "dorado_trim_bam2fq" "succeeded" "Dorado trim + BAM to FASTQ completed" "${DORADO_BIN}" "dorado trim + samtools bam2fq" "${ec}" "${started}" "${ended}"
+      log_ok "Trim + bam2fq complete: ${PER_BARCODE_FASTQ_ROOT}"
+    else
+      # No barcode kit - treat as single sample, just trim
+      log_info "No barcode kit specified - treating BAM as single sample"
+      make_dir "${TRIM_DIR}"
+      make_dir "${RAW_READS_DIR}/${RUN_NAME}"
+
+      local trimmed_bam="${TRIM_DIR}/${RUN_NAME}_trimmed.bam"
+      local cmd=( "${DORADO_BIN}" trim "${bam_file}" )
+      if [[ -n "${SEQUENCING_KIT:-}" && "${SEQUENCING_KIT}" != "null" ]]; then
+        cmd+=( --sequencing-kit "${SEQUENCING_KIT}" )
+      fi
+      if [[ -n "${PRIMER_FASTA:-}" && "${PRIMER_FASTA}" != "null" && -s "${PRIMER_FASTA}" ]]; then
+        cmd+=( --primer-sequences "${PRIMER_FASTA}" )
+      fi
+
+      started="$(iso_now)"
+      set +e
+      "${cmd[@]}" > "${trimmed_bam}"
+      ec=$?
+      set -e
+      ended="$(iso_now)"
+      if [[ $ec -ne 0 ]]; then
+        steps_append "${STEPS_JSON}" "dorado_trim" "failed" "Dorado trim failed" "${DORADO_BIN}" "dorado trim" "${ec}" "${started}" "${ended}"
+        die "Dorado trim failed"
+      fi
+      steps_append "${STEPS_JSON}" "dorado_trim" "succeeded" "Dorado trim completed" "${DORADO_BIN}" "dorado trim" "${ec}" "${started}" "${ended}"
+
+      # Convert to FASTQ
+      local fqdir="${RAW_READS_DIR}/${RUN_NAME}/sample"
+      make_dir "${fqdir}"
+      local fq="${fqdir}/sample.fastq"
+      "${SAMTOOLS_BIN}" bam2fq "${trimmed_bam}" > "${fq}"
+
+      PER_BARCODE_FASTQ_ROOT="${RAW_READS_DIR}/${RUN_NAME}"
+      BARCODE_IDS=("sample")
+      log_ok "Trim + bam2fq complete: ${PER_BARCODE_FASTQ_ROOT}"
+    fi
+
+    # Discover barcode IDs from the generated FASTQs
+    if [[ -z "${BARCODE_IDS:-}" ]]; then
+      BARCODE_IDS=()
+      shopt -s nullglob
+      for bc_dir in "${PER_BARCODE_FASTQ_ROOT}"/*/; do
+        [[ -d "${bc_dir}" ]] || continue
+        local bc_name
+        bc_name="$(basename "${bc_dir}")"
+        BARCODE_IDS+=("${bc_name}")
+      done
+      shopt -u nullglob
+    fi
+    log_info "Discovered ${#BARCODE_IDS[@]} sample(s) from BAM input"
+
+    # Update outputs.json
+    tmp="${OUTPUTS_JSON}.tmp"
+    jq --arg per_barcode_root "${PER_BARCODE_FASTQ_ROOT}" \
+       --arg bam_file "${bam_file}" \
+       '. + {
+          "bam_input": {
+            "bam_file": $bam_file
           },
           "inputs": (.inputs + { "per_barcode_root": $per_barcode_root })
         }' "${OUTPUTS_JSON}" > "${tmp}"

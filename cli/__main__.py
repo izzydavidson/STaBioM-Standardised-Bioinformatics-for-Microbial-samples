@@ -351,6 +351,14 @@ Use 'stabiom <command> --help' for more information on a specific command.
         help="Ligation kit used for library prep (default: SQK-LSK114)",
     )
     demux_group.add_argument(
+        "--sequencing-kit",
+        default="",
+        metavar="KIT",
+        help="Sequencing kit for Dorado adapter trimming (e.g., SQK-LSK114). "
+             "If not specified, defaults to --ligation-kit value. "
+             "Required for Dorado trim operation.",
+    )
+    demux_group.add_argument(
         "--dorado-model",
         default="",
         metavar="MODEL",
@@ -850,6 +858,7 @@ Use 'stabiom <command> --help' for more information on a specific command.
             valencia_centroids=args.valencia_centroids or "",
             barcode_kit=args.barcode_kit,
             ligation_kit=args.ligation_kit,
+            sequencing_kit=args.sequencing_kit or args.ligation_kit,  # Default to ligation_kit if not specified
             primer_f=args.primer_f,
             primer_r=args.primer_r,
             amplicon_type=args.amplicon_type,
