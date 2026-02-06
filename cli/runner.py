@@ -788,6 +788,7 @@ class RunConfig:
     # Dorado demux settings (for lr_amp/lr_meta)
     barcode_kit: str = ""  # e.g., "EXP-PBC001", "SQK-NBD114-24"
     ligation_kit: str = "SQK-LSK114"
+    sequencing_kit: str = ""  # Sequencing kit for Dorado trim (defaults to ligation_kit if not specified)
 
     # Primer sequences for cutadapt (sr_amp only)
     primer_f: str = ""  # Forward primer (e.g., CCTACGGGNGGCWGCAG for V3-V4)
@@ -873,6 +874,9 @@ def detect_input_style(input_paths: List[str], pipeline: str) -> str:
         if ".fast5" in extensions or any(n.endswith(".fast5") for n in names):
             return "FAST5_DIR"
 
+        if ".bam" in extensions or any(n.endswith(".bam") for n in names):
+            return "BAM"
+
         # Multiple FASTQ files
         if pipeline.startswith("lr_"):
             return "FASTQ_SINGLE"  # Long-read: treat as single-end batch
@@ -894,6 +898,9 @@ def detect_input_style(input_paths: List[str], pipeline: str) -> str:
 
         if ".fast5" in extensions or any(f.name.endswith(".fast5") for f in files):
             return "FAST5_DIR"
+
+        if ".bam" in extensions or any(f.name.endswith(".bam") for f in files):
+            return "BAM"
 
         # Check for FASTQ files
         fastq_exts = {".fastq", ".fq", ".gz"}
@@ -919,6 +926,10 @@ def detect_input_style(input_paths: List[str], pipeline: str) -> str:
         # FAST5 archives
         if name.endswith((".fast5.tar.gz", ".fast5.zip")):
             return "FAST5_ARCHIVE"
+
+        # BAM files (basecalled reads)
+        if name.endswith(".bam"):
+            return "BAM"
 
         # Single file provided = FASTQ_SINGLE
         # Do NOT auto-detect paired when user explicitly provides only 1 file
@@ -1186,6 +1197,9 @@ def build_config(config: RunConfig, repo_root: Optional[Path] = None) -> Dict[st
         cfg["input"]["files"] = [str(p) for p in resolved_inputs]
     elif input_style == "FAST5_ARCHIVE":
         cfg["input"]["fast5_archive"] = str(primary_input)
+    elif input_style == "BAM":
+        # BAM input - basecalled reads, skip basecalling
+        cfg["input"]["bam"] = str(primary_input)
     elif input_style == "FASTQ_PAIRED" and len(resolved_inputs) == 2:
         # Explicitly provided paired-end files (2 files)
         # Sort to get R1 before R2
@@ -1591,6 +1605,7 @@ def build_config(config: RunConfig, repo_root: Optional[Path] = None) -> Dict[st
                 "model": config.dorado_model,  # e.g., "dna_r10.4.1_e8.2_400bps_hac@v4.1.0"
                 "ligation_kit": config.ligation_kit,  # Default: SQK-LSK114
                 "barcode_kit": config.barcode_kit,  # e.g., "EXP-PBC001", "SQK-NBD114-24" - empty means single sample
+                "sequencing_kit": config.sequencing_kit or config.ligation_kit,  # Sequencing kit for trim (defaults to ligation_kit)
                 "primer_fasta": "",  # Optional primer FASTA for trimming
             },
         }
@@ -2059,6 +2074,11 @@ def run_pipeline(
             if "fast5_archive" in config_dict.get("input", {}):
                 archive_path = Path(config_dict["input"]["fast5_archive"])
                 container_config_dict["input"]["fast5_archive"] = f"/input/{archive_path.name}"
+        elif input_style == "BAM":
+            # BAM file: map to /input/{filename}
+            if "bam" in config_dict.get("input", {}):
+                bam_path = Path(config_dict["input"]["bam"])
+                container_config_dict["input"]["bam"] = f"/input/{bam_path.name}"
         elif input_style == "FASTQ_PAIRED":
             # Paired-end: map both R1 and R2
             if "fastq_r1" in config_dict.get("input", {}):
