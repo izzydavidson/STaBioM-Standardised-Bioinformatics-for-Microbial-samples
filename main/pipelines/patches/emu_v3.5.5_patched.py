@@ -766,8 +766,8 @@ if __name__ == "__main__":
         '--N', '-N', type=int, default=50,
         help='minimap max number of secondary alignments per read [50]')
     abundance_parser.add_argument(
-        '--K', '-K', type=int, default=500000000,
-        help='minibatch size for minimap2 mapping [500M]')
+        '--K', '-K', type=int, default=10000000,
+        help='minibatch size for minimap2 mapping [10M]')
     abundance_parser.add_argument(
         '--mm2-forward-only', action="store_true",
         help='force minimap2 to consider the forward transcript strand only')
