@@ -342,50 +342,100 @@ def get_models_dir() -> Path:
 def get_dorado_binary() -> Optional[Path]:
     """
     Download and setup Dorado binary for model downloads.
-    Returns path to dorado executable, or None if unavailable.
+
+    On macOS, this downloads TWO binaries:
+    1. Linux binary (tools/dorado/) - for Docker container mounting
+    2. macOS binary (tools/dorado-host/) - for running model downloads on host
+
+    On Linux, downloads one binary (tools/dorado/) used for both purposes.
+
+    Returns path to HOST binary (for running dorado download commands), or None if unavailable.
     """
     tools_dir = get_tools_dir()
-    dorado_dir = tools_dir / "dorado"
 
-    # Determine platform and binary name
     system = platform.system()
     machine = platform.machine()
 
-    # Map to Dorado release naming
+    version = "1.3.1"  # Updated to match current Dorado version
+
+    # Determine what to download based on host platform
     if system == "Darwin":
+        # macOS: Download Linux binary for Docker + macOS binary for host
+
+        # 1. Download Linux binary for Docker container mounting
         if machine == "arm64":
-            platform_str = "osx-arm64"
-            archive_ext = "zip"
+            docker_platform = "linux-arm64"
         else:
-            platform_str = "osx-x64"
-            archive_ext = "zip"
+            docker_platform = "linux-x64"
+
+        dorado_dir = tools_dir / "dorado"
+        dorado_bin_docker = dorado_dir / "bin" / "dorado"
+
+        if not (dorado_bin_docker.exists() and os.access(dorado_bin_docker, os.X_OK)):
+            print(f"   Downloading Dorado {version} for Docker (Linux {machine})...")
+            if not _download_dorado_binary(version, docker_platform, dorado_dir):
+                print(f"   {Colors.yellow_bold('Warning')}: Failed to download Linux Dorado binary for Docker")
+                print(f"   Docker containers may not be able to run Dorado")
+        else:
+            print(f"   {Colors.green_bold('OK')} Linux Dorado binary already present for Docker")
+
+        # 2. Download macOS binary for running model downloads on host
+        host_platform = "osx-arm64" if machine == "arm64" else "osx-x64"
+        dorado_host_dir = tools_dir / "dorado-host"
+        dorado_bin_host = dorado_host_dir / "bin" / "dorado"
+
+        if not (dorado_bin_host.exists() and os.access(dorado_bin_host, os.X_OK)):
+            print(f"   Downloading Dorado {version} for host (macOS)...")
+            if not _download_dorado_binary(version, host_platform, dorado_host_dir):
+                return None
+        else:
+            print(f"   {Colors.green_bold('OK')} macOS Dorado binary already present for host")
+
+        return dorado_bin_host
+
     elif system == "Linux":
+        # Linux: Download one binary used for both Docker and host
         if machine in ["x86_64", "amd64"]:
             platform_str = "linux-x64"
-            archive_ext = "tar.gz"
         else:
             platform_str = "linux-arm64"
-            archive_ext = "tar.gz"
+
+        dorado_dir = tools_dir / "dorado"
+        dorado_bin = dorado_dir / "bin" / "dorado"
+
+        if dorado_bin.exists() and os.access(dorado_bin, os.X_OK):
+            return dorado_bin
+
+        print(f"   Downloading Dorado {version} for Linux...")
+        if _download_dorado_binary(version, platform_str, dorado_dir):
+            return dorado_bin
+        else:
+            return None
     else:
         return None
 
-    # Check if already downloaded
-    dorado_bin = dorado_dir / "bin" / "dorado"
-    if dorado_bin.exists() and os.access(dorado_bin, os.X_OK):
-        return dorado_bin
 
-    # Download Dorado (version 1.0.0 - stable release with v5.2.0 models)
-    version = "1.0.0"
+def _download_dorado_binary(version: str, platform_str: str, dest_dir: Path) -> bool:
+    """
+    Helper function to download and extract a Dorado binary.
+
+    Args:
+        version: Dorado version (e.g., "1.3.1")
+        platform_str: Platform string (e.g., "linux-arm64", "osx-arm64")
+        dest_dir: Destination directory
+
+    Returns:
+        True if successful, False otherwise
+    """
+    archive_ext = "zip" if platform_str.startswith("osx") else "tar.gz"
     filename = f"dorado-{version}-{platform_str}.{archive_ext}"
     url = f"https://cdn.oxfordnanoportal.com/software/analysis/{filename}"
 
-    print(f"   Downloading Dorado {version} for {platform_str}...")
+    archive_path = dest_dir / filename
+    dest_dir.mkdir(parents=True, exist_ok=True)
 
-    archive_path = dorado_dir / filename
-    dorado_dir.mkdir(parents=True, exist_ok=True)
-
-    if not download_with_progress(url, archive_path, f"   Dorado {version}"):
-        return None
+    if not download_with_progress(url, archive_path, f"   Dorado {version} ({platform_str})"):
+        return False
 
     # Extract archive
     print(f"   Extracting Dorado...")
@@ -393,21 +443,22 @@ def get_dorado_binary() -> Optional[Path]:
         if archive_ext == "zip":
             import zipfile
             with zipfile.ZipFile(archive_path, 'r') as zip_ref:
-                zip_ref.extractall(dorado_dir)
+                zip_ref.extractall(dest_dir)
         else:  # tar.gz
             import tarfile
             with tarfile.open(archive_path, "r:gz") as tar:
-                tar.extractall(dorado_dir)
+                tar.extractall(dest_dir)
 
         # The extracted directory is dorado-{version}-{platform_str}
-        extracted_dir = dorado_dir / f"dorado-{version}-{platform_str}"
+        extracted_dir = dest_dir / f"dorado-{version}-{platform_str}"
+        dorado_bin = dest_dir / "bin" / "dorado"
 
         # Move all contents (bin, lib, etc.) up one level if needed
         if extracted_dir.exists() and not dorado_bin.exists():
             import shutil
-            # Move all items from extracted_dir to dorado_dir
+            # Move all items from extracted_dir to dest_dir
             for item in extracted_dir.iterdir():
-                dest = dorado_dir / item.name
+                dest = dest_dir / item.name
                 if dest.exists():
                     shutil.rmtree(dest) if dest.is_dir() else dest.unlink()
                 shutil.move(str(item), str(dest))
@@ -418,17 +469,17 @@ def get_dorado_binary() -> Optional[Path]:
         # Clean up archive
         archive_path.unlink()
 
-        # Verify binary exists and is executable
+        # Verify binary exists and make executable
         if dorado_bin.exists():
             os.chmod(dorado_bin, 0o755)
-            return dorado_bin
+            return True
         else:
             print(f"   {Colors.red_bold('Error')}: Failed to find dorado binary after extraction")
-            return None
+            return False
 
     except Exception as e:
         print(f"   {Colors.red_bold('Error')}: Failed to extract Dorado: {e}")
-        return None
+        return False
 
 
 def get_ssl_context() -> ssl.SSLContext:
