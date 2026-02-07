@@ -841,8 +841,8 @@ dorado_basecall_to_bam() {
   fi
 
   # Download Dorado model if not already present
-  # Models are stored in ~/.cache/dorado/models or /opt/dorado/models
-  local model_dir="${DORADO_MODEL_DIR:-/opt/dorado/models}"
+  # Models are stored in ~/.cache/dorado/models or /dorado_models
+  local model_dir="${DORADO_MODEL_DIR:-/dorado_models}"
   mkdir -p "${model_dir}"
 
   # Check if model needs to be downloaded (Dorado will download automatically if needed,

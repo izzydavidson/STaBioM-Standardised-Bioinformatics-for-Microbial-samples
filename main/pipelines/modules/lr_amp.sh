@@ -733,7 +733,7 @@ dorado_basecall_to_bam() {
   fi
 
   # Download Dorado model if not already present
-  local model_dir="${DORADO_MODEL_DIR:-/opt/dorado/models}"
+  local model_dir="${DORADO_MODEL_DIR:-/dorado_models}"
   mkdir -p "${model_dir}"
 
   log_info "Using Dorado model: ${DORADO_MODEL}"
