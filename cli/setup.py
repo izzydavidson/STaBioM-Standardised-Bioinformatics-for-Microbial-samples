@@ -443,7 +443,7 @@ def _download_legacy_model_v352(models_dir: Path) -> bool:
             return False
 
 
-def get_dorado_binary() -> Optional[Path]:
+def get_dorado_binary(version: str = "1.3.1") -> Optional[Path]:
     """
     Download and setup Dorado binary for model downloads.
 
@@ -453,14 +453,15 @@ def get_dorado_binary() -> Optional[Path]:
 
     On Linux, downloads one binary (tools/dorado/) used for both purposes.
 
+    Args:
+        version: Dorado version to download (e.g., "1.3.1" or "0.9.6")
+
     Returns path to HOST binary (for running dorado download commands), or None if unavailable.
     """
     tools_dir = get_tools_dir()
 
     system = platform.system()
     machine = platform.machine()
-
-    version = "1.3.1"  # Updated to match current Dorado version
 
     # Determine what to download based on host platform
     if system == "Darwin":
@@ -472,20 +473,21 @@ def get_dorado_binary() -> Optional[Path]:
         else:
             docker_platform = "linux-x64"
 
-        dorado_dir = tools_dir / "dorado"
+        # Use version-specific directory for Dorado binaries
+        dorado_dir = tools_dir / f"dorado-{version}" if version != "1.3.1" else tools_dir / "dorado"
         dorado_bin_docker = dorado_dir / "bin" / "dorado"
 
         if not (dorado_bin_docker.exists() and os.access(dorado_bin_docker, os.X_OK)):
             print(f"   Downloading Dorado {version} for Docker (Linux {machine})...")
             if not _download_dorado_binary(version, docker_platform, dorado_dir):
-                print(f"   {Colors.yellow_bold('Warning')}: Failed to download Linux Dorado binary for Docker")
+                print(f"   {Colors.yellow_bold('Warning')}: Failed to download Linux Dorado binary for Docker" if is_tty() else "   [Warning] Failed to download Linux Dorado binary")
                 print(f"   Docker containers may not be able to run Dorado")
         else:
-            print(f"   {Colors.green_bold('OK')} Linux Dorado binary already present for Docker")
+            print(f"   {Colors.green_bold('OK')} Linux Dorado {version} binary already present for Docker" if is_tty() else f"   [OK] Linux Dorado {version} binary present")
 
         # 2. Download macOS binary for running model downloads on host
         host_platform = "osx-arm64" if machine == "arm64" else "osx-x64"
-        dorado_host_dir = tools_dir / "dorado-host"
+        dorado_host_dir = tools_dir / f"dorado-{version}-host" if version != "1.3.1" else tools_dir / "dorado-host"
         dorado_bin_host = dorado_host_dir / "bin" / "dorado"
 
         if not (dorado_bin_host.exists() and os.access(dorado_bin_host, os.X_OK)):
@@ -493,7 +495,7 @@ def get_dorado_binary() -> Optional[Path]:
             if not _download_dorado_binary(version, host_platform, dorado_host_dir):
                 return None
         else:
-            print(f"   {Colors.green_bold('OK')} macOS Dorado binary already present for host")
+            print(f"   {Colors.green_bold('OK')} macOS Dorado {version} binary already present for host" if is_tty() else f"   [OK] macOS Dorado {version} binary present")
 
         return dorado_bin_host
 
@@ -504,7 +506,8 @@ def get_dorado_binary() -> Optional[Path]:
         else:
             platform_str = "linux-arm64"
 
-        dorado_dir = tools_dir / "dorado"
+        # Use version-specific directory for Dorado binaries
+        dorado_dir = tools_dir / f"dorado-{version}" if version != "1.3.1" else tools_dir / "dorado"
         dorado_bin = dorado_dir / "bin" / "dorado"
 
         if dorado_bin.exists() and os.access(dorado_bin, os.X_OK):
@@ -1343,8 +1346,36 @@ def run_setup(interactive: bool = True, install_docker: bool = False,
 
         print()
         if prompt_yes_no("   Would you like to download Dorado models now?", default=True):
+            # Ask user which Dorado version to use
+            print()
+            print(f"   {Colors.cyan_bold('Dorado Version Selection')} " if is_tty() else "   Dorado Version Selection")
+            print()
+            print("   Which Dorado version do you want to use?")
+            print()
+            print("   1. Dorado 1.3.1 (latest, recommended for new data)")
+            print("      - Supports v5.x models (dna_r10.4.1_e8.2_400bps_hac@v5.2.0)")
+            print("      - Size: ~93MB")
+            print("      - Does NOT support legacy v3.5.2 4kHz chemistry")
+            print()
+            print("   2. Dorado 0.9.6 (legacy, for older 4kHz data)")
+            print("      - Supports v3.5.2 models (dna_r10.4.1_e8.2_400bps_hac@v3.5.2)")
+            print("      - Required for R10.4.1 4kHz chemistry data")
+            print("      - Size: ~93MB")
+            print()
+
+            dorado_version_choice = input("   Select version (1 or 2) [default: 1]: ").strip()
+
+            if dorado_version_choice == "2":
+                dorado_version = "0.9.6"
+                print(f"   {Colors.cyan_bold('Selected:')} Dorado 0.9.6 (legacy)" if is_tty() else "   Selected: Dorado 0.9.6")
+            else:
+                dorado_version = "1.3.1"
+                print(f"   {Colors.cyan_bold('Selected:')} Dorado 1.3.1 (latest)" if is_tty() else "   Selected: Dorado 1.3.1")
+
+            print()
+
             # First, ensure we have the Dorado binary
-            dorado_bin = get_dorado_binary()
+            dorado_bin = get_dorado_binary(version=dorado_version)
 
             if not dorado_bin:
                 print(f"   {Colors.red_bold('Error')} Failed to download Dorado binary" if is_tty() else "   [Error] Failed to download Dorado binary")
@@ -1354,8 +1385,10 @@ def run_setup(interactive: bool = True, install_docker: bool = False,
                 print("        dorado download --model dna_r10.4.1_e8.2_400bps_hac@v5.2.0 --models-directory /models")
                 print()
             else:
-                print(f"   {Colors.green_bold('OK')} Dorado binary ready: {dorado_bin}" if is_tty() else f"   [OK] Dorado binary ready")
+                print(f"   {Colors.green_bold('OK')} Dorado {dorado_version} binary ready: {dorado_bin}" if is_tty() else f"   [OK] Dorado {dorado_version} binary ready")
                 print()
+                # Add to downloaded items for summary
+                downloaded_items.append((f"Dorado Binary v{dorado_version}", str(dorado_bin.parent.parent), "Auto-detected by pipelines"))
 
                 # Download selected models
                 for model_id in missing_models:
@@ -1366,7 +1399,20 @@ def run_setup(interactive: bool = True, install_docker: bool = False,
                         try:
                             # Special handling for legacy v3.5.2 model - requires Dorado 0.9.6
                             if model_id == "dna_r10.4.1_e8.2_400bps_hac@v3.5.2":
-                                success = _download_legacy_model_v352(models_dir)
+                                # If user selected Dorado 0.9.6, use it directly instead of re-downloading
+                                if dorado_version == "0.9.6":
+                                    print(f"   Using Dorado 0.9.6 to download v3.5.2 model...")
+                                    result = subprocess.run(
+                                        [str(dorado_bin), "download", "--model", model_id, "--models-directory", str(models_dir)],
+                                        capture_output=True,
+                                        text=True,
+                                        timeout=600
+                                    )
+                                    success = (result.returncode == 0)
+                                else:
+                                    # User has Dorado 1.3.1, need to download 0.9.6 temporarily
+                                    success = _download_legacy_model_v352(models_dir)
+
                                 if success:
                                     model_path = models_dir / model_id
                                     print(f"   {Colors.green_bold('OK')} {model_info['name']} installed!" if is_tty() else f"   [OK] {model_info['name']} installed!")
