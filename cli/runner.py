@@ -2211,13 +2211,27 @@ def run_pipeline(
         if not skip_dorado_mount and (not dorado_bin_host or not dorado_models_dir_host):
             # Try to use setup-installed Dorado
             tools_dir = repo_root / "tools"
+
+            # Try default location first (Dorado 1.3.1), then check for version-specific directories
             setup_dorado_bin = tools_dir / "dorado" / "bin" / "dorado"
+
+            if not setup_dorado_bin.exists() or not os.access(setup_dorado_bin, os.X_OK):
+                # Check for version-specific Dorado installations (e.g., dorado-0.9.6)
+                for dorado_dir in sorted(tools_dir.glob("dorado-*"), reverse=True):
+                    candidate_bin = dorado_dir / "bin" / "dorado"
+                    if candidate_bin.exists() and os.access(candidate_bin, os.X_OK):
+                        setup_dorado_bin = candidate_bin
+                        break
+
             setup_models_dir = tools_dir / "models" / "dorado"
 
             if not dorado_bin_host and setup_dorado_bin.exists() and os.access(setup_dorado_bin, os.X_OK):
                 dorado_bin_host = str(setup_dorado_bin)
                 if config.verbose:
-                    print(f"[stabiom] Auto-detected Dorado binary: {dorado_bin_host}")
+                    # Extract version from path if available
+                    dorado_parent = setup_dorado_bin.parent.parent.name
+                    version_info = f" ({dorado_parent})" if dorado_parent.startswith("dorado-") else ""
+                    print(f"[stabiom] Auto-detected Dorado binary{version_info}: {dorado_bin_host}")
 
             if not dorado_models_dir_host and setup_models_dir.exists() and any(setup_models_dir.iterdir()):
                 dorado_models_dir_host = str(setup_models_dir)
