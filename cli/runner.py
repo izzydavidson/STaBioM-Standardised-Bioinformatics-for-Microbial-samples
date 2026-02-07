@@ -2217,7 +2217,10 @@ def run_pipeline(
 
             if not setup_dorado_bin.exists() or not os.access(setup_dorado_bin, os.X_OK):
                 # Check for version-specific Dorado installations (e.g., dorado-0.9.6)
+                # Skip -host directories as they contain macOS binaries, not Linux binaries for Docker
                 for dorado_dir in sorted(tools_dir.glob("dorado-*"), reverse=True):
+                    if dorado_dir.name.endswith("-host"):
+                        continue  # Skip host binaries (macOS), we need Linux binaries for Docker
                     candidate_bin = dorado_dir / "bin" / "dorado"
                     if candidate_bin.exists() and os.access(candidate_bin, os.X_OK):
                         setup_dorado_bin = candidate_bin
