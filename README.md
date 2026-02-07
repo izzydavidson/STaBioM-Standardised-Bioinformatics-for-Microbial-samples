@@ -77,7 +77,7 @@ stabiom run -p sr_amp -i /path/to/reads/ --dry-run
 | `lr_amp` | Long-read 16S amplicon (ONT, PacBio) | Emu or Kraken2 |
 | `lr_meta` | Long-read shotgun metagenomics | Kraken2/Bracken |
 
-**Note:** Long-read pipelines support FAST5, POD5, and FASTQ input. For FAST5 input, Dorado basecalling models must be downloaded manually (see Dorado Models section below).
+**Note:** Long-read pipelines support FAST5, POD5, and FASTQ input. For FAST5 input, Dorado basecalling and models are automatically set up via `stabiom setup`.
 
 ## Commands
 
@@ -205,9 +205,13 @@ stabiom setup
 ```
 
 The wizard will:
-- Download the Dorado binary automatically
+- Download the Dorado binary automatically (including Linux binary for Docker on macOS)
 - Let you select which models to download (HAC, SUP, or FAST)
 - Auto-detect models for FAST5 input (no --dorado-model flag needed if only one model is installed)
+
+**Note for macOS users:** The setup downloads TWO Dorado binaries:
+- Linux binary (for Docker containers) - auto-mounted when running pipelines
+- macOS binary (for downloading models on your Mac)
 
 **Option 2: Manual Download**
 
