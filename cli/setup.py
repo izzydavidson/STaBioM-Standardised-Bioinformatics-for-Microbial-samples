@@ -1262,7 +1262,7 @@ def run_setup(interactive: bool = True, install_docker: bool = False,
                         try:
                             # Use Dorado to download the model
                             result = subprocess.run(
-                                [str(dorado_bin), "download", "--model", model_id, "--directory", str(models_dir)],
+                                [str(dorado_bin), "download", "--model", model_id, "--models-directory", str(models_dir)],
                                 capture_output=True,
                                 text=True,
                                 timeout=600  # 10 minute timeout
@@ -1282,7 +1282,8 @@ def run_setup(interactive: bool = True, install_docker: bool = False,
                                 else:
                                     print(f"   {Colors.red_bold('Error')} Model directory not found after download" if is_tty() else "   [Error] Model not found")
                             else:
-                                print(f"   {Colors.red_bold('Error')} Download failed: {result.stderr[:200]}" if is_tty() else f"   [Error] Download failed")
+                                error_msg = result.stderr.strip() if result.stderr else result.stdout.strip() if result.stdout else "Unknown error"
+                                print(f"   {Colors.red_bold('Error')} Download failed: {error_msg[:200]}" if is_tty() else f"   [Error] Download failed: {error_msg[:200]}")
 
                         except subprocess.TimeoutExpired:
                             print(f"   {Colors.red_bold('Error')} Download timed out (>10 minutes)" if is_tty() else "   [Error] Download timed out")
