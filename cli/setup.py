@@ -339,6 +339,110 @@ def get_models_dir() -> Path:
     return models_dir
 
 
+def _download_legacy_model_v352(models_dir: Path) -> bool:
+    """
+    Download the legacy v3.5.2 model using Dorado 0.9.6.
+
+    Dorado 1.3.1+ no longer includes v3.5.2 in its model registry,
+    so we need to use an older version (0.9.6) to download it.
+
+    Args:
+        models_dir: Directory where models should be saved
+
+    Returns:
+        True if successful, False otherwise
+    """
+    import tempfile
+    import shutil
+
+    print(f"   {Colors.yellow_bold('Note:')} Legacy v3.5.2 model requires Dorado 0.9.6 for download..." if is_tty() else "   [Note] Using Dorado 0.9.6 for legacy model")
+
+    tools_dir = get_tools_dir()
+    system = platform.system()
+    machine = platform.machine()
+
+    # Determine platform for Dorado 0.9.6
+    if system == "Darwin":
+        if machine == "arm64":
+            platform_str = "osx-arm64"
+        else:
+            platform_str = "osx-x64"
+        archive_ext = "zip"
+    elif system == "Linux":
+        if machine in ["x86_64", "amd64"]:
+            platform_str = "linux-x64"
+        else:
+            platform_str = "linux-arm64"
+        archive_ext = "tar.gz"
+    else:
+        print(f"   {Colors.red_bold('Error')} Unsupported platform for legacy model download" if is_tty() else "   [Error] Unsupported platform")
+        return False
+
+    version = "0.9.6"
+    filename = f"dorado-{version}-{platform_str}.{archive_ext}"
+    url = f"https://cdn.oxfordnanoportal.com/software/analysis/{filename}"
+
+    # Create temporary directory
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        archive_path = temp_path / filename
+
+        # Download Dorado 0.9.6
+        print(f"   Downloading Dorado {version} (temporary, for legacy model download)...")
+        if not download_with_progress(url, archive_path, f"   Dorado {version}"):
+            return False
+
+        # Extract
+        print(f"   Extracting...")
+        try:
+            if archive_ext == "zip":
+                import zipfile
+                with zipfile.ZipFile(archive_path, 'r') as zip_ref:
+                    zip_ref.extractall(temp_path)
+            else:
+                import tarfile
+                with tarfile.open(archive_path, "r:gz") as tar:
+                    tar.extractall(temp_path)
+
+            # Find the dorado binary
+            extracted_dir = temp_path / f"dorado-{version}-{platform_str}"
+            dorado_bin = extracted_dir / "bin" / "dorado"
+
+            if not dorado_bin.exists():
+                print(f"   {Colors.red_bold('Error')} Dorado binary not found in archive" if is_tty() else "   [Error] Binary not found")
+                return False
+
+            # Make executable
+            os.chmod(dorado_bin, 0o755)
+
+            # Download the v3.5.2 model using Dorado 0.9.6
+            print(f"   Downloading v3.5.2 model...")
+            result = subprocess.run(
+                [str(dorado_bin), "download", "--model", "dna_r10.4.1_e8.2_400bps_hac@v3.5.2", "--models-directory", str(models_dir)],
+                capture_output=True,
+                text=True,
+                timeout=600,
+                env={**os.environ, "DYLD_LIBRARY_PATH": str(extracted_dir / "lib")}  # Add lib path for macOS
+            )
+
+            if result.returncode == 0:
+                model_path = models_dir / "dna_r10.4.1_e8.2_400bps_hac@v3.5.2"
+                if model_path.exists():
+                    print(f"   {Colors.green_bold('OK')} Legacy model downloaded successfully" if is_tty() else "   [OK] Legacy model downloaded")
+                    return True
+                else:
+                    print(f"   {Colors.red_bold('Error')} Model directory not found after download" if is_tty() else "   [Error] Model not found")
+                    return False
+            else:
+                error_msg = result.stderr.strip() if result.stderr else result.stdout.strip() if result.stdout else "Unknown error"
+                print(f"   {Colors.red_bold('Error')} Download failed: {error_msg[:200]}" if is_tty() else f"   [Error] {error_msg[:200]}")
+                return False
+
+        except Exception as e:
+            print(f"   {Colors.red_bold('Error')} {e}" if is_tty() else f"   [Error] {e}")
+            return False
+
+
 def get_dorado_binary() -> Optional[Path]:
     """
     Download and setup Dorado binary for model downloads.
@@ -1260,17 +1364,11 @@ def run_setup(interactive: bool = True, install_docker: bool = False,
                         print(f"   Downloading {model_info['name']}...")
 
                         try:
-                            # Use Dorado to download the model
-                            result = subprocess.run(
-                                [str(dorado_bin), "download", "--model", model_id, "--models-directory", str(models_dir)],
-                                capture_output=True,
-                                text=True,
-                                timeout=600  # 10 minute timeout
-                            )
-
-                            if result.returncode == 0:
-                                model_path = models_dir / model_id
-                                if model_path.exists():
+                            # Special handling for legacy v3.5.2 model - requires Dorado 0.9.6
+                            if model_id == "dna_r10.4.1_e8.2_400bps_hac@v3.5.2":
+                                success = _download_legacy_model_v352(models_dir)
+                                if success:
+                                    model_path = models_dir / model_id
                                     print(f"   {Colors.green_bold('OK')} {model_info['name']} installed!" if is_tty() else f"   [OK] {model_info['name']} installed!")
                                     print()
                                     print(f"   {Colors.cyan_bold('Model path:')} " if is_tty() else "   Model path:")
@@ -1280,10 +1378,32 @@ def run_setup(interactive: bool = True, install_docker: bool = False,
                                     print()
                                     downloaded_items.append((f"Dorado Model: {model_info['name']}", str(model_path), f"--dorado-model {model_id} (auto-detected)"))
                                 else:
-                                    print(f"   {Colors.red_bold('Error')} Model directory not found after download" if is_tty() else "   [Error] Model not found")
+                                    print(f"   {Colors.red_bold('Error')} Failed to download legacy v3.5.2 model" if is_tty() else "   [Error] Failed to download legacy model")
                             else:
-                                error_msg = result.stderr.strip() if result.stderr else result.stdout.strip() if result.stdout else "Unknown error"
-                                print(f"   {Colors.red_bold('Error')} Download failed: {error_msg[:200]}" if is_tty() else f"   [Error] Download failed: {error_msg[:200]}")
+                                # Use Dorado to download the model
+                                result = subprocess.run(
+                                    [str(dorado_bin), "download", "--model", model_id, "--models-directory", str(models_dir)],
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=600  # 10 minute timeout
+                                )
+
+                                if result.returncode == 0:
+                                    model_path = models_dir / model_id
+                                    if model_path.exists():
+                                        print(f"   {Colors.green_bold('OK')} {model_info['name']} installed!" if is_tty() else f"   [OK] {model_info['name']} installed!")
+                                        print()
+                                        print(f"   {Colors.cyan_bold('Model path:')} " if is_tty() else "   Model path:")
+                                        print(f"   {model_path}")
+                                        print(f"   Use with: --dorado-model {model_id}")
+                                        print(f"   (Auto-detected if only one model is downloaded)")
+                                        print()
+                                        downloaded_items.append((f"Dorado Model: {model_info['name']}", str(model_path), f"--dorado-model {model_id} (auto-detected)"))
+                                    else:
+                                        print(f"   {Colors.red_bold('Error')} Model directory not found after download" if is_tty() else "   [Error] Model not found")
+                                else:
+                                    error_msg = result.stderr.strip() if result.stderr else result.stdout.strip() if result.stdout else "Unknown error"
+                                    print(f"   {Colors.red_bold('Error')} Download failed: {error_msg[:200]}" if is_tty() else f"   [Error] Download failed: {error_msg[:200]}")
 
                         except subprocess.TimeoutExpired:
                             print(f"   {Colors.red_bold('Error')} Download timed out (>10 minutes)" if is_tty() else "   [Error] Download timed out")
