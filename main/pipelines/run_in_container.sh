@@ -1995,6 +1995,22 @@ fi
 # -----------------------------------------------------------------------------
 # RUN CONTAINER
 # -----------------------------------------------------------------------------
+# Compute run directory on host to write container name
+RUN_WORK_DIR_HOST="$(jq -r '.run.work_dir // empty' "${TMP_CONFIG}" | tr -d '
+')"  
+[[ -z "${RUN_WORK_DIR_HOST}" ]] && RUN_WORK_DIR_HOST="${REPO_ROOT}/data/outputs"
+if [[ "${RUN_WORK_DIR_HOST}" == /work/* ]]; then
+  RUN_WORK_DIR_HOST="${REPO_ROOT}${RUN_WORK_DIR_HOST#/work}"
+fi
+
+RUN_ID="$(jq -r '.run.run_id // empty' "${TMP_CONFIG}" | tr -d '
+')"  
+[[ -z "${RUN_ID}" ]] && RUN_ID="${PIPELINE_KEY}_$(date +%Y%m%d_%H%M%S)"
+# Sanitize run_id (lowercase, alphanumeric + underscore/dash only)
+RUN_ID="$(echo "${RUN_ID}" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9_-' | sed 's/^-*//;s/-*$//')"
+
+HOST_RUN_DIR="${RUN_WORK_DIR_HOST}/${RUN_ID}"
+
 CONTAINER_NAME="stabiom-${PIPELINE_KEY}-$(date +%s)"
 
 DOCKER_RUN_ARGS=(run --name "${CONTAINER_NAME}")
@@ -2004,6 +2020,11 @@ done
 
 echo "[container] Starting container: ${CONTAINER_NAME}"
 echo "[container] To monitor: docker logs -f ${CONTAINER_NAME}"
+
+# Write container name to file for UI streaming
+mkdir -p "${HOST_RUN_DIR}/logs" 2>/dev/null || true
+echo "${CONTAINER_NAME}" > "${HOST_RUN_DIR}/container_name.txt"
+echo "[container] Container name written to: ${HOST_RUN_DIR}/container_name.txt"
 echo ""
 
 set +e
