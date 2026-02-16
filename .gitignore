@@ -52,3 +52,23 @@ main/tools/VALENCIA/
 .cache/
 dist/
 build/
+
+# Frontend dependencies
+frontend/node_modules/
+node_modules/
+
+# Frontend test outputs
+frontend/screenshots/
+frontend/*.png
+
+# UI runtime state
+.ui_runs_registry.json
+.setup_complete
+
+# Test files
+test/
+test_*.png
+archive/
+
+# Build artifacts
+cli/*.spec

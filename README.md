@@ -1,15 +1,41 @@
 # STaBioM - Standardised Bioinformatics for Microbial Samples
 
-A unified CLI for running microbiome analysis pipelines on long-read and short-read sequencing data, supporting both 16S amplicon and shotgun metagenomics workflows.
+A unified CLI and graphical interface for running microbiome analysis pipelines on long-read and short-read sequencing data, supporting both 16S amplicon and shotgun metagenomics workflows.
 
 ## Features
 
 - **Multiple pipelines**: Short-read amplicon (QIIME2/DADA2), long-read amplicon (Emu/Kraken2), and metagenomics (Kraken2/Bracken)
+- **Dual interfaces**: Command-line tool + Shiny web interface
 - **Zero dependencies**: Download and run - Python is bundled in the binary
 - **Interactive setup**: Guided installation of Docker and reference databases
 - **Containerized tools**: All bioinformatics tools run in Docker containers
 - **Standardized outputs**: Consistent taxonomy tables, diversity metrics, and visualizations
 - **Valencia CST analysis**: Automatic community state type classification for vaginal samples
+
+## Interfaces
+
+STaBioM provides two interfaces:
+
+### 1. Command-Line Interface (CLI)
+
+Fast, scriptable, suitable for HPC and automation:
+
+```bash
+stabiom run -p sr_amp -i /path/to/reads/
+```
+
+See full CLI documentation below.
+
+### 2. Graphical Interface (Shiny Web App)
+
+User-friendly web interface with real-time progress monitoring:
+
+```bash
+cd frontend
+./launch.sh
+```
+
+See `frontend/QUICKSTART.md` for details.
 
 ## Quick Start
 
