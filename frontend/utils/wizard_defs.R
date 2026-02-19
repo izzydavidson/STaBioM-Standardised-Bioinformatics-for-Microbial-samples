@@ -259,7 +259,7 @@ wizard_run_downloads <- function(selected_db_ids, selected_tool_ids,
               arch_mb <- round(file.size(archive_path) / 1024 / 1024, 1)
               wiz_log(paste("Downloaded:", arch_mb, "MB — extracting..."))
               dir.create(db_path, recursive = TRUE, showWarnings = FALSE)
-              rc <- untar(archive_path, exdir = db_path, tar = "internal")
+              rc <- untar(archive_path, exdir = db_path)  # Use system tar (handles macOS xattr)
               elapsed <- round(proc.time()["elapsed"] - t0, 1)
               if (rc == 0 && dir.exists(db_path) && length(list.files(db_path)) > 0) {
                 unlink(archive_path)
