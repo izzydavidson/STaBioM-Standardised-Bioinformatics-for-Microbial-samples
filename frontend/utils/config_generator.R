@@ -6,36 +6,47 @@ get_outputs_directory <- function() {
   file.path(repo_root, "outputs")
 }
 
+# Helper: resolve a postprocess step flag
+# step_key: the value in output_selected (e.g. "pie_chart")
+# postprocess_enabled: 1L or 0L from the checkbox
+pp_step <- function(key, output_selected, postprocess_enabled) {
+  if (postprocess_enabled == 1L && key %in% output_selected) 1L else 0L
+}
+
 generate_sr_amp_config <- function(params) {
   cat("\n========== BUILDING SR_AMP CONFIG ==========\n")
-  cat("Received params:\n")
-  cat(paste(names(params), "=", sapply(params, function(x) paste(x, collapse=",")), "\n"))
 
-  # Map technology
+  # --- technology ---
+  # UI: selectInput("technology") -> "illumina"|"iontorrent"|"bgi"
+  # Config: config$technology -> "ILLUMINA"|"IONTORRENT"|"BGI"
   tech_map <- c(
-    "illumina" = "ILLUMINA",
+    "illumina"   = "ILLUMINA",
     "iontorrent" = "IONTORRENT",
-    "bgi" = "BGI"
+    "bgi"        = "BGI"
   )
   technology <- tech_map[params$technology] %||% "ILLUMINA"
-  cat("Mapped technology:", technology, "\n")
+  cat("[WIRE] technology:", params$technology, "->", unname(technology), "\n")
 
-  # Determine input style
-  input_style <- if (params$paired_end) "FASTQ_PAIRED" else "FASTQ_SINGLE"
-  cat("Input style:", input_style, "\n")
+  # --- input style + files ---
+  # UI: checkboxInput("paired_end") -> TRUE/FALSE
+  # Config: config$input$style, config$input$fastq_r1, config$input$fastq_r2
+  input_style <- if (isTRUE(params$paired_end)) "FASTQ_PAIRED" else "FASTQ_SINGLE"
+  cat("[WIRE] paired_end:", isTRUE(params$paired_end), "-> input.style:", input_style, "\n")
 
-  # Build input object
   input_obj <- list(style = input_style)
-  if (params$paired_end) {
+  if (isTRUE(params$paired_end)) {
     input_obj$fastq_r1 <- params$input_r1
     input_obj$fastq_r2 <- params$input_r2
-    cat("Paired-end: R1=", params$input_r1, "R2=", params$input_r2, "\n")
+    cat("[WIRE] input.fastq_r1:", params$input_r1, "\n")
+    cat("[WIRE] input.fastq_r2:", params$input_r2, "\n")
   } else {
     input_obj$fastq_r1 <- params$input_path
-    cat("Single-end:", params$input_path, "\n")
+    cat("[WIRE] input.fastq_r1:", params$input_path, "\n")
   }
 
-  # Parse primer sequences from textarea
+  # --- primers ---
+  # UI: textAreaInput("primer_sequences") -> newline-separated sequences
+  # Config: config$qiime2$primers$forward, config$qiime2$primers$reverse
   primer_forward <- NULL
   primer_reverse <- NULL
   if (!is.null(params$primer_sequences) && nchar(trimws(params$primer_sequences)) > 0) {
@@ -44,10 +55,15 @@ generate_sr_amp_config <- function(params) {
     primer_lines <- primer_lines[nchar(primer_lines) > 0]
     if (length(primer_lines) >= 1) primer_forward <- primer_lines[1]
     if (length(primer_lines) >= 2) primer_reverse <- primer_lines[2]
-    cat("Primers: forward=", primer_forward, "reverse=", primer_reverse, "\n")
+    cat("[WIRE] qiime2.primers.forward:", primer_forward, "\n")
+    cat("[WIRE] qiime2.primers.reverse:", primer_reverse, "\n")
+  } else {
+    cat("[WIRE] qiime2.primers: none (skipping primer trimming)\n")
   }
 
-  # Parse barcode sequences from textarea
+  # --- barcode sequences ---
+  # UI: textAreaInput("barcode_sequences") -> newline-separated sequences
+  # Config: config$input$barcodes$sequences
   barcode_sequences <- NULL
   if (!is.null(params$barcode_sequences) && nchar(trimws(params$barcode_sequences)) > 0) {
     barcode_lines <- strsplit(params$barcode_sequences, "\n")[[1]]
@@ -55,93 +71,167 @@ generate_sr_amp_config <- function(params) {
     barcode_lines <- barcode_lines[nchar(barcode_lines) > 0]
     if (length(barcode_lines) > 0) {
       barcode_sequences <- barcode_lines
-      cat("Barcodes:", length(barcode_lines), "sequences\n")
+      cat("[WIRE] input.barcodes.sequences:", length(barcode_lines), "sequences\n")
     }
   }
 
-  # Build output.selected array - ensure it's a character vector for JSON array
+  # --- output selected ---
+  # UI: checkboxInput("output_raw_csv/pie_chart/heatmap/stacked_bar/quality_reports")
+  # -> aggregated in server as output_selected vector
+  # Config: config$output$selected (string array for pipeline reference)
   output_selected <- if (!is.null(params$output_selected) && length(params$output_selected) > 0) {
     as.character(params$output_selected)
   } else {
     c("all")
   }
-  cat("Output selected:", paste(output_selected, collapse=", "), "\n")
+  cat("[WIRE] output.selected:", paste(output_selected, collapse=", "), "\n")
 
-  # Determine specimen
+  # --- specimen / sample type ---
+  # UI: selectInput("sample_type") -> "vaginal"|"gut"|"oral"|"skin"|"other"
+  # Config: config$specimen, config$params$common$specimen
   specimen <- params$sample_type %||% "other"
-  cat("Specimen:", specimen, "\n")
+  cat("[WIRE] specimen:", specimen, "\n")
 
-  # Determine threads
-  threads <- as.integer(params$threads %||% 4)
-  cat("Threads:", threads, "\n")
+  # --- threads ---
+  # UI: numericInput("threads") controlled by checkboxInput("manually_allocate_threads")
+  # -> threads_value computed in server (4 if not manual, input$threads if manual)
+  # Config: config$resources$threads, config$qiime2$dada2$n_threads
+  threads <- as.integer(params$threads %||% 4L)
+  cat("[WIRE] resources.threads:", threads, "| qiime2.dada2.n_threads:", threads, "\n")
 
-  # Quality threshold
-  quality_threshold <- as.integer(params$quality_threshold %||% 20)
-  cat("Quality threshold:", quality_threshold, "\n")
+  # --- quality threshold ---
+  # UI: sliderInput("quality_threshold") min=0, max=40, default=20
+  # Config: config$params$common$min_qscore
+  quality_threshold <- as.integer(params$quality_threshold %||% 20L)
+  cat("[WIRE] params.common.min_qscore:", quality_threshold, "\n")
 
-  # Minimum read length
+  # --- minimum read length ---
+  # UI: sliderInput("min_read_length") min=20, max=300, default=50
+  # Config: config$params$common$min_read_length
+  # Note: slider always provides a value so this is never NULL
   min_read_length <- if (!is.null(params$min_read_length)) as.integer(params$min_read_length) else NULL
-  if (!is.null(min_read_length)) cat("Min read length:", min_read_length, "\n")
+  cat("[WIRE] params.common.min_read_length:", if (is.null(min_read_length)) "(omitted)" else min_read_length, "\n")
 
-  # Trim adapter
+  # --- trim adapter ---
+  # UI: checkboxInput("trim_adapter") default=TRUE
+  # Config: config$params$common$trim_adapter (logical: true/false)
   trim_adapter <- if (!is.null(params$trim_adapter)) as.logical(params$trim_adapter) else NULL
-  if (!is.null(trim_adapter)) cat("Trim adapter:", trim_adapter, "\n")
+  cat("[WIRE] params.common.trim_adapter:", if (is.null(trim_adapter)) "(omitted)" else trim_adapter, "\n")
 
-  # Demultiplex
+  # --- demultiplex ---
+  # UI: checkboxInput("demultiplex") default=FALSE
+  # Config: config$params$common$demultiplex (logical: true/false)
   demultiplex <- if (!is.null(params$demultiplex)) as.logical(params$demultiplex) else NULL
-  if (!is.null(demultiplex)) cat("Demultiplex:", demultiplex, "\n")
+  cat("[WIRE] params.common.demultiplex:", if (is.null(demultiplex)) "(omitted)" else demultiplex, "\n")
 
-  # Run scope
+  # --- run scope ---
+  # UI: selectInput("run_scope") -> "full"|"qc"|"analysis"
+  # Config: config$run$scope
   run_scope <- params$run_scope %||% NULL
-  if (!is.null(run_scope)) cat("Run scope:", run_scope, "\n")
+  cat("[WIRE] run.scope:", if (is.null(run_scope)) "(omitted)" else run_scope, "\n")
 
-  # Barcoding kit
+  # --- barcoding kit ---
+  # UI: textInput("barcoding_kit")
+  # Config: config$tools$barcoding_kit
   barcoding_kit <- if (!is.null(params$barcoding_kit) && nchar(trimws(params$barcoding_kit)) > 0) {
     trimws(params$barcoding_kit)
   } else {
     NULL
   }
-  if (!is.null(barcoding_kit)) cat("Barcoding kit:", barcoding_kit, "\n")
+  cat("[WIRE] tools.barcoding_kit:", if (is.null(barcoding_kit)) "(omitted)" else barcoding_kit, "\n")
 
-  # DADA2 parameters
-  dada2_trunc_f <- as.integer(params$dada2_trunc_f %||% 220)
-  dada2_trunc_r <- as.integer(params$dada2_trunc_r %||% 200)
-  cat("DADA2 trunc_len_f:", dada2_trunc_f, "trunc_len_r:", dada2_trunc_r, "\n")
+  # --- DADA2 truncation lengths ---
+  # UI: numericInput("dada2_trunc_f") default=220, numericInput("dada2_trunc_r") default=200
+  # Config: config$qiime2$dada2$trunc_len_f, config$qiime2$dada2$trunc_len_r
+  dada2_trunc_f <- as.integer(params$dada2_trunc_f %||% 220L)
+  dada2_trunc_r <- as.integer(params$dada2_trunc_r %||% 200L)
+  cat("[WIRE] qiime2.dada2.trunc_len_f:", dada2_trunc_f, "| trunc_len_r:", dada2_trunc_r, "\n")
 
-  # Auto-detect SILVA classifier (matches CLI behavior at cli/runner.py:1269-1291)
-  repo_root <- dirname(getwd())  # frontend -> repo_root
+  # --- SILVA classifier auto-detection ---
+  # Not a UI control - auto-detected from filesystem
+  # Config: config$qiime2$classifier$qza
+  repo_root <- dirname(getwd())
   classifier_path <- file.path(repo_root, "main", "data", "reference", "qiime2", "silva-138-99-nb-classifier.qza")
   if (file.exists(classifier_path)) {
-    cat("Auto-detected SILVA classifier:", classifier_path, "\n")
+    cat("[WIRE] qiime2.classifier.qza: auto-detected at", classifier_path, "\n")
   } else {
     classifier_path <- ""
-    cat("SILVA classifier not found - taxonomy classification will be skipped\n")
+    cat("[WIRE] qiime2.classifier.qza: NOT FOUND - taxonomy will be skipped\n")
   }
 
-  # Build params.common with all UI selections
-  params_common <- list(
-    min_qscore = quality_threshold,
-    remove_host = 0L,
-    specimen = specimen
+  # --- VALENCIA centroids auto-detection ---
+  # Not a UI control - auto-detected from filesystem
+  # Config: config$valencia$centroids_csv (only written when specimen == "vaginal")
+  valencia_centroids_candidates <- c(
+    file.path(repo_root, "tools", "VALENCIA", "CST_centroids_012920.csv"),
+    file.path(repo_root, "main", "tools", "VALENCIA", "CST_centroids_012920.csv")
   )
+  valencia_centroids_path <- ""
+  for (candidate in valencia_centroids_candidates) {
+    if (file.exists(candidate)) {
+      valencia_centroids_path <- candidate
+      cat("[WIRE] valencia.centroids_csv: auto-detected at", valencia_centroids_path, "\n")
+      break
+    }
+  }
+  if (valencia_centroids_path == "") {
+    cat("[WIRE] valencia.centroids_csv: NOT FOUND - using default path\n")
+    valencia_centroids_path <- file.path(repo_root, "tools", "VALENCIA", "CST_centroids_012920.csv")
+  }
 
-  # Add optional fields to params.common if provided
+  # --- postprocess enabled ---
+  # UI: checkboxInput("enable_postprocess") default=TRUE
+  # Config: config$postprocess$enabled (integer: 1 or 0)
+  # CRITICAL: backend checks postprocess.enabled == 1 (integer, not boolean)
+  postprocess_enabled <- if (!is.null(params$enable_postprocess) && isTRUE(params$enable_postprocess)) 1L else 0L
+  cat("[WIRE] postprocess.enabled:", postprocess_enabled, "(from enable_postprocess =", isTRUE(params$enable_postprocess), ")\n")
+
+  # --- postprocess steps ---
+  # Backend reads individual step flags from postprocess.steps.* NOT from output.selected.
+  # Key name mapping (UI value in output_selected -> backend postprocess.steps key):
+  #   "heatmap"     -> steps$heatmap
+  #   "pie_chart"   -> steps$piechart     (backend uses no underscore)
+  #   "stacked_bar" -> steps$stacked_bar
+  #   "raw_csv"     -> steps$results_csv  (different name in backend)
+  #   "quality_reports" -> no postprocess step (handled by pipeline QC section)
+  # results_csv is ALWAYS enabled when postprocess is on — abundance tables are
+  # essential output regardless of which optional output checkboxes are ticked.
+  # Other visual steps respect the user's checkbox selection.
+  postprocess_steps <- list(
+    heatmap            = pp_step("heatmap",     output_selected, postprocess_enabled),
+    piechart           = pp_step("pie_chart",   output_selected, postprocess_enabled),  # pie_chart -> piechart
+    stacked_bar        = pp_step("stacked_bar", output_selected, postprocess_enabled),
+    results_csv        = postprocess_enabled,  # always on — tables always generated
+    relative_abundance = 0L
+    # valencia is added below after VALENCIA section resolves valencia_enabled
+  )
+  cat("[WIRE] postprocess.steps.heatmap:", postprocess_steps$heatmap, "\n")
+  cat("[WIRE] postprocess.steps.piechart:", postprocess_steps$piechart, "(from 'pie_chart' in output_selected)\n")
+  cat("[WIRE] postprocess.steps.stacked_bar:", postprocess_steps$stacked_bar, "\n")
+  cat("[WIRE] postprocess.steps.results_csv:", postprocess_steps$results_csv, "(always on)\n")
+
+  # --- build params.common ---
+  params_common <- list(
+    min_qscore  = quality_threshold,
+    remove_host = 0L,             # sr_amp: human depletion not applicable; hardcoded 0
+    specimen    = specimen
+  )
   if (!is.null(min_read_length)) params_common$min_read_length <- min_read_length
-  if (!is.null(trim_adapter)) params_common$trim_adapter <- trim_adapter
-  if (!is.null(demultiplex)) params_common$demultiplex <- demultiplex
+  if (!is.null(trim_adapter))    params_common$trim_adapter <- trim_adapter
+  if (!is.null(demultiplex))     params_common$demultiplex  <- demultiplex
 
-  # Generate config matching schema
+  # --- assemble config ---
   config <- list(
     pipeline_id = "sr_amp",
 
     run = list(
-      work_dir = params$output_dir,
-      run_id = params$run_id,
+      work_dir        = params$output_dir,
+      run_id          = params$run_id,
       force_overwrite = 1L
     ),
 
-    technology = technology,
-    specimen = specimen,
+    technology = unname(technology),
+    specimen   = specimen,
 
     input = input_obj,
 
@@ -154,170 +244,240 @@ generate_sr_amp_config <- function(params) {
     ),
 
     qiime2 = list(
-      sample_id = params$run_id,
+      sample_id  = params$run_id,
       classifier = list(
-        qza = classifier_path  # Auto-detected SILVA classifier or empty string
+        qza = classifier_path
       ),
       dada2 = list(
         trim_left_f = 0L,
         trim_left_r = 0L,
         trunc_len_f = dada2_trunc_f,
         trunc_len_r = dada2_trunc_r,
-        n_threads = threads
+        n_threads   = threads
       )
     ),
 
     output = list(
       selected = output_selected
+    ),
+
+    # postprocess: ALWAYS written; backend reads postprocess.enabled AND postprocess.steps.*
+    postprocess = list(
+      enabled = postprocess_enabled,
+      steps   = postprocess_steps
     )
   )
 
-  # Add run_scope if provided
+  # --- run scope (conditional) ---
   if (!is.null(run_scope)) {
     config$run$scope <- run_scope
   }
 
-  # Add qiime2.primers if provided
+  # --- primers (conditional) ---
   if (!is.null(primer_forward) || !is.null(primer_reverse)) {
     primers_obj <- list()
     if (!is.null(primer_forward)) primers_obj$forward <- primer_forward
     if (!is.null(primer_reverse)) primers_obj$reverse <- primer_reverse
     config$qiime2$primers <- primers_obj
-    cat("Added primers to config\n")
   }
 
-  # Add barcode sequences if provided
+  # --- barcode sequences (conditional) ---
   if (!is.null(barcode_sequences)) {
     if (is.null(config$input$barcodes)) config$input$barcodes <- list()
     config$input$barcodes$sequences <- barcode_sequences
-    cat("Added barcode sequences to config\n")
   }
 
-  # Add barcoding kit if provided
+  # --- barcoding kit (conditional) ---
   if (!is.null(barcoding_kit)) {
     if (is.null(config$tools)) config$tools <- list()
     config$tools$barcoding_kit <- barcoding_kit
-    cat("Added barcoding kit to config\n")
   }
 
-  # Add Valencia if vaginal and map UI selection correctly
+  # --- VALENCIA (conditional: vaginal only) ---
+  # UI: selectInput("valencia") -> "yes"|"no" (only shown when sample_type == "vaginal")
+  # Config: config$valencia$enabled (1L or 0L), config$valencia$centroids_csv
+  # Also controls: config$postprocess$steps$valencia
   if (specimen == "vaginal") {
-    valencia_enabled <- if (!is.null(params$valencia) && params$valencia == "yes") {
-      1L
-    } else if (!is.null(params$valencia) && params$valencia == "no") {
-      0L
-    } else {
-      0L
-    }
-    config$valencia <- list(enabled = valencia_enabled)
-    cat("Valencia enabled:", valencia_enabled, "\n")
+    valencia_enabled <- if (!is.null(params$valencia) && params$valencia == "yes") 1L else 0L
+    config$valencia <- list(
+      enabled       = valencia_enabled,
+      mode          = "auto",
+      centroids_csv = valencia_centroids_path
+    )
+    cat("[WIRE] valencia.enabled:", valencia_enabled, "| centroids_csv:", valencia_centroids_path, "\n")
+
+    # Wire VALENCIA postprocess step: only enabled when postprocess is on AND VALENCIA is enabled
+    config$postprocess$steps$valencia <- if (postprocess_enabled == 1L && valencia_enabled == 1L) 1L else 0L
+    cat("[WIRE] postprocess.steps.valencia:", config$postprocess$steps$valencia, "\n")
+  } else {
+    cat("[WIRE] valencia: omitted (specimen is", specimen, "not vaginal)\n")
+    config$postprocess$steps$valencia <- 0L
   }
 
-  # Add external database if provided
+  # --- external DB (conditional: sr_amp uses generic external_db path) ---
+  # UI: textInput("external_db_dir")
+  # Config: config$host$resources$external_db$host_path
   if (!is.null(params$external_db_dir) && nchar(trimws(params$external_db_dir)) > 0) {
     if (is.null(config$host)) config$host <- list()
     if (is.null(config$host$resources)) config$host$resources <- list()
-
     config$host$resources$external_db <- list(
       host_path = trimws(params$external_db_dir)
     )
-    cat("External DB:", trimws(params$external_db_dir), "\n")
+    cat("[WIRE] host.resources.external_db.host_path:", trimws(params$external_db_dir), "\n")
   }
 
+  # --- pre-return audit ---
+  cat("\n[AUDIT] sr_amp config field check:\n")
+  cat("  pipeline_id:                        ", config$pipeline_id, "\n")
+  cat("  run.work_dir:                       ", config$run$work_dir, "\n")
+  cat("  run.run_id:                         ", config$run$run_id, "\n")
+  cat("  run.scope:                          ", if (!is.null(config$run$scope)) config$run$scope else "(none)", "\n")
+  cat("  technology:                         ", config$technology, "\n")
+  cat("  specimen:                           ", config$specimen, "\n")
+  cat("  input.style:                        ", config$input$style, "\n")
+  cat("  resources.threads:                  ", config$resources$threads, "\n")
+  cat("  params.common.min_qscore:           ", config$params$common$min_qscore, "\n")
+  cat("  params.common.min_read_length:      ", if (!is.null(config$params$common$min_read_length)) config$params$common$min_read_length else "(omitted)", "\n")
+  cat("  params.common.trim_adapter:         ", if (!is.null(config$params$common$trim_adapter)) config$params$common$trim_adapter else "(omitted)", "\n")
+  cat("  params.common.demultiplex:          ", if (!is.null(config$params$common$demultiplex)) config$params$common$demultiplex else "(omitted)", "\n")
+  cat("  params.common.remove_host:          ", config$params$common$remove_host, "\n")
+  cat("  qiime2.dada2.trunc_len_f:           ", config$qiime2$dada2$trunc_len_f, "\n")
+  cat("  qiime2.dada2.trunc_len_r:           ", config$qiime2$dada2$trunc_len_r, "\n")
+  cat("  qiime2.dada2.n_threads:             ", config$qiime2$dada2$n_threads, "\n")
+  cat("  output.selected:                    ", paste(config$output$selected, collapse=", "), "\n")
+  cat("  postprocess.enabled:                ", config$postprocess$enabled, "[TYPE:", class(config$postprocess$enabled), "]\n")
+  cat("  postprocess.steps.heatmap:          ", config$postprocess$steps$heatmap, "\n")
+  cat("  postprocess.steps.piechart:         ", config$postprocess$steps$piechart, "\n")
+  cat("  postprocess.steps.stacked_bar:      ", config$postprocess$steps$stacked_bar, "\n")
+  cat("  postprocess.steps.results_csv:      ", config$postprocess$steps$results_csv, "\n")
+  cat("  postprocess.steps.relative_abundance:", config$postprocess$steps$relative_abundance, "\n")
+  cat("  postprocess.steps.valencia:         ", config$postprocess$steps$valencia, "\n")
+  if (!is.null(config$valencia)) {
+    cat("  valencia.enabled:                   ", config$valencia$enabled, "\n")
+    cat("  valencia.centroids_csv:             ", config$valencia$centroids_csv, "\n")
+  }
   cat("========== SR_AMP CONFIG COMPLETE ==========\n\n")
+
   config
 }
 
 generate_sr_meta_config <- function(params) {
   cat("\n========== BUILDING SR_META CONFIG ==========\n")
-  cat("Received params:\n")
-  cat(paste(names(params), "=", sapply(params, function(x) paste(x, collapse=",")), "\n"))
 
+  # --- technology ---
   tech_map <- c(
-    "illumina" = "ILLUMINA",
+    "illumina"   = "ILLUMINA",
     "iontorrent" = "IONTORRENT",
-    "bgi" = "BGI"
+    "bgi"        = "BGI"
   )
   technology <- tech_map[params$technology] %||% "ILLUMINA"
-  cat("Mapped technology:", technology, "\n")
+  cat("[WIRE] technology:", params$technology, "->", unname(technology), "\n")
 
-  input_style <- if (params$paired_end) "FASTQ_PAIRED" else "FASTQ_SINGLE"
-  cat("Input style:", input_style, "\n")
+  # --- input style + files ---
+  input_style <- if (isTRUE(params$paired_end)) "FASTQ_PAIRED" else "FASTQ_SINGLE"
+  cat("[WIRE] paired_end:", isTRUE(params$paired_end), "-> input.style:", input_style, "\n")
 
   input_obj <- list(style = input_style)
-  if (params$paired_end) {
+  if (isTRUE(params$paired_end)) {
     input_obj$fastq_r1 <- params$input_r1
     input_obj$fastq_r2 <- params$input_r2
-    cat("Paired-end: R1=", params$input_r1, "R2=", params$input_r2, "\n")
+    cat("[WIRE] input.fastq_r1:", params$input_r1, "\n")
+    cat("[WIRE] input.fastq_r2:", params$input_r2, "\n")
   } else {
     input_obj$fastq_r1 <- params$input_path
-    cat("Single-end:", params$input_path, "\n")
+    cat("[WIRE] input.fastq_r1:", params$input_path, "\n")
   }
 
-  # Build output.selected array - ensure it's a character vector for JSON array
+  # --- output selected ---
   output_selected <- if (!is.null(params$output_selected) && length(params$output_selected) > 0) {
     as.character(params$output_selected)
   } else {
     c("all")
   }
-  cat("Output selected:", paste(output_selected, collapse=", "), "\n")
+  cat("[WIRE] output.selected:", paste(output_selected, collapse=", "), "\n")
 
-  # Determine specimen
+  # --- specimen ---
   specimen <- params$sample_type %||% "other"
-  cat("Specimen:", specimen, "\n")
+  cat("[WIRE] specimen:", specimen, "\n")
 
-  # Determine threads
-  threads <- as.integer(params$threads %||% 4)
-  cat("Threads:", threads, "\n")
+  # --- threads ---
+  threads <- as.integer(params$threads %||% 4L)
+  cat("[WIRE] resources.threads:", threads, "\n")
 
-  # Quality threshold
-  quality_threshold <- as.integer(params$quality_threshold %||% 20)
-  cat("Quality threshold:", quality_threshold, "\n")
+  # --- quality threshold ---
+  quality_threshold <- as.integer(params$quality_threshold %||% 20L)
+  cat("[WIRE] params.common.min_qscore:", quality_threshold, "\n")
 
-  # Minimum read length
+  # --- minimum read length ---
   min_read_length <- if (!is.null(params$min_read_length)) as.integer(params$min_read_length) else NULL
-  if (!is.null(min_read_length)) cat("Min read length:", min_read_length, "\n")
+  cat("[WIRE] params.common.min_read_length:", if (is.null(min_read_length)) "(omitted)" else min_read_length, "\n")
 
-  # Trim adapter
+  # --- trim adapter ---
   trim_adapter <- if (!is.null(params$trim_adapter)) as.logical(params$trim_adapter) else NULL
-  if (!is.null(trim_adapter)) cat("Trim adapter:", trim_adapter, "\n")
+  cat("[WIRE] params.common.trim_adapter:", if (is.null(trim_adapter)) "(omitted)" else trim_adapter, "\n")
 
-  # Demultiplex
+  # --- demultiplex ---
   demultiplex <- if (!is.null(params$demultiplex)) as.logical(params$demultiplex) else NULL
-  if (!is.null(demultiplex)) cat("Demultiplex:", demultiplex, "\n")
+  cat("[WIRE] params.common.demultiplex:", if (is.null(demultiplex)) "(omitted)" else demultiplex, "\n")
 
-  # Run scope
+  # --- run scope ---
   run_scope <- params$run_scope %||% NULL
-  if (!is.null(run_scope)) cat("Run scope:", run_scope, "\n")
+  cat("[WIRE] run.scope:", if (is.null(run_scope)) "(omitted)" else run_scope, "\n")
 
-  # Human depletion
-  human_depletion <- if (!is.null(params$human_depletion) && params$human_depletion) 1L else 0L
-  cat("Human depletion (remove_host):", human_depletion, "\n")
+  # --- human depletion ---
+  # UI: checkboxInput("human_depletion") default=FALSE (sr_meta only)
+  # Config: config$params$common$remove_host (integer: 1 or 0)
+  human_depletion <- if (!is.null(params$human_depletion) && isTRUE(params$human_depletion)) 1L else 0L
+  cat("[WIRE] params.common.remove_host:", human_depletion, "(from human_depletion =", isTRUE(params$human_depletion), ")\n")
 
-  # Build params.common with all UI selections
-  params_common <- list(
-    min_qscore = quality_threshold,
-    remove_host = human_depletion,
-    specimen = specimen
+  # --- postprocess enabled ---
+  # UI: checkboxInput("enable_postprocess") default=TRUE
+  # Config: config$postprocess$enabled (integer: 1 or 0)
+  # CRITICAL: backend checks postprocess.enabled == 1 (integer, not boolean)
+  postprocess_enabled <- if (!is.null(params$enable_postprocess) && isTRUE(params$enable_postprocess)) 1L else 0L
+  cat("[WIRE] postprocess.enabled:", postprocess_enabled, "(from enable_postprocess =", isTRUE(params$enable_postprocess), ")\n")
+
+  # --- postprocess steps ---
+  # Key name mapping (UI value in output_selected -> backend postprocess.steps key):
+  #   "heatmap"     -> steps$heatmap
+  #   "pie_chart"   -> steps$piechart     (backend uses no underscore)
+  #   "stacked_bar" -> steps$stacked_bar
+  #   "raw_csv"     -> steps$results_csv  (different name in backend)
+  postprocess_steps <- list(
+    heatmap            = pp_step("heatmap",     output_selected, postprocess_enabled),
+    piechart           = pp_step("pie_chart",   output_selected, postprocess_enabled),
+    stacked_bar        = pp_step("stacked_bar", output_selected, postprocess_enabled),
+    results_csv        = postprocess_enabled,  # always on — tables always generated
+    relative_abundance = 0L,
+    valencia           = 0L  # sr_meta: no VALENCIA
   )
+  cat("[WIRE] postprocess.steps.heatmap:", postprocess_steps$heatmap, "\n")
+  cat("[WIRE] postprocess.steps.piechart:", postprocess_steps$piechart, "(from 'pie_chart' in output_selected)\n")
+  cat("[WIRE] postprocess.steps.stacked_bar:", postprocess_steps$stacked_bar, "\n")
+  cat("[WIRE] postprocess.steps.results_csv:", postprocess_steps$results_csv, "(always on)\n")
 
-  # Add optional fields to params.common if provided
+  # --- build params.common ---
+  params_common <- list(
+    min_qscore  = quality_threshold,
+    remove_host = human_depletion,
+    specimen    = specimen
+  )
   if (!is.null(min_read_length)) params_common$min_read_length <- min_read_length
-  if (!is.null(trim_adapter)) params_common$trim_adapter <- trim_adapter
-  if (!is.null(demultiplex)) params_common$demultiplex <- demultiplex
+  if (!is.null(trim_adapter))    params_common$trim_adapter <- trim_adapter
+  if (!is.null(demultiplex))     params_common$demultiplex  <- demultiplex
 
-  # Generate config matching schema
+  # --- assemble config ---
   config <- list(
     pipeline_id = "sr_meta",
 
     run = list(
-      work_dir = params$output_dir,
-      run_id = params$run_id,
+      work_dir        = params$output_dir,
+      run_id          = params$run_id,
       force_overwrite = 1L
     ),
 
-    technology = technology,
-    specimen = specimen,
+    technology = unname(technology),
+    specimen   = specimen,
 
     input = input_obj,
 
@@ -331,24 +491,33 @@ generate_sr_meta_config <- function(params) {
 
     output = list(
       selected = output_selected
+    ),
+
+    # postprocess: ALWAYS written; backend reads postprocess.enabled AND postprocess.steps.*
+    postprocess = list(
+      enabled = postprocess_enabled,
+      steps   = postprocess_steps
     )
   )
 
-  # Add run_scope if provided
+  # --- run scope (conditional) ---
   if (!is.null(run_scope)) {
     config$run$scope <- run_scope
   }
 
-  # Add Kraken2 DB if provided (either from kraken_db field or external_db_dir)
+  # --- kraken2 DB path ---
+  # UI: textInput("kraken_db") (shown when pipeline == "sr_meta")
+  # Fallback: textInput("external_db_dir") with selectInput("database_type")
+  # Config: config$host$resources$kraken2_db$host_path
   kraken_db_path <- NULL
   if (!is.null(params$kraken_db) && nchar(trimws(params$kraken_db)) > 0) {
     kraken_db_path <- trimws(params$kraken_db)
-    cat("Kraken2 DB from kraken_db field:", kraken_db_path, "\n")
+    cat("[WIRE] host.resources.kraken2_db.host_path:", kraken_db_path, "(from kraken_db field)\n")
   } else if (!is.null(params$external_db_dir) && nchar(trimws(params$external_db_dir)) > 0) {
     db_type <- params$database_type %||% "auto"
     if (db_type %in% c("auto", "kraken2")) {
       kraken_db_path <- trimws(params$external_db_dir)
-      cat("Kraken2 DB from external_db_dir:", kraken_db_path, "\n")
+      cat("[WIRE] host.resources.kraken2_db.host_path:", kraken_db_path, "(from external_db_dir, type:", db_type, ")\n")
     }
   }
 
@@ -362,22 +531,590 @@ generate_sr_meta_config <- function(params) {
     )
   }
 
+  # --- pre-return audit ---
+  cat("\n[AUDIT] sr_meta config field check:\n")
+  cat("  pipeline_id:                        ", config$pipeline_id, "\n")
+  cat("  run.work_dir:                       ", config$run$work_dir, "\n")
+  cat("  run.run_id:                         ", config$run$run_id, "\n")
+  cat("  run.scope:                          ", if (!is.null(config$run$scope)) config$run$scope else "(none)", "\n")
+  cat("  technology:                         ", config$technology, "\n")
+  cat("  specimen:                           ", config$specimen, "\n")
+  cat("  input.style:                        ", config$input$style, "\n")
+  cat("  resources.threads:                  ", config$resources$threads, "\n")
+  cat("  params.common.min_qscore:           ", config$params$common$min_qscore, "\n")
+  cat("  params.common.min_read_length:      ", if (!is.null(config$params$common$min_read_length)) config$params$common$min_read_length else "(omitted)", "\n")
+  cat("  params.common.trim_adapter:         ", if (!is.null(config$params$common$trim_adapter)) config$params$common$trim_adapter else "(omitted)", "\n")
+  cat("  params.common.demultiplex:          ", if (!is.null(config$params$common$demultiplex)) config$params$common$demultiplex else "(omitted)", "\n")
+  cat("  params.common.remove_host:          ", config$params$common$remove_host, "\n")
+  cat("  output.selected:                    ", paste(config$output$selected, collapse=", "), "\n")
+  cat("  postprocess.enabled:                ", config$postprocess$enabled, "[TYPE:", class(config$postprocess$enabled), "]\n")
+  cat("  postprocess.steps.heatmap:          ", config$postprocess$steps$heatmap, "\n")
+  cat("  postprocess.steps.piechart:         ", config$postprocess$steps$piechart, "\n")
+  cat("  postprocess.steps.stacked_bar:      ", config$postprocess$steps$stacked_bar, "\n")
+  cat("  postprocess.steps.results_csv:      ", config$postprocess$steps$results_csv, "\n")
+  cat("  postprocess.steps.relative_abundance:", config$postprocess$steps$relative_abundance, "\n")
+  if (!is.null(config$host$resources$kraken2_db)) {
+    cat("  host.resources.kraken2_db:          ", config$host$resources$kraken2_db$host_path, "\n")
+  }
   cat("========== SR_META CONFIG COMPLETE ==========\n\n")
+
   config
 }
 
 generate_lr_amp_config <- function(params) {
-  stop("Long-read amplicon config generation not yet implemented")
+  cat("\n========== BUILDING LR_AMP CONFIG ==========\n")
+
+  # --- technology ---
+  tech_map <- c("ont" = "ONT", "pacbio" = "PACBIO")
+  technology <- tech_map[params$technology] %||% "ONT"
+  cat("[WIRE] technology:", params$technology, "->", unname(technology), "\n")
+
+  # --- input style + file ---
+  input_format <- params$input_format %||% "fastq"
+  input_style <- switch(input_format,
+    "fastq" = "FASTQ_SINGLE",
+    "fast5" = "FAST5_DIR",
+    "pod5"  = "FAST5_DIR",
+    "FASTQ_SINGLE"
+  )
+  cat("[WIRE] input_format:", input_format, "-> input.style:", input_style, "\n")
+
+  input_obj <- list(style = input_style)
+  if (input_style == "FASTQ_SINGLE") {
+    input_obj$fastq_r1 <- params$input_path
+    cat("[WIRE] input.fastq_r1:", params$input_path, "\n")
+  } else {
+    input_obj$fast5_dir <- params$input_path
+    cat("[WIRE] input.fast5_dir:", params$input_path, "\n")
+  }
+
+  # --- threads ---
+  threads <- as.integer(params$threads %||% 4L)
+  cat("[WIRE] resources.threads:", threads, "\n")
+
+  # --- quality threshold ---
+  # LR backend reads from tools.qfilter.min_q (NOT params.common.min_qscore)
+  quality_threshold <- as.integer(params$quality_threshold %||% 7L)
+  cat("[WIRE] tools.qfilter.min_q:", quality_threshold, "\n")
+
+  # --- min read length ---
+  # LR backend reads from tools.qfilter.min_len
+  min_read_length <- if (!is.null(params$min_read_length)) as.integer(params$min_read_length) else NULL
+  cat("[WIRE] tools.qfilter.min_len:", if (is.null(min_read_length)) "(omitted)" else min_read_length, "\n")
+
+  # --- specimen ---
+  specimen <- params$sample_type %||% "other"
+  cat("[WIRE] specimen:", specimen, "\n")
+
+  # --- run scope ---
+  run_scope <- params$run_scope %||% NULL
+  cat("[WIRE] run.scope:", if (is.null(run_scope)) "(omitted)" else run_scope, "\n")
+
+  # --- trim adapter ---
+  trim_adapter <- if (!is.null(params$trim_adapter)) as.logical(params$trim_adapter) else NULL
+  cat("[WIRE] params.common.trim_adapter:", if (is.null(trim_adapter)) "(omitted)" else trim_adapter, "\n")
+
+  # --- demultiplex ---
+  demultiplex <- if (!is.null(params$demultiplex)) as.logical(params$demultiplex) else NULL
+  cat("[WIRE] params.common.demultiplex:", if (is.null(demultiplex)) "(omitted)" else demultiplex, "\n")
+
+  # --- primer sequences ---
+  # Parse newline-separated string into forward/reverse
+  primer_forward <- NULL
+  primer_reverse <- NULL
+  if (!is.null(params$primer_sequences) && nchar(trimws(params$primer_sequences)) > 0) {
+    primer_lines <- strsplit(params$primer_sequences, "\n")[[1]]
+    primer_lines <- trimws(primer_lines[nchar(trimws(primer_lines)) > 0])
+    if (length(primer_lines) >= 1) primer_forward <- primer_lines[1]
+    if (length(primer_lines) >= 2) primer_reverse <- primer_lines[2]
+    cat("[WIRE] params.primers.forward:", primer_forward %||% "(none)", "\n")
+    cat("[WIRE] params.primers.reverse:", primer_reverse %||% "(none)", "\n")
+  } else {
+    cat("[WIRE] params.primers: (omitted)\n")
+  }
+
+  # --- barcode sequences ---
+  barcode_sequences <- NULL
+  if (!is.null(params$barcode_sequences) && nchar(trimws(params$barcode_sequences)) > 0) {
+    barcode_lines <- strsplit(params$barcode_sequences, "\n")[[1]]
+    barcode_lines <- trimws(barcode_lines[nchar(trimws(barcode_lines)) > 0])
+    if (length(barcode_lines) > 0) {
+      barcode_sequences <- barcode_lines
+      cat("[WIRE] input.barcodes.sequences:", length(barcode_lines), "entries\n")
+    }
+  }
+
+  # --- barcoding_kit and ligation_kit ---
+  # For FAST5/POD5: go in tools.dorado.barcode_kit / tools.dorado.ligation_kit
+  # For FASTQ: go in tools.barcoding_kit / tools.ligation_kit
+  barcoding_kit <- if (!is.null(params$barcoding_kit) && nchar(trimws(params$barcoding_kit)) > 0) trimws(params$barcoding_kit) else NULL
+  ligation_kit  <- if (!is.null(params$ligation_kit)  && nchar(trimws(params$ligation_kit))  > 0) trimws(params$ligation_kit)  else NULL
+  cat("[WIRE] barcoding_kit:", if (is.null(barcoding_kit)) "(omitted)" else barcoding_kit, "\n")
+  cat("[WIRE] ligation_kit:",  if (is.null(ligation_kit))  "(omitted)" else ligation_kit,  "\n")
+
+  # --- output selected ---
+  output_selected <- if (!is.null(params$output_selected) && length(params$output_selected) > 0) {
+    as.character(params$output_selected)
+  } else {
+    c("all")
+  }
+  cat("[WIRE] output.selected:", paste(output_selected, collapse=", "), "\n")
+
+  # --- postprocess enabled ---
+  postprocess_enabled <- if (!is.null(params$enable_postprocess) && isTRUE(params$enable_postprocess)) 1L else 0L
+  cat("[WIRE] postprocess.enabled:", postprocess_enabled, "\n")
+
+  # --- classifier: always Emu for lr_amp ---
+  full_length <- 1L
+  cat("[WIRE] params.full_length: 1 (Emu, full-length 16S - lr_amp always uses Emu)\n")
+
+  # --- VALENCIA auto-detect ---
+  repo_root <- dirname(getwd())
+  valencia_centroids_candidates <- c(
+    file.path(repo_root, "tools", "VALENCIA", "CST_centroids_012920.csv"),
+    file.path(repo_root, "main", "tools", "VALENCIA", "CST_centroids_012920.csv")
+  )
+  valencia_centroids_path <- ""
+  for (candidate in valencia_centroids_candidates) {
+    if (file.exists(candidate)) {
+      valencia_centroids_path <- candidate
+      cat("[WIRE] valencia.centroids_csv: auto-detected at", valencia_centroids_path, "\n")
+      break
+    }
+  }
+  if (valencia_centroids_path == "") {
+    valencia_centroids_path <- file.path(repo_root, "tools", "VALENCIA", "CST_centroids_012920.csv")
+    cat("[WIRE] valencia.centroids_csv: NOT FOUND - using default path\n")
+  }
+
+  # --- build params.common ---
+  params_common <- list(
+    min_qscore  = quality_threshold,
+    remove_host = 0L,
+    specimen    = specimen
+  )
+  if (!is.null(trim_adapter)) params_common$trim_adapter <- trim_adapter
+  if (!is.null(demultiplex))  params_common$demultiplex  <- demultiplex
+
+  # --- build tools block ---
+  tools_obj <- list(
+    qfilter = list(enabled = 1L, min_q = quality_threshold)
+  )
+  if (!is.null(min_read_length)) {
+    tools_obj$qfilter$min_len <- min_read_length
+  }
+
+  cat("[WIRE] tools.emu.db: (auto-detected by container at runtime)\n")
+
+  # Dorado settings (FAST5/POD5 only)
+  if (input_format %in% c("fast5", "pod5")) {
+    dorado_obj <- list()
+    if (!is.null(params$dorado_model)     && nchar(trimws(params$dorado_model)) > 0)
+      dorado_obj$model      <- trimws(params$dorado_model)
+    if (!is.null(params$dorado_bin)       && nchar(trimws(params$dorado_bin)) > 0)
+      dorado_obj$bin        <- trimws(params$dorado_bin)
+    if (!is.null(params$dorado_models_dir) && nchar(trimws(params$dorado_models_dir)) > 0)
+      dorado_obj$models_dir <- trimws(params$dorado_models_dir)
+    # Barcoding/ligation kit go inside dorado block for FAST5/POD5
+    if (!is.null(barcoding_kit)) dorado_obj$barcode_kit  <- barcoding_kit
+    if (!is.null(ligation_kit))  dorado_obj$ligation_kit <- ligation_kit
+    if (length(dorado_obj) > 0) tools_obj$dorado <- dorado_obj
+  } else {
+    # FASTQ: kit values go in top-level tools block
+    if (!is.null(barcoding_kit)) tools_obj$barcoding_kit <- barcoding_kit
+    if (!is.null(ligation_kit))  tools_obj$ligation_kit  <- ligation_kit
+  }
+
+  # --- assemble config ---
+  config <- list(
+    pipeline_id = "lr_amp",
+
+    run = list(
+      work_dir        = params$output_dir,
+      run_id          = params$run_id,
+      force_overwrite = 1L
+    ),
+
+    technology = unname(technology),
+    specimen   = specimen,
+
+    input = input_obj,
+
+    resources = list(threads = threads),
+
+    params = list(
+      common      = params_common,
+      full_length = full_length,
+      seq_type    = if (technology == "ONT") "map-ont" else "map-pb"
+    ),
+
+    tools = tools_obj,
+
+    output = list(selected = output_selected),
+
+    postprocess = list(
+      enabled = postprocess_enabled,
+      steps = list(
+        heatmap            = pp_step("heatmap",     output_selected, postprocess_enabled),
+        piechart           = pp_step("pie_chart",   output_selected, postprocess_enabled),
+        stacked_bar        = pp_step("stacked_bar", output_selected, postprocess_enabled),
+        results_csv        = postprocess_enabled,  # always on — tables always generated
+        relative_abundance = 0L,
+        valencia           = 0L  # updated below for vaginal
+      )
+    )
+  )
+
+  # --- run scope (conditional) ---
+  if (!is.null(run_scope)) config$run$scope <- run_scope
+
+  # --- primer sequences (conditional) ---
+  if (!is.null(primer_forward) || !is.null(primer_reverse)) {
+    primers_obj <- list()
+    if (!is.null(primer_forward)) primers_obj$forward <- primer_forward
+    if (!is.null(primer_reverse)) primers_obj$reverse <- primer_reverse
+    config$params$primers <- primers_obj
+  }
+
+  # --- barcode sequences (conditional) ---
+  if (!is.null(barcode_sequences)) {
+    config$input$barcodes <- list(sequences = barcode_sequences)
+  }
+
+  # --- VALENCIA (conditional: vaginal only) ---
+  if (specimen == "vaginal") {
+    valencia_enabled <- if (!is.null(params$valencia) && params$valencia == "yes") 1L else 0L
+    config$valencia <- list(
+      enabled       = valencia_enabled,
+      mode          = "auto",
+      centroids_csv = valencia_centroids_path
+    )
+    cat("[WIRE] valencia.enabled:", valencia_enabled, "| centroids_csv:", valencia_centroids_path, "\n")
+    config$postprocess$steps$valencia <- if (postprocess_enabled == 1L && valencia_enabled == 1L) 1L else 0L
+    cat("[WIRE] postprocess.steps.valencia:", config$postprocess$steps$valencia, "\n")
+  } else {
+    cat("[WIRE] valencia: omitted (specimen is", specimen, "not vaginal)\n")
+    config$postprocess$steps$valencia <- 0L
+  }
+
+  # --- pre-return audit ---
+  cat("\n[AUDIT] lr_amp config field check:\n")
+  cat("  pipeline_id:                   ", config$pipeline_id, "\n")
+  cat("  run.work_dir:                  ", config$run$work_dir, "\n")
+  cat("  run.run_id:                    ", config$run$run_id, "\n")
+  cat("  run.scope:                     ", if (!is.null(config$run$scope)) config$run$scope else "(none)", "\n")
+  cat("  technology:                    ", config$technology, "\n")
+  cat("  specimen:                      ", config$specimen, "\n")
+  cat("  input.style:                   ", config$input$style, "\n")
+  cat("  resources.threads:             ", config$resources$threads, "\n")
+  cat("  params.common.trim_adapter:    ", if (!is.null(config$params$common$trim_adapter)) config$params$common$trim_adapter else "(omitted)", "\n")
+  cat("  params.common.demultiplex:     ", if (!is.null(config$params$common$demultiplex)) config$params$common$demultiplex else "(omitted)", "\n")
+  cat("  params.full_length:            ", config$params$full_length, "\n")
+  cat("  params.seq_type:               ", config$params$seq_type, "\n")
+  cat("  tools.qfilter.min_q:           ", config$tools$qfilter$min_q, "\n")
+  cat("  tools.qfilter.min_len:         ", if (!is.null(config$tools$qfilter$min_len)) config$tools$qfilter$min_len else "(omitted)", "\n")
+  cat("  output.selected:               ", paste(config$output$selected, collapse=", "), "\n")
+  cat("  postprocess.enabled:           ", config$postprocess$enabled, "\n")
+  cat("  postprocess.steps.heatmap:     ", config$postprocess$steps$heatmap, "\n")
+  cat("  postprocess.steps.piechart:    ", config$postprocess$steps$piechart, "\n")
+  cat("  postprocess.steps.stacked_bar: ", config$postprocess$steps$stacked_bar, "\n")
+  cat("  postprocess.steps.results_csv: ", config$postprocess$steps$results_csv, "(always on)\n")
+  cat("  postprocess.steps.valencia:    ", config$postprocess$steps$valencia, "\n")
+  if (!is.null(config$valencia)) cat("  valencia.enabled:              ", config$valencia$enabled, "\n")
+  if (!is.null(config$tools$dorado)) {
+    cat("  tools.dorado.barcode_kit:      ", config$tools$dorado$barcode_kit %||% "(none)", "\n")
+    cat("  tools.dorado.ligation_kit:     ", config$tools$dorado$ligation_kit %||% "(none)", "\n")
+  }
+  cat("========== LR_AMP CONFIG COMPLETE ==========\n\n")
+
+  config
 }
 
 generate_lr_meta_config <- function(params) {
-  stop("Long-read metagenomics config generation not yet implemented")
+  cat("\n========== BUILDING LR_META CONFIG ==========\n")
+
+  # --- technology ---
+  tech_map <- c("ont" = "ONT", "pacbio" = "PACBIO")
+  technology <- tech_map[params$technology] %||% "ONT"
+  cat("[WIRE] technology:", params$technology, "->", unname(technology), "\n")
+
+  # --- input style + file ---
+  input_format <- params$input_format %||% "fastq"
+  input_style <- switch(input_format,
+    "fastq" = "FASTQ_SINGLE",
+    "fast5" = "FAST5_DIR",
+    "pod5"  = "FAST5_DIR",
+    "FASTQ_SINGLE"
+  )
+  cat("[WIRE] input_format:", input_format, "-> input.style:", input_style, "\n")
+
+  input_obj <- list(style = input_style)
+  if (input_style == "FASTQ_SINGLE") {
+    input_obj$fastq_r1 <- params$input_path
+    cat("[WIRE] input.fastq_r1:", params$input_path, "\n")
+  } else {
+    input_obj$fast5_dir <- params$input_path
+    cat("[WIRE] input.fast5_dir:", params$input_path, "\n")
+  }
+
+  # --- threads ---
+  threads <- as.integer(params$threads %||% 4L)
+  cat("[WIRE] resources.threads:", threads, "\n")
+
+  # --- quality threshold ---
+  # LR backend reads from tools.qfilter.min_q
+  quality_threshold <- as.integer(params$quality_threshold %||% 7L)
+  cat("[WIRE] tools.qfilter.min_q:", quality_threshold, "\n")
+
+  # --- min read length ---
+  min_read_length <- if (!is.null(params$min_read_length)) as.integer(params$min_read_length) else NULL
+  cat("[WIRE] tools.qfilter.min_len:", if (is.null(min_read_length)) "(omitted)" else min_read_length, "\n")
+
+  # --- specimen ---
+  specimen <- params$sample_type %||% "other"
+  cat("[WIRE] specimen:", specimen, "\n")
+
+  # --- run scope ---
+  run_scope <- params$run_scope %||% NULL
+  cat("[WIRE] run.scope:", if (is.null(run_scope)) "(omitted)" else run_scope, "\n")
+
+  # --- trim adapter ---
+  trim_adapter <- if (!is.null(params$trim_adapter)) as.logical(params$trim_adapter) else NULL
+  cat("[WIRE] params.common.trim_adapter:", if (is.null(trim_adapter)) "(omitted)" else trim_adapter, "\n")
+
+  # --- demultiplex ---
+  demultiplex <- if (!is.null(params$demultiplex)) as.logical(params$demultiplex) else NULL
+  cat("[WIRE] params.common.demultiplex:", if (is.null(demultiplex)) "(omitted)" else demultiplex, "\n")
+
+  # --- primer sequences ---
+  primer_forward <- NULL
+  primer_reverse <- NULL
+  if (!is.null(params$primer_sequences) && nchar(trimws(params$primer_sequences)) > 0) {
+    primer_lines <- strsplit(params$primer_sequences, "\n")[[1]]
+    primer_lines <- trimws(primer_lines[nchar(trimws(primer_lines)) > 0])
+    if (length(primer_lines) >= 1) primer_forward <- primer_lines[1]
+    if (length(primer_lines) >= 2) primer_reverse <- primer_lines[2]
+    cat("[WIRE] params.primers.forward:", primer_forward %||% "(none)", "\n")
+    cat("[WIRE] params.primers.reverse:", primer_reverse %||% "(none)", "\n")
+  } else {
+    cat("[WIRE] params.primers: (omitted)\n")
+  }
+
+  # --- barcode sequences ---
+  barcode_sequences <- NULL
+  if (!is.null(params$barcode_sequences) && nchar(trimws(params$barcode_sequences)) > 0) {
+    barcode_lines <- strsplit(params$barcode_sequences, "\n")[[1]]
+    barcode_lines <- trimws(barcode_lines[nchar(trimws(barcode_lines)) > 0])
+    if (length(barcode_lines) > 0) {
+      barcode_sequences <- barcode_lines
+      cat("[WIRE] input.barcodes.sequences:", length(barcode_lines), "entries\n")
+    }
+  }
+
+  # --- barcoding_kit and ligation_kit ---
+  barcoding_kit <- if (!is.null(params$barcoding_kit) && nchar(trimws(params$barcoding_kit)) > 0) trimws(params$barcoding_kit) else NULL
+  ligation_kit  <- if (!is.null(params$ligation_kit)  && nchar(trimws(params$ligation_kit))  > 0) trimws(params$ligation_kit)  else NULL
+  cat("[WIRE] barcoding_kit:", if (is.null(barcoding_kit)) "(omitted)" else barcoding_kit, "\n")
+  cat("[WIRE] ligation_kit:",  if (is.null(ligation_kit))  "(omitted)" else ligation_kit,  "\n")
+
+  # --- Kraken2 DB (required for lr_meta) ---
+  # LR backend reads: tools.kraken2.db (NOT host.resources.kraken2_db.host_path)
+  kraken_db <- if (!is.null(params$kraken_db) && nchar(trimws(params$kraken_db)) > 0) trimws(params$kraken_db) else ""
+  cat("[WIRE] tools.kraken2.db:", kraken_db, "\n")
+
+  # --- human depletion ---
+  # UI: checkboxInput("human_depletion") shown for lr_meta
+  # Config: params.common.remove_host (integer: 1 or 0)
+  remove_host <- if (!is.null(params$human_depletion) && isTRUE(params$human_depletion)) 1L else 0L
+  cat("[WIRE] params.common.remove_host:", remove_host, "(from human_depletion =", isTRUE(params$human_depletion), ")\n")
+
+  # --- output selected ---
+  output_selected <- if (!is.null(params$output_selected) && length(params$output_selected) > 0) {
+    as.character(params$output_selected)
+  } else {
+    c("all")
+  }
+  cat("[WIRE] output.selected:", paste(output_selected, collapse=", "), "\n")
+
+  # --- postprocess enabled ---
+  postprocess_enabled <- if (!is.null(params$enable_postprocess) && isTRUE(params$enable_postprocess)) 1L else 0L
+  cat("[WIRE] postprocess.enabled:", postprocess_enabled, "\n")
+
+  # --- VALENCIA auto-detect ---
+  repo_root <- dirname(getwd())
+  valencia_centroids_candidates <- c(
+    file.path(repo_root, "tools", "VALENCIA", "CST_centroids_012920.csv"),
+    file.path(repo_root, "main", "tools", "VALENCIA", "CST_centroids_012920.csv")
+  )
+  valencia_centroids_path <- ""
+  for (candidate in valencia_centroids_candidates) {
+    if (file.exists(candidate)) {
+      valencia_centroids_path <- candidate
+      cat("[WIRE] valencia.centroids_csv: auto-detected at", valencia_centroids_path, "\n")
+      break
+    }
+  }
+  if (valencia_centroids_path == "") {
+    valencia_centroids_path <- file.path(repo_root, "tools", "VALENCIA", "CST_centroids_012920.csv")
+    cat("[WIRE] valencia.centroids_csv: NOT FOUND - using default path\n")
+  }
+
+  # --- build params.common ---
+  params_common <- list(
+    min_qscore  = quality_threshold,
+    remove_host = remove_host,
+    specimen    = specimen
+  )
+  if (!is.null(trim_adapter)) params_common$trim_adapter <- trim_adapter
+  if (!is.null(demultiplex))  params_common$demultiplex  <- demultiplex
+
+  # --- build tools block ---
+  tools_obj <- list(
+    qfilter = list(enabled = 1L, min_q = quality_threshold),
+    kraken2 = list(db = kraken_db)
+  )
+  if (!is.null(min_read_length)) {
+    tools_obj$qfilter$min_len <- min_read_length
+  }
+
+  # Dorado settings (FAST5/POD5 only)
+  if (input_format %in% c("fast5", "pod5")) {
+    dorado_obj <- list()
+    if (!is.null(params$dorado_model)      && nchar(trimws(params$dorado_model)) > 0)
+      dorado_obj$model      <- trimws(params$dorado_model)
+    if (!is.null(params$dorado_bin)        && nchar(trimws(params$dorado_bin)) > 0)
+      dorado_obj$bin        <- trimws(params$dorado_bin)
+    if (!is.null(params$dorado_models_dir) && nchar(trimws(params$dorado_models_dir)) > 0)
+      dorado_obj$models_dir <- trimws(params$dorado_models_dir)
+    # Barcoding/ligation kit inside dorado block for FAST5/POD5
+    if (!is.null(barcoding_kit)) dorado_obj$barcode_kit  <- barcoding_kit
+    if (!is.null(ligation_kit))  dorado_obj$ligation_kit <- ligation_kit
+    if (length(dorado_obj) > 0) tools_obj$dorado <- dorado_obj
+  } else {
+    # FASTQ: kit values go in top-level tools block
+    if (!is.null(barcoding_kit)) tools_obj$barcoding_kit <- barcoding_kit
+    if (!is.null(ligation_kit))  tools_obj$ligation_kit  <- ligation_kit
+  }
+
+  # --- assemble config ---
+  config <- list(
+    pipeline_id = "lr_meta",
+
+    run = list(
+      work_dir        = params$output_dir,
+      run_id          = params$run_id,
+      force_overwrite = 1L
+    ),
+
+    technology = unname(technology),
+    specimen   = specimen,
+
+    input = input_obj,
+
+    resources = list(threads = threads),
+
+    params = list(
+      common   = params_common,
+      seq_type = if (technology == "ONT") "map-ont" else "map-pb"
+    ),
+
+    tools = tools_obj,
+
+    output = list(selected = output_selected),
+
+    postprocess = list(
+      enabled = postprocess_enabled,
+      steps = list(
+        heatmap            = pp_step("heatmap",     output_selected, postprocess_enabled),
+        piechart           = pp_step("pie_chart",   output_selected, postprocess_enabled),
+        stacked_bar        = pp_step("stacked_bar", output_selected, postprocess_enabled),
+        results_csv        = postprocess_enabled,  # always on — tables always generated
+        relative_abundance = 0L,
+        valencia           = 0L  # updated below for vaginal
+      )
+    )
+  )
+
+  # --- run scope (conditional) ---
+  if (!is.null(run_scope)) config$run$scope <- run_scope
+
+  # --- primer sequences (conditional) ---
+  if (!is.null(primer_forward) || !is.null(primer_reverse)) {
+    primers_obj <- list()
+    if (!is.null(primer_forward)) primers_obj$forward <- primer_forward
+    if (!is.null(primer_reverse)) primers_obj$reverse <- primer_reverse
+    config$params$primers <- primers_obj
+  }
+
+  # --- barcode sequences (conditional) ---
+  if (!is.null(barcode_sequences)) {
+    config$input$barcodes <- list(sequences = barcode_sequences)
+  }
+
+  # --- VALENCIA (conditional: vaginal only) ---
+  if (specimen == "vaginal") {
+    valencia_enabled <- if (!is.null(params$valencia) && params$valencia == "yes") 1L else 0L
+    config$valencia <- list(
+      enabled       = valencia_enabled,
+      mode          = "auto",
+      centroids_csv = valencia_centroids_path
+    )
+    cat("[WIRE] valencia.enabled:", valencia_enabled, "| centroids_csv:", valencia_centroids_path, "\n")
+    config$postprocess$steps$valencia <- if (postprocess_enabled == 1L && valencia_enabled == 1L) 1L else 0L
+    cat("[WIRE] postprocess.steps.valencia:", config$postprocess$steps$valencia, "\n")
+  } else {
+    cat("[WIRE] valencia: omitted (specimen is", specimen, "not vaginal)\n")
+    config$postprocess$steps$valencia <- 0L
+  }
+
+  # --- pre-return audit ---
+  cat("\n[AUDIT] lr_meta config field check:\n")
+  cat("  pipeline_id:                   ", config$pipeline_id, "\n")
+  cat("  run.work_dir:                  ", config$run$work_dir, "\n")
+  cat("  run.run_id:                    ", config$run$run_id, "\n")
+  cat("  run.scope:                     ", if (!is.null(config$run$scope)) config$run$scope else "(none)", "\n")
+  cat("  technology:                    ", config$technology, "\n")
+  cat("  specimen:                      ", config$specimen, "\n")
+  cat("  input.style:                   ", config$input$style, "\n")
+  cat("  resources.threads:             ", config$resources$threads, "\n")
+  cat("  params.common.remove_host:     ", config$params$common$remove_host, "\n")
+  cat("  params.common.trim_adapter:    ", if (!is.null(config$params$common$trim_adapter)) config$params$common$trim_adapter else "(omitted)", "\n")
+  cat("  params.common.demultiplex:     ", if (!is.null(config$params$common$demultiplex)) config$params$common$demultiplex else "(omitted)", "\n")
+  cat("  tools.qfilter.min_q:           ", config$tools$qfilter$min_q, "\n")
+  cat("  tools.kraken2.db:              ", config$tools$kraken2$db, "\n")
+  cat("  output.selected:               ", paste(config$output$selected, collapse=", "), "\n")
+  cat("  postprocess.enabled:           ", config$postprocess$enabled, "\n")
+  cat("  postprocess.steps.heatmap:     ", config$postprocess$steps$heatmap, "\n")
+  cat("  postprocess.steps.piechart:    ", config$postprocess$steps$piechart, "\n")
+  cat("  postprocess.steps.stacked_bar: ", config$postprocess$steps$stacked_bar, "\n")
+  cat("  postprocess.steps.results_csv: ", config$postprocess$steps$results_csv, "(always on)\n")
+  cat("  postprocess.steps.valencia:    ", config$postprocess$steps$valencia, "\n")
+  if (!is.null(config$valencia)) cat("  valencia.enabled:              ", config$valencia$enabled, "\n")
+  if (!is.null(config$tools$dorado)) {
+    cat("  tools.dorado.barcode_kit:      ", config$tools$dorado$barcode_kit %||% "(none)", "\n")
+    cat("  tools.dorado.ligation_kit:     ", config$tools$dorado$ligation_kit %||% "(none)", "\n")
+  }
+  cat("========== LR_META CONFIG COMPLETE ==========\n\n")
+
+  config
 }
 
 save_config <- function(config, run_id) {
   outputs_dir <- get_outputs_directory()
 
   dir.create(outputs_dir, recursive = TRUE, showWarnings = FALSE)
+
+  # Defensive check: ensure postprocess block is always present and complete
+  if (is.null(config$postprocess)) {
+    cat("[WARNING] postprocess block was missing from config - defaulting to disabled\n")
+    config$postprocess <- list(
+      enabled = 0L,
+      steps = list(
+        heatmap = 0L, piechart = 0L, stacked_bar = 0L,
+        results_csv = 0L, relative_abundance = 0L, valencia = 0L
+      )
+    )
+  }
 
   cat("\n========== FINAL CONFIG OBJECT ==========\n")
   cat("Structure:\n")
@@ -390,6 +1127,14 @@ save_config <- function(config, run_id) {
   jsonlite::write_json(config, config_file, pretty = TRUE, auto_unbox = TRUE)
 
   cat("Config written to:", config_file, "\n")
+
+  # Verify the written file contains postprocess steps
+  written <- jsonlite::fromJSON(config_file)
+  cat("[VERIFY] postprocess.enabled =", written$postprocess$enabled, "\n")
+  cat("[VERIFY] postprocess.steps.piechart =", written$postprocess$steps$piechart, "\n")
+  cat("[VERIFY] postprocess.steps.heatmap =", written$postprocess$steps$heatmap, "\n")
+  cat("[VERIFY] postprocess.steps.results_csv =", written$postprocess$steps$results_csv, "\n")
+
   config_file
 }
 
@@ -406,4 +1151,30 @@ load_config <- function(run_id) {
 
 `%||%` <- function(x, y) {
   if (is.null(x) || length(x) == 0 || is.na(x)) y else x
+}
+
+validate_dependencies <- function(config) {
+  errors   <- character(0)
+  warnings <- character(0)
+
+  if (config$pipeline_id == "sr_amp") {
+    # QIIME2 SILVA classifier (warning if missing - pipeline degrades gracefully)
+    classifier_path <- config$qiime2$classifier$qza
+    if (is.null(classifier_path) || classifier_path == "" || !file.exists(classifier_path)) {
+      warnings <- c(warnings, "QIIME2 SILVA classifier not found. Taxonomy classification will be skipped.")
+      warnings <- c(warnings, "Run Setup Wizard to download SILVA classifier.")
+    }
+
+    # VALENCIA centroids (error if enabled and missing - hard failure)
+    if (!is.null(config$valencia) && config$valencia$enabled == 1) {
+      centroids_path <- config$valencia$centroids_csv
+      if (is.null(centroids_path) || centroids_path == "" || !file.exists(centroids_path)) {
+        errors <- c(errors, "VALENCIA is enabled but CST_centroids_012920.csv not found.")
+        errors <- c(errors, sprintf("Expected at: %s", centroids_path))
+        errors <- c(errors, "Run Setup Wizard to download VALENCIA or disable VALENCIA.")
+      }
+    }
+  }
+
+  list(errors = errors, warnings = warnings, valid = length(errors) == 0)
 }

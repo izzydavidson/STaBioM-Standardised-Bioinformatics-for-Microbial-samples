@@ -201,7 +201,7 @@ dashboard_server <- function(id, shared) {
     }, striped = TRUE, hover = TRUE, bordered = TRUE, spacing = "s", width = "100%")
 
     observeEvent(input$return_to_wizard, {
-      shared$goto_page <- "Setup Wizard"
+      shared$show_wizard <- TRUE
     })
   })
 }

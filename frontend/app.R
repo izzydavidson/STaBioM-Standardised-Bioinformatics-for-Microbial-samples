@@ -35,6 +35,13 @@ source("utils/cli_interface.R")
 source("utils/config_generator.R")
 source("utils/log_streamer.R")
 source("utils/log_discovery.R")
+source("utils/wizard_defs.R")
+
+# Determine whether wizard overlay should start hidden
+# (file.exists evaluated at UI-build time — before server starts)
+.wizard_init_hidden <- file.exists(
+  file.path(dirname(getwd()), ".setup_complete")
+)
 
 # Define UI
 ui <- page_navbar(
@@ -54,7 +61,15 @@ ui <- page_navbar(
     heading_font = font_google("Inter"),
     font_scale = 0.95
   ),
-  header = tags$head(
+  # The wizard overlay lives here — always in DOM, shown/hidden via shinyjs.
+  # position:fixed + z-index:9999 covers the entire viewport (including navbar).
+  header = tagList(
+    div(
+      id    = "setup-wizard-overlay",
+      style = if (.wizard_init_hidden) "display:none;" else "",
+      setup_wizard_ui("setup_wizard")
+    ),
+  tags$head(
     tags$style(HTML("
       /* Global Styles */
       body {
@@ -309,10 +324,11 @@ ui <- page_navbar(
         opacity: 1;
       }
     "))
+  )  # end tagList for header
   ),
   useShinyjs(),
 
-  # Navigation panels
+  # Navigation panels — Setup Wizard is NOT a tab; it's the full-screen overlay above
   nav_panel(
     title = "Dashboard",
     icon = icon("home"),
@@ -332,11 +348,6 @@ ui <- page_navbar(
     title = "Compare",
     icon = icon("code-compare"),
     compare_ui("compare")
-  ),
-  nav_panel(
-    title = "Setup Wizard",
-    icon = icon("wand-magic-sparkles"),
-    setup_wizard_ui("setup_wizard")
   )
 )
 
@@ -345,10 +356,11 @@ server <- function(input, output, session) {
 
   # Shared reactive values
   shared <- reactiveValues(
-    current_run = NULL,
-    run_status = "idle",
+    current_run  = NULL,
+    run_status   = "idle",
     setup_complete = file.exists(file.path(dirname(getwd()), ".setup_complete")),
-    goto_page = NULL
+    goto_page    = NULL,
+    show_wizard  = FALSE   # set TRUE by dashboard "Return to Wizard" button
   )
 
   # Module servers
@@ -359,31 +371,9 @@ server <- function(input, output, session) {
   pipeline_modal_server("pipeline_modal", shared)
   setup_wizard_server("setup_wizard", shared)
 
-  # Check if setup is complete on startup
-  observe({
-    if (!shared$setup_complete) {
-      showModal(modalDialog(
-        title = "Welcome to STaBioM",
-        "It looks like this is your first time using STaBioM. Please complete the Setup Wizard before running pipelines.",
-        footer = tagList(
-          modalButton("Cancel"),
-          actionButton("goto_setup", "Go to Setup Wizard", class = "btn-primary")
-        ),
-        easyClose = FALSE
-      ))
-    }
-  })
-
-  observeEvent(input$goto_setup, {
-    removeModal()
-    updateNavbarPage(session, "main_nav", "Setup Wizard")
-  })
-
   # Handle page navigation from modules
   observeEvent(shared$goto_page, {
-    cat("[DEBUG app.R] goto_page changed to:", shared$goto_page, "\n")
     if (!is.null(shared$goto_page)) {
-      cat("[DEBUG app.R] Navigating to:", shared$goto_page, "\n")
       updateNavbarPage(session, "main_nav", shared$goto_page)
       shared$goto_page <- NULL
     }

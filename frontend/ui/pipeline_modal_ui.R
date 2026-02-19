@@ -23,15 +23,15 @@ pipeline_modal_ui <- function(run_id, pipeline, config_json, session) {
         background: #000000;
         color: #888888;
         font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
-        font-size: 0.875rem;
-        line-height: 1.5;
+        font-size: 0.72rem;
+        line-height: 1.35;
         white-space: pre-wrap;
         word-wrap: break-word;
         margin: 0;
-        padding: 1rem;
+        padding: 0.75rem;
         border: none;
-        overflow-y: auto;
-        height: 450px;
+        /* No height/overflow here — let it grow naturally so the
+           outer container is the single scroll surface */
       }
       .log-scroll-container {
         height: 450px;
@@ -44,12 +44,21 @@ pipeline_modal_ui <- function(run_id, pipeline, config_json, session) {
     ")),
 
     tags$script(HTML("
-      Shiny.addCustomMessageHandler('scrollLogs', function(id) {
-        var el = document.getElementById(id);
-        if (el) {
-          el.scrollTop = el.scrollHeight;
-        }
-      });
+      (function() {
+        // Target the outer container — it is a stable DOM node that is never
+        // replaced by Shiny. The inner uiOutput div grows in height as
+        // renderUI injects new content, pushing the outer container's
+        // scrollHeight up. We read scrollHeight inside requestAnimationFrame
+        // so the browser has finished layout before we set scrollTop.
+        setInterval(function() {
+          var el = document.getElementById('pipeline_modal-log_container');
+          if (el) {
+            requestAnimationFrame(function() {
+              el.scrollTop = el.scrollHeight;
+            });
+          }
+        }, 600);
+      })();
     ")),
 
     div(
@@ -102,14 +111,7 @@ pipeline_modal_ui <- function(run_id, pipeline, config_json, session) {
           style = "display: flex; flex-direction: column; padding: 1.5rem;",
           div(
             class = "mb-3",
-            div(
-              class = "d-flex justify-content-between align-items-center",
-              h5(class = "mb-0", icon("terminal"), " Pipeline Logs"),
-              div(
-                style = "display: inline-block;",
-                checkboxInput(ns("auto_scroll"), "Auto-scroll", value = TRUE)
-              )
-            )
+            h5(class = "mb-0", icon("terminal"), " Pipeline Logs")
           ),
 
           # Single continuous log stream

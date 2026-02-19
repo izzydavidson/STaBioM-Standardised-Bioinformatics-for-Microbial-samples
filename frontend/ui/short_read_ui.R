@@ -222,12 +222,12 @@ short_read_ui <- function(id) {
               ),
 
               conditionalPanel(
-                condition = sprintf("input['%s'] != ''", ns("external_db_dir")),
+                condition = sprintf("input['%s'] == 'sr_meta' && input['%s'] != ''", ns("pipeline"), ns("external_db_dir")),
                 div(
                   class = "mb-3",
                   tags$label(class = "form-label", "Database Type (if using external database)"),
                   selectInput(ns("database_type"), NULL,
-                    choices = c("Auto-detect" = "auto", "Kraken2" = "kraken2", "SILVA" = "silva", "Greengenes" = "greengenes"),
+                    choices = c("Auto-detect" = "auto", "Kraken2" = "kraken2"),
                     selected = "auto"
                   )
                 )

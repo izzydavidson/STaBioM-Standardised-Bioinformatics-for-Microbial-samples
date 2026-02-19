@@ -23,13 +23,15 @@ discover_run_logs <- function(run_dir, pipeline_key) {
     )
   }
 
-  # 2. Step-specific logs
+  # 2. Step-specific logs (search root + one subdirectory level)
   step_logs_dir <- file.path(run_dir, pipeline_key, "logs")
   if (dir.exists(step_logs_dir)) {
-    step_log_files <- list.files(step_logs_dir, pattern = "\\.log$", full.names = TRUE)
+    # Recursive = TRUE captures both root logs and r_postprocess/ subdirectory
+    step_log_files <- list.files(step_logs_dir, pattern = "\\.log$",
+                                  full.names = TRUE, recursive = TRUE)
 
     if (length(step_log_files) > 0) {
-      # Sort alphabetically
+      # Sort alphabetically (z_frontend_postprocess.log sorts last)
       step_log_files <- sort(step_log_files)
 
       for (i in seq_along(step_log_files)) {
@@ -39,6 +41,13 @@ discover_run_logs <- function(run_dir, pipeline_key) {
         # Create display name from filename
         display_name <- gsub("\\.log$", "", log_basename)
         display_name <- tools::toTitleCase(display_name)
+
+        # Prefix subdirectory name to display name for clarity
+        rel_dir <- dirname(log_file)
+        sub_name <- basename(rel_dir)
+        if (sub_name != "logs") {
+          display_name <- paste0(tools::toTitleCase(sub_name), " / ", display_name)
+        }
 
         logs[[length(logs) + 1]] <- list(
           name = log_basename,
