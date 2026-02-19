@@ -305,13 +305,57 @@ short_read_server <- function(id, shared) {
         database_type = input$database_type,
         run_scope = input$run_scope,
         valencia = input$valencia,
-        output_selected = output_selected
+        output_selected = output_selected,
+        enable_postprocess = any(c(isTRUE(input$output_raw_csv), isTRUE(input$output_pie_chart),
+                                   isTRUE(input$output_heatmap), isTRUE(input$output_stacked_bar),
+                                   isTRUE(input$output_quality_reports)))
       )
 
       config <- if (input$pipeline == "sr_amp") {
         generate_sr_amp_config(params)
       } else {
         generate_sr_meta_config(params)
+      }
+
+      dep_validation <- validate_dependencies(config)
+
+      if (!dep_validation$valid) {
+        error_msg <- paste(c(
+          "Missing required dependencies:",
+          dep_validation$errors
+        ), collapse = "\n• ")
+
+        showModal(modalDialog(
+          title = "Missing Dependencies",
+          tags$div(
+            class = "alert alert-danger",
+            icon("triangle-exclamation"), " ", tags$b("Cannot start pipeline"),
+            tags$ul(
+              class = "mt-2 mb-0",
+              lapply(dep_validation$errors, function(e) tags$li(e))
+            )
+          ),
+          footer = tagList(
+            actionButton("goto_setup_from_error", "Go to Setup Wizard", class = "btn-primary"),
+            modalButton("Cancel")
+          ),
+          easyClose = FALSE
+        ))
+
+        observeEvent(input$goto_setup_from_error, {
+          removeModal()
+          shared$goto_page <- "Setup Wizard"
+        }, once = TRUE)
+
+        return()
+      }
+
+      if (length(dep_validation$warnings) > 0) {
+        showNotification(
+          paste(dep_validation$warnings, collapse = "\n"),
+          type = "warning",
+          duration = 10
+        )
       }
 
       config_file <- save_config(config, run_id)
@@ -325,6 +369,7 @@ short_read_server <- function(id, shared) {
       )
 
       cat("[DEBUG] Config saved to:", config_file, "\n")
+      cat("[DEBUG] Dependency validation passed\n")
       cat("[DEBUG] Setting run_status to ready (will trigger modal)\n")
 
       shared$run_status <- "ready"

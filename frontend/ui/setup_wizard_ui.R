@@ -1,115 +1,268 @@
+# ---------------------------------------------------------------------------
+# setup_wizard_ui.R
+# Full-screen setup wizard overlay — shown on first launch and via
+# "Return to Wizard" dashboard button.  NOT a nav tab.
+# ---------------------------------------------------------------------------
+
+WIZARD_CSS <- "
+/* ---- Overlay root ---- */
+#setup-wizard-overlay {
+  position: fixed;
+  inset: 0;
+  background: #f8fafc;
+  z-index: 9999;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- Top bar ---- */
+.wiz-topbar {
+  background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+  color: white;
+  padding: 0.875rem 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,.15);
+}
+.wiz-brand { font-size: 1.35rem; font-weight: 700; letter-spacing: -0.02em; }
+.wiz-brand-sub { font-size: 0.78rem; opacity: .65; margin-top: 1px; }
+
+/* ---- Scrollable content ---- */
+.wiz-body {
+  flex: 1;
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 6rem;
+  width: 100%;
+}
+
+/* ---- Section card ---- */
+.wiz-section {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  margin-bottom: 1.25rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06);
+}
+.wiz-section-hdr {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.625rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid #f1f5f9;
+}
+.wiz-step-badge {
+  background: #3b82f6;
+  color: white;
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.8125rem; font-weight: 700;
+  flex-shrink: 0;
+}
+.wiz-section-title { font-size: 1.0625rem; font-weight: 700; color: #1e293b; }
+.wiz-section-desc  { color: #64748b; font-size: 0.84rem; margin-bottom: 0.875rem; line-height: 1.5; }
+
+/* ---- Item cards ---- */
+.wiz-item {
+  border: 2px solid #e2e8f0;
+  border-radius: 0.5rem;
+  padding: 0.875rem 1rem;
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+  position: relative;
+  background: white;
+}
+.wiz-item:hover               { border-color: #3b82f6; background: #f8fafc; }
+.wiz-item.wiz-installed        { border-color: #10b981; background: #f0fdf4; cursor: default; }
+.wiz-item.wiz-installed:hover  { border-color: #059669; background: #dcfce7; }
+
+.wiz-installed-badge {
+  position: absolute;
+  top: 0.5rem; right: 0.75rem;
+  background: #10b981;
+  color: white;
+  font-size: 0.68rem; font-weight: 700;
+  padding: 0.2rem 0.55rem;
+  border-radius: 9999px;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.wiz-item-body  { flex: 1; min-width: 0; }
+.wiz-item-name  { font-weight: 600; color: #1e293b; font-size: 0.9rem; margin-bottom: 2px; }
+.wiz-item-desc  { color: #64748b; font-size: 0.8125rem; margin-bottom: 2px; }
+.wiz-item-meta  { color: #94a3b8; font-size: 0.75rem; }
+
+/* ---- Docker row ---- */
+.wiz-docker-row {
+  display: flex; align-items: center; gap: 0.75rem;
+  padding: 0.875rem; background: #f8fafc;
+  border: 1px solid #e2e8f0; border-radius: 0.5rem;
+  margin-top: 0.625rem;
+}
+.wiz-docker-icon {
+  width: 28px; height: 28px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; flex-shrink: 0;
+}
+.wiz-dok-ok  { background: #dcfce7; color: #059669; }
+.wiz-dok-err { background: #fee2e2; color: #dc2626; }
+.wiz-dok-chk { background: #fef3c7; color: #b45309; font-size: 11px; }
+
+/* ---- Progress ---- */
+.wiz-progress-card {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  margin-bottom: 1.25rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06);
+}
+.wiz-prog-label { color: #475569; font-size: 0.84rem; margin-bottom: 0.375rem; }
+.wiz-prog-track {
+  background: #e2e8f0; height: 10px;
+  border-radius: 5px; overflow: hidden; margin-bottom: 1rem;
+}
+.wiz-prog-fill {
+  background: linear-gradient(90deg, #3b82f6 0%, #2563eb 100%);
+  height: 100%; width: 0%; transition: width .4s ease;
+}
+.wiz-log-box {
+  background: #0f172a; border-radius: 0.5rem;
+  padding: 1rem;
+  font-family: 'SF Mono', 'Fira Code', 'Courier New', monospace;
+  font-size: 0.8rem; color: #cbd5e1;
+  max-height: 320px; overflow-y: auto;
+  line-height: 1.6;
+}
+.wiz-ll { margin-bottom: 1px; white-space: pre-wrap; word-break: break-word; }
+.wiz-ll-ok  { color: #4ade80; font-weight: 500; }
+.wiz-ll-err { color: #f87171; font-weight: 500; }
+.wiz-ll-hdr { color: #93c5fd; font-weight: 600; }
+
+/* ---- Sticky footer ---- */
+.wiz-footer {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  background: white;
+  border-top: 1px solid #e2e8f0;
+  padding: 0.875rem 1.75rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 -4px 6px -1px rgba(0,0,0,.06);
+  z-index: 10;
+}
+.wiz-footer-right { display: flex; gap: 0.625rem; align-items: center; }
+.wiz-sel-count { color: #475569; font-size: 0.84rem; }
+"
+
+WIZARD_JS <- "
+$(document).on('click', '.wiz-item:not(.wiz-installed)', function(e) {
+  if ($(e.target).is('input[type=checkbox]')) return;
+  var cb = $(this).find('input[type=checkbox]');
+  if (cb.length) cb.prop('checked', !cb.prop('checked')).trigger('change');
+});
+"
+
+# ---------------------------------------------------------------------------
+# UI function (always in DOM — shown/hidden by app.R server via shinyjs)
+# ---------------------------------------------------------------------------
 setup_wizard_ui <- function(id) {
   ns <- NS(id)
 
   tagList(
-    div(
-      class = "container-fluid p-4",
+    tags$style(HTML(WIZARD_CSS)),
+    tags$script(HTML(WIZARD_JS)),
 
-      # Page header
-      div(
-        class = "mb-4",
-        h1("Setup Wizard"),
-        p(class = "text-muted", "Configure STaBioM and download required tools")
-      ),
-
-      # Setup status
-      div(
-        class = "card mb-4",
+    # ---- Top bar -------------------------------------------------------
+    div(class = "wiz-topbar",
         div(
-          class = "card-body",
-          h2("Setup Status"),
-          div(
-            class = "mt-3",
-            uiOutput(ns("setup_status"))
-          )
-        )
-      ),
+          div(class = "wiz-brand", "\U0001F9EC STaBioM"),
+          div(class = "wiz-brand-sub",
+              "Setup Wizard — configure your analysis environment")
+        ),
+        tags$span(style = "opacity:.5; font-size:.75rem;",
+                  "Complete setup to unlock all pipelines")
+    ),
 
-      # Launch setup wizard
-      div(
-        class = "card mb-4",
-        div(
-          class = "card-body",
-          h2("Run Setup"),
-          p("The setup wizard will guide you through:"),
-          tags$ul(
-            tags$li("Installing R package dependencies (automatic)"),
-            tags$li("Adding STaBioM to your PATH"),
-            tags$li("Checking Docker installation"),
-            tags$li("Downloading reference databases (Kraken2, Emu)"),
-            tags$li("Downloading VALENCIA for vaginal CST classification"),
-            tags$li("Downloading Dorado models for FAST5 basecalling")
-          ),
-          div(
-            class = "mt-4",
-            actionButton(ns("launch_wizard"), "Launch Setup Wizard",
-              icon = icon("wand-magic-sparkles"),
-              class = "btn btn-primary btn-lg"
-            ),
-            actionButton(ns("check_status"), "Refresh Status",
-              icon = icon("rotate"),
-              class = "btn btn-outline-secondary ms-2"
+    # ---- Scrollable body -----------------------------------------------
+    div(class = "wiz-body",
+
+        # Step 1 — Docker
+        div(class = "wiz-section",
+            div(class = "wiz-section-hdr",
+                div(class = "wiz-step-badge", "1"),
+                span(class = "wiz-section-title", "Docker")),
+            p(class = "wiz-section-desc",
+              "STaBioM runs all pipelines inside Docker containers. Docker must be installed and running before you can analyse samples."),
+            uiOutput(ns("docker_status_ui"))
+        ),
+
+        # Step 2 — Databases
+        div(class = "wiz-section",
+            div(class = "wiz-section-hdr",
+                div(class = "wiz-step-badge", "2"),
+                span(class = "wiz-section-title", "Reference Databases")),
+            p(class = "wiz-section-desc",
+              "Select the databases required for your pipeline type. Green cards are already installed."),
+            uiOutput(ns("databases_ui"))
+        ),
+
+        # Step 3 — Tools
+        div(class = "wiz-section",
+            div(class = "wiz-section-hdr",
+                div(class = "wiz-step-badge", "3"),
+                span(class = "wiz-section-title", "Analysis Tools")),
+            p(class = "wiz-section-desc",
+              "Optional tools for specific sample types (e.g. vaginal CST classification)."),
+            uiOutput(ns("tools_ui"))
+        ),
+
+        # Step 4 — Dorado models
+        div(class = "wiz-section",
+            div(class = "wiz-section-hdr",
+                div(class = "wiz-step-badge", "4"),
+                span(class = "wiz-section-title", "Dorado Basecalling Models")),
+            p(class = "wiz-section-desc",
+              "Required for long-read pipelines that start from FAST5/POD5 raw signal files. Select at least one model."),
+            uiOutput(ns("models_ui"))
+        ),
+
+        # Progress card (hidden until install begins)
+        div(id = ns("wiz-prog-wrap"), style = "display:none;",
+            div(class = "wiz-progress-card",
+                h3(style = "font-size:.9375rem; font-weight:700; color:#1e293b; margin-bottom:.875rem;",
+                   "Installation Progress"),
+                div(class = "wiz-prog-label", textOutput(ns("prog_label"))),
+                div(class = "wiz-prog-track",
+                    div(id  = ns("wiz-prog-fill"), class = "wiz-prog-fill")),
+                div(class = "wiz-log-box", id = ns("wiz-log-box"),
+                    uiOutput(ns("install_log_ui")))
             )
-          ),
-          hr(),
-          div(
-            class = "alert alert-warning",
-            role = "alert",
-            icon("triangle-exclamation"), " ", tags$b("Note:"), " The setup wizard will open in a terminal window. Follow the interactive prompts there."
-          )
         )
-      ),
+    ),
 
-      # Terminal output for setup
-      conditionalPanel(
-        condition = sprintf("output['%s']", ns("has_setup_output")),
-        div(
-          class = "card",
-          div(
-            class = "card-body",
-            h2("Setup Output"),
-            div(
-              class = "terminal-output",
-              style = "max-height: 400px;",
-              uiOutput(ns("setup_output"))
-            )
-          )
+    # ---- Sticky footer -------------------------------------------------
+    div(class = "wiz-footer",
+        actionButton(ns("skip_wizard"), "Skip for Now",
+                     class = "btn btn-outline-secondary btn-sm"),
+        div(class = "wiz-footer-right",
+            uiOutput(ns("sel_count_ui")),
+            actionButton(ns("start_install"), "Download & Install Selected",
+                         icon  = icon("download"),
+                         class = "btn btn-primary btn-sm")
         )
-      ),
-
-      # Manual setup options
-      div(
-        class = "card",
-        div(
-          class = "card-body",
-          h2("Manual Setup Options"),
-          p("Advanced users can run specific setup commands:"),
-          div(
-            class = "row mt-3",
-            div(
-              class = "col-md-6 mb-3",
-              tags$label(class = "form-label", "Database to Download"),
-              selectInput(ns("database_choice"), NULL,
-                choices = c(
-                  "Select..." = "",
-                  "Kraken2 Standard-8" = "kraken2-standard-8",
-                  "Kraken2 Standard-16" = "kraken2-standard-16",
-                  "Emu Default" = "emu-default"
-                )
-              )
-            ),
-            div(
-              class = "col-md-6 mb-3",
-              div(style = "margin-top: 32px;",
-                actionButton(ns("download_db"), "Download Database",
-                  icon = icon("download"),
-                  class = "btn btn-primary"
-                )
-              )
-            )
-          )
-        )
-      )
     )
   )
 }
