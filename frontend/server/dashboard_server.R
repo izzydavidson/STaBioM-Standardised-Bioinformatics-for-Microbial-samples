@@ -91,6 +91,9 @@ dashboard_server <- function(id, shared) {
     }
 
     project_stats <- reactive({
+      # Update every 2 seconds to show new/updated runs
+      invalidateLater(2000)
+
       outputs_dir <- file.path(dirname(getwd()), "outputs")
 
       if (!dir.exists(outputs_dir)) {
@@ -174,9 +177,10 @@ dashboard_server <- function(id, shared) {
     output$recent_projects_table <- renderTable({
       recent <- project_stats()$recent
 
-      if (nrow(recent) == 0) {
+      if (is.null(recent) || nrow(recent) == 0) {
         return(data.frame(
-          Message = "No projects found. Run a pipeline to get started!"
+          Message = "No projects found. Run a pipeline to get started!",
+          check.names = FALSE
         ))
       }
 
@@ -202,6 +206,19 @@ dashboard_server <- function(id, shared) {
 
     observeEvent(input$return_to_wizard, {
       shared$show_wizard <- TRUE
+    }, ignoreInit = TRUE)
+
+    # Manual refresh trigger
+    manual_refresh <- reactiveVal(0)
+
+    observeEvent(input$refresh_dashboard, {
+      manual_refresh(manual_refresh() + 1)
+    }, ignoreInit = TRUE)
+
+    # Modify project_stats to depend on manual_refresh
+    observe({
+      manual_refresh()
+      project_stats()
     })
   })
 }

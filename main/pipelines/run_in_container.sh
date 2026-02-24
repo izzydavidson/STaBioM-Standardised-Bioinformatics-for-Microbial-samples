@@ -1751,6 +1751,7 @@ DOCKER_ARGS=(
   -e STABIOM_HOST_GID="${HOST_GID}"
   -e STABIOM_HOST_OS="${HOST_OS}"
   -e STABIOM_HOST_HOME="${HOST_HOME}"
+  -e DORADO_MODEL_DIR="${DORADO_MODEL_DIR:-}"
   -v "${REPO_ROOT}:/work:rw"
   -w "/work"
 )

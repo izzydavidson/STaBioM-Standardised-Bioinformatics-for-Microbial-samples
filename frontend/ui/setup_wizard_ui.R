@@ -82,7 +82,10 @@ WIZARD_CSS <- "
   position: relative;
   background: white;
 }
-.wiz-item:hover               { border-color: #3b82f6; background: #f8fafc; }
+.wiz-item:hover                { border-color: #3b82f6; background: #f8fafc; }
+.wiz-item.wiz-selected         { border-color: #3b82f6; background: #eff6ff; }
+.wiz-item.wiz-selected:hover   { border-color: #2563eb; background: #dbeafe; }
+.wiz-item.wiz-selected .wiz-item-name { color: #1d4ed8; }
 .wiz-item.wiz-installed        { border-color: #10b981; background: #f0fdf4; cursor: default; }
 .wiz-item.wiz-installed:hover  { border-color: #059669; background: #dcfce7; }
 
@@ -168,10 +171,12 @@ WIZARD_CSS <- "
 "
 
 WIZARD_JS <- "
+// Card click — toggle .wiz-selected class and update footer count badge.
+// IDs are read from data-wiz-id attributes; no Shiny checkbox inputs needed.
 $(document).on('click', '.wiz-item:not(.wiz-installed)', function(e) {
-  if ($(e.target).is('input[type=checkbox]')) return;
-  var cb = $(this).find('input[type=checkbox]');
-  if (cb.length) cb.prop('checked', !cb.prop('checked')).trigger('change');
+  $(this).toggleClass('wiz-selected');
+  var count = $('.wiz-item.wiz-selected').length;
+  Shiny.setInputValue('setup_wizard-wiz_n_sel', count, {priority: 'event'});
 });
 "
 
@@ -219,13 +224,13 @@ setup_wizard_ui <- function(id) {
             uiOutput(ns("databases_ui"))
         ),
 
-        # Step 3 — Tools
+        # Step 3 — Tools (VALENCIA + Dorado binaries)
         div(class = "wiz-section",
             div(class = "wiz-section-hdr",
                 div(class = "wiz-step-badge", "3"),
                 span(class = "wiz-section-title", "Analysis Tools")),
             p(class = "wiz-section-desc",
-              "Optional tools for specific sample types (e.g. vaginal CST classification)."),
+              "Optional tools for specific sample types (e.g. vaginal CST classification). Also select a Dorado binary here \u2014 required before downloading basecalling models in Step 4."),
             uiOutput(ns("tools_ui"))
         ),
 
@@ -235,7 +240,7 @@ setup_wizard_ui <- function(id) {
                 div(class = "wiz-step-badge", "4"),
                 span(class = "wiz-section-title", "Dorado Basecalling Models")),
             p(class = "wiz-section-desc",
-              "Required for long-read pipelines that start from FAST5/POD5 raw signal files. Select at least one model."),
+              "Required for long-read pipelines starting from FAST5/POD5 raw signal files. Install a Dorado binary in Step 3 first, then select models below."),
             uiOutput(ns("models_ui"))
         ),
 

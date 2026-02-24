@@ -430,6 +430,62 @@ generate_sr_meta_config <- function(params) {
   human_depletion <- if (!is.null(params$human_depletion) && isTRUE(params$human_depletion)) 1L else 0L
   cat("[WIRE] params.common.remove_host:", human_depletion, "(from human_depletion =", isTRUE(params$human_depletion), ")\n")
 
+  # --- minimap2 human genome index auto-detection ---
+  # Not a UI control - auto-detected from filesystem.
+  # Config: config$tools$minimap2$human_mmi + config$tools$minimap2$split_prefix
+  # Pipeline reads: .tools.minimap2.human_mmi (sr_meta.sh, run_in_container.sh)
+  # Matches WIZARD_REFERENCE_INDEXES naming (all 4 strategies, priority order).
+  # split_prefix: 1 for split indexes, 0 for standard/lowmem (matches CLI runner.py)
+  repo_root_sr_meta <- dirname(getwd())
+  grch38_dir_sr     <- file.path(repo_root_sr_meta, "main", "data", "reference", "human", "grch38")
+  mmi_candidates_sr <- list(
+    list(name = "GRCh38.primary_assembly.genome.mmi",         split = 0L),
+    list(name = "GRCh38.primary_assembly.genome.lowmem.mmi",  split = 0L),
+    list(name = "GRCh38.primary_assembly.genome.split2G.mmi", split = 1L),
+    list(name = "GRCh38.primary_assembly.genome.split4G.mmi", split = 1L)
+  )
+  human_mmi_path    <- ""
+  minimap2_split_sr <- 0L
+  for (cand in mmi_candidates_sr) {
+    p <- file.path(grch38_dir_sr, cand$name)
+    if (file.exists(p)) {
+      human_mmi_path    <- p
+      minimap2_split_sr <- cand$split
+      cat("[WIRE] tools.minimap2.human_mmi: auto-detected at", p, "\n")
+      cat("[WIRE] tools.minimap2.split_prefix:", minimap2_split_sr, "\n")
+      break
+    }
+  }
+  if (human_mmi_path == "") {
+    cat("[WIRE] tools.minimap2.human_mmi: NOT FOUND - run Setup Wizard to build minimap2 index\n")
+    if (human_depletion == 1L) {
+      cat("[WIRE] WARNING: human_depletion=1 but no minimap2 index found - pipeline will fail\n")
+    }
+  }
+
+  # --- VALENCIA centroids auto-detection (vaginal specimens only) ---
+  # Mirrors generate_sr_amp_config VALENCIA handling exactly.
+  # Pipeline reads: .valencia.enabled, .valencia.centroids_csv (sr_meta.sh)
+  valencia_centroids_candidates_sr <- c(
+    file.path(repo_root_sr_meta, "tools", "VALENCIA", "CST_centroids_012920.csv"),
+    file.path(repo_root_sr_meta, "main", "tools", "VALENCIA", "CST_centroids_012920.csv")
+  )
+  valencia_centroids_path_sr <- ""
+  for (candidate in valencia_centroids_candidates_sr) {
+    if (file.exists(candidate)) {
+      valencia_centroids_path_sr <- candidate
+      cat("[WIRE] valencia.centroids_csv: auto-detected at", valencia_centroids_path_sr, "\n")
+      break
+    }
+  }
+  if (valencia_centroids_path_sr == "") {
+    cat("[WIRE] valencia.centroids_csv: NOT FOUND - using default path\n")
+    valencia_centroids_path_sr <- file.path(repo_root_sr_meta, "tools", "VALENCIA", "CST_centroids_012920.csv")
+  }
+  valencia_enabled_sr <- if (specimen == "vaginal" &&
+                              !is.null(params$valencia) && params$valencia == "yes") 1L else 0L
+  cat("[WIRE] valencia.enabled:", valencia_enabled_sr, "\n")
+
   # --- postprocess enabled ---
   # UI: checkboxInput("enable_postprocess") default=TRUE
   # Config: config$postprocess$enabled (integer: 1 or 0)
@@ -449,7 +505,7 @@ generate_sr_meta_config <- function(params) {
     stacked_bar        = pp_step("stacked_bar", output_selected, postprocess_enabled),
     results_csv        = postprocess_enabled,  # always on — tables always generated
     relative_abundance = 0L,
-    valencia           = 0L  # sr_meta: no VALENCIA
+    valencia           = if (postprocess_enabled == 1L && valencia_enabled_sr == 1L) 1L else 0L
   )
   cat("[WIRE] postprocess.steps.heatmap:", postprocess_steps$heatmap, "\n")
   cat("[WIRE] postprocess.steps.piechart:", postprocess_steps$piechart, "(from 'pie_chart' in output_selected)\n")
@@ -531,6 +587,33 @@ generate_sr_meta_config <- function(params) {
     )
   }
 
+  # --- minimap2 index (always output when found, pipeline ignores if remove_host=0) ---
+  # Pipeline reads: .tools.minimap2.human_mmi (sr_meta.sh, run_in_container.sh)
+  #                 .tools.minimap2.split_prefix (sr_meta.sh)
+  if (human_mmi_path != "") {
+    if (is.null(config$tools)) config$tools <- list()
+    config$tools$minimap2 <- list(
+      human_mmi    = human_mmi_path,
+      split_prefix = minimap2_split_sr
+    )
+  }
+
+  # --- VALENCIA (conditional: vaginal only) ---
+  # Pipeline reads: .valencia.enabled, .valencia.centroids_csv (sr_meta.sh)
+  if (specimen == "vaginal") {
+    config$valencia <- list(
+      enabled       = valencia_enabled_sr,
+      mode          = "auto",
+      centroids_csv = valencia_centroids_path_sr
+    )
+    cat("[WIRE] valencia.enabled:", valencia_enabled_sr, "| centroids_csv:", valencia_centroids_path_sr, "\n")
+    config$postprocess$steps$valencia <- if (postprocess_enabled == 1L && valencia_enabled_sr == 1L) 1L else 0L
+    cat("[WIRE] postprocess.steps.valencia:", config$postprocess$steps$valencia, "\n")
+  } else {
+    cat("[WIRE] valencia: omitted (specimen is", specimen, "not vaginal)\n")
+    config$postprocess$steps$valencia <- 0L
+  }
+
   # --- pre-return audit ---
   cat("\n[AUDIT] sr_meta config field check:\n")
   cat("  pipeline_id:                        ", config$pipeline_id, "\n")
@@ -555,6 +638,12 @@ generate_sr_meta_config <- function(params) {
   cat("  postprocess.steps.relative_abundance:", config$postprocess$steps$relative_abundance, "\n")
   if (!is.null(config$host$resources$kraken2_db)) {
     cat("  host.resources.kraken2_db:          ", config$host$resources$kraken2_db$host_path, "\n")
+  }
+  cat("  tools.minimap2.human_mmi:           ", if (!is.null(config$tools$minimap2$human_mmi)) config$tools$minimap2$human_mmi else "(not set)", "\n")
+  cat("  postprocess.steps.valencia:         ", config$postprocess$steps$valencia, "\n")
+  if (!is.null(config$valencia)) {
+    cat("  valencia.enabled:                   ", config$valencia$enabled, "\n")
+    cat("  valencia.centroids_csv:             ", config$valencia$centroids_csv, "\n")
   }
   cat("========== SR_META CONFIG COMPLETE ==========\n\n")
 
@@ -581,11 +670,18 @@ generate_lr_amp_config <- function(params) {
 
   input_obj <- list(style = input_style)
   if (input_style == "FASTQ_SINGLE") {
-    input_obj$fastq_r1 <- params$input_path
-    cat("[WIRE] input.fastq_r1:", params$input_path, "\n")
+    input_obj$fastq <- params$input_path
+    cat("[WIRE] input.fastq:", params$input_path, "\n")
   } else {
-    input_obj$fast5_dir <- params$input_path
-    cat("[WIRE] input.fast5_dir:", params$input_path, "\n")
+    # FAST5_DIR or POD5_DIR - ensure we have a directory, not a file
+    fast5_path <- params$input_path
+    if (file.exists(fast5_path) && !dir.exists(fast5_path)) {
+      # User selected a file instead of directory - use parent directory
+      fast5_path <- dirname(fast5_path)
+      cat("[WIRE] Detected file instead of directory, using parent:", fast5_path, "\n")
+    }
+    input_obj$fast5_dir <- fast5_path
+    cat("[WIRE] input.fast5_dir:", fast5_path, "\n")
   }
 
   # --- threads ---
@@ -696,6 +792,22 @@ generate_lr_amp_config <- function(params) {
   if (!is.null(trim_adapter)) params_common$trim_adapter <- trim_adapter
   if (!is.null(demultiplex))  params_common$demultiplex  <- demultiplex
 
+  # --- Emu database and binary auto-detection ---
+  # LR_AMP requires Emu database for taxonomic classification
+  # Pipeline script reads from config$tools$emu$db and config$tools$emu$bin
+  emu_db_path <- file.path(repo_root, "main", "data", "reference", "emu")
+  if (file.exists(emu_db_path)) {
+    cat("[WIRE] tools.emu.db: auto-detected at", emu_db_path, "\n")
+  } else {
+    emu_db_path <- ""
+    cat("[WIRE] tools.emu.db: NOT FOUND - Emu classification will be skipped\n")
+  }
+
+  # Emu binary (Python script in container)
+  # In Docker container, this is at /work/pipelines/patches/emu_v3.5.5_patched.py
+  emu_bin_path <- "/work/pipelines/patches/emu_v3.5.5_patched.py"
+  cat("[WIRE] tools.emu.bin:", emu_bin_path, "(Python script in container)\n")
+
   # --- build tools block ---
   tools_obj <- list(
     qfilter = list(enabled = 1L, min_q = quality_threshold)
@@ -704,20 +816,87 @@ generate_lr_amp_config <- function(params) {
     tools_obj$qfilter$min_len <- min_read_length
   }
 
-  cat("[WIRE] tools.emu.db: (auto-detected by container at runtime)\n")
+  # Add Emu database path and binary
+  if (emu_db_path != "") {
+    tools_obj$emu <- list(
+      db = emu_db_path,
+      bin = emu_bin_path
+    )
+  }
 
   # Dorado settings (FAST5/POD5 only)
   if (input_format %in% c("fast5", "pod5")) {
     dorado_obj <- list()
-    if (!is.null(params$dorado_model)     && nchar(trimws(params$dorado_model)) > 0)
-      dorado_obj$model      <- trimws(params$dorado_model)
-    if (!is.null(params$dorado_bin)       && nchar(trimws(params$dorado_bin)) > 0)
-      dorado_obj$bin        <- trimws(params$dorado_bin)
-    if (!is.null(params$dorado_models_dir) && nchar(trimws(params$dorado_models_dir)) > 0)
-      dorado_obj$models_dir <- trimws(params$dorado_models_dir)
+
+    # Auto-detect Dorado binary for Docker (Linux version at tools/dorado/)
+    # Wizard downloads Linux version to tools/dorado/ for use inside Docker container
+    dorado_bin_host <- file.path(repo_root, "tools", "dorado", "bin", "dorado")
+
+    if (!file.exists(dorado_bin_host)) {
+      # Check for version-specific installations (e.g., dorado-0.9.6)
+      tools_dir <- file.path(repo_root, "tools")
+      dorado_dirs <- list.dirs(tools_dir, full.names = TRUE, recursive = FALSE)
+      dorado_dirs <- dorado_dirs[grepl("^dorado-[0-9]", basename(dorado_dirs))]
+      dorado_dirs <- dorado_dirs[!grepl("-host$", basename(dorado_dirs))]  # Skip macOS host binaries
+
+      if (length(dorado_dirs) > 0) {
+        # Use the first (or newest) version found
+        dorado_dirs <- sort(dorado_dirs, decreasing = TRUE)
+        dorado_bin_host <- file.path(dorado_dirs[1], "bin", "dorado")
+      }
+    }
+
+    # Binary path — tools/ is at the repo root, which is OUTSIDE main/.
+    # Docker mounts main/ at /work, so /work/tools/ does NOT exist.
+    # run_in_container.sh also mounts /Users:/Users (macOS) and REPO_ROOT:REPO_ROOT,
+    # so the host absolute path of the binary is directly accessible inside the container.
+    if (file.exists(dorado_bin_host)) {
+      dorado_obj$bin       <- dorado_bin_host   # tools.dorado.bin  (nested, legacy)
+      tools_obj$dorado_bin <- dorado_bin_host   # tools.dorado_bin  (flat — what lr_amp.sh reads)
+      cat("[WIRE] tools.dorado_bin:", dorado_bin_host, "\n")
+    } else {
+      cat("[WIRE] WARNING: Dorado Linux binary not found under tools/\n")
+      cat("[WIRE] Run Setup Wizard to download Dorado for Docker\n")
+    }
+
+    # Model: Use NAME ONLY like CLI does - script will combine with models directory
+    dorado_model <- if (!is.null(params$dorado_model) && nchar(trimws(params$dorado_model)) > 0) {
+      trimws(params$dorado_model)
+    } else {
+      # Auto-detect: prefer v3.5.2 if installed (for 4kHz data), else v5.2.0
+      models_dir_host <- file.path(repo_root, "tools", "models", "dorado")
+      v352_name <- "dna_r10.4.1_e8.2_400bps_hac@v3.5.2"
+      v420_name <- "dna_r10.4.1_e8.2_400bps_hac@v4.2.0"
+      v520_name <- "dna_r10.4.1_e8.2_400bps_hac@v5.2.0"
+
+      v352_path <- file.path(models_dir_host, v352_name)
+      v420_path <- file.path(models_dir_host, v420_name)
+      v520_path <- file.path(models_dir_host, v520_name)
+
+      if (dir.exists(v352_path)) {
+        cat("[WIRE] Auto-detected v3.5.2 model for 4kHz data\n")
+        v352_name
+      } else if (dir.exists(v420_path)) {
+        cat("[WIRE] Auto-detected v4.2.0 model\n")
+        v420_name
+      } else if (dir.exists(v520_path)) {
+        cat("[WIRE] Auto-detected v5.2.0 model\n")
+        v520_name
+      } else {
+        cat("[WIRE] No models found, defaulting to v5.2.0 (will download on demand)\n")
+        v520_name
+      }
+    }
+    dorado_obj$model <- dorado_model
+    cat("[WIRE] tools.dorado.model:", dorado_model, "\n")
+
     # Barcoding/ligation kit go inside dorado block for FAST5/POD5
-    if (!is.null(barcoding_kit)) dorado_obj$barcode_kit  <- barcoding_kit
-    if (!is.null(ligation_kit))  dorado_obj$ligation_kit <- ligation_kit
+    if (!is.null(barcoding_kit)) dorado_obj$barcode_kit   <- barcoding_kit
+    if (!is.null(ligation_kit)) {
+      dorado_obj$ligation_kit   <- ligation_kit
+      dorado_obj$sequencing_kit <- ligation_kit  # Dorado 0.9.6 requires --sequencing-kit for trim
+      cat("[WIRE] tools.dorado.sequencing_kit:", ligation_kit, "(copied from ligation_kit)\n")
+    }
     if (length(dorado_obj) > 0) tools_obj$dorado <- dorado_obj
   } else {
     # FASTQ: kit values go in top-level tools block
@@ -813,6 +992,8 @@ generate_lr_amp_config <- function(params) {
   cat("  params.seq_type:               ", config$params$seq_type, "\n")
   cat("  tools.qfilter.min_q:           ", config$tools$qfilter$min_q, "\n")
   cat("  tools.qfilter.min_len:         ", if (!is.null(config$tools$qfilter$min_len)) config$tools$qfilter$min_len else "(omitted)", "\n")
+  cat("  tools.emu.db:                  ", if (!is.null(config$tools$emu$db)) config$tools$emu$db else "(not set - classification will be skipped)", "\n")
+  cat("  tools.emu.bin:                 ", if (!is.null(config$tools$emu$bin)) config$tools$emu$bin else "(not set)", "\n")
   cat("  output.selected:               ", paste(config$output$selected, collapse=", "), "\n")
   cat("  postprocess.enabled:           ", config$postprocess$enabled, "\n")
   cat("  postprocess.steps.heatmap:     ", config$postprocess$steps$heatmap, "\n")
@@ -824,6 +1005,7 @@ generate_lr_amp_config <- function(params) {
   if (!is.null(config$tools$dorado)) {
     cat("  tools.dorado.barcode_kit:      ", config$tools$dorado$barcode_kit %||% "(none)", "\n")
     cat("  tools.dorado.ligation_kit:     ", config$tools$dorado$ligation_kit %||% "(none)", "\n")
+    cat("  tools.dorado.sequencing_kit:   ", config$tools$dorado$sequencing_kit %||% "(none)", "\n")
   }
   cat("========== LR_AMP CONFIG COMPLETE ==========\n\n")
 
@@ -850,11 +1032,18 @@ generate_lr_meta_config <- function(params) {
 
   input_obj <- list(style = input_style)
   if (input_style == "FASTQ_SINGLE") {
-    input_obj$fastq_r1 <- params$input_path
-    cat("[WIRE] input.fastq_r1:", params$input_path, "\n")
+    input_obj$fastq <- params$input_path
+    cat("[WIRE] input.fastq:", params$input_path, "\n")
   } else {
-    input_obj$fast5_dir <- params$input_path
-    cat("[WIRE] input.fast5_dir:", params$input_path, "\n")
+    # FAST5_DIR or POD5_DIR - ensure we have a directory, not a file
+    fast5_path <- params$input_path
+    if (file.exists(fast5_path) && !dir.exists(fast5_path)) {
+      # User selected a file instead of directory - use parent directory
+      fast5_path <- dirname(fast5_path)
+      cat("[WIRE] Detected file instead of directory, using parent:", fast5_path, "\n")
+    }
+    input_obj$fast5_dir <- fast5_path
+    cat("[WIRE] input.fast5_dir:", fast5_path, "\n")
   }
 
   # --- threads ---
@@ -919,7 +1108,21 @@ generate_lr_meta_config <- function(params) {
 
   # --- Kraken2 DB (required for lr_meta) ---
   # LR backend reads: tools.kraken2.db (NOT host.resources.kraken2_db.host_path)
-  kraken_db <- if (!is.null(params$kraken_db) && nchar(trimws(params$kraken_db)) > 0) trimws(params$kraken_db) else ""
+  # Primary: params$kraken_db (direct path field)
+  # Fallback: params$external_db_dir with database_type == "auto"|"kraken2"
+  kraken_db <- if (!is.null(params$kraken_db) && nchar(trimws(params$kraken_db)) > 0) {
+    trimws(params$kraken_db)
+  } else if (!is.null(params$external_db_dir) && nchar(trimws(params$external_db_dir)) > 0) {
+    db_type <- params$database_type %||% "auto"
+    if (db_type %in% c("auto", "kraken2")) {
+      cat("[WIRE] tools.kraken2.db: falling back to external_db_dir (type:", db_type, ")\n")
+      trimws(params$external_db_dir)
+    } else {
+      ""
+    }
+  } else {
+    ""
+  }
   cat("[WIRE] tools.kraken2.db:", kraken_db, "\n")
 
   # --- human depletion ---
@@ -959,6 +1162,36 @@ generate_lr_meta_config <- function(params) {
     cat("[WIRE] valencia.centroids_csv: NOT FOUND - using default path\n")
   }
 
+  # --- minimap2 human genome index auto-detection ---
+  # Config: config$tools$minimap2$human_mmi + config$tools$minimap2$split_prefix
+  # Pipeline reads: .tools.minimap2.human_mmi (lr_meta.sh, run_in_container.sh)
+  # Matches WIZARD_REFERENCE_INDEXES naming (all 4 strategies, priority order).
+  grch38_dir_lr <- file.path(repo_root, "main", "data", "reference", "human", "grch38")
+  mmi_candidates_lr <- list(
+    list(name = "GRCh38.primary_assembly.genome.mmi",         split = 0L),
+    list(name = "GRCh38.primary_assembly.genome.lowmem.mmi",  split = 0L),
+    list(name = "GRCh38.primary_assembly.genome.split2G.mmi", split = 1L),
+    list(name = "GRCh38.primary_assembly.genome.split4G.mmi", split = 1L)
+  )
+  human_mmi_path_lr  <- ""
+  minimap2_split_lr  <- 0L
+  for (cand in mmi_candidates_lr) {
+    p <- file.path(grch38_dir_lr, cand$name)
+    if (file.exists(p)) {
+      human_mmi_path_lr <- p
+      minimap2_split_lr <- cand$split
+      cat("[WIRE] tools.minimap2.human_mmi: auto-detected at", p, "\n")
+      cat("[WIRE] tools.minimap2.split_prefix:", minimap2_split_lr, "\n")
+      break
+    }
+  }
+  if (human_mmi_path_lr == "") {
+    cat("[WIRE] tools.minimap2.human_mmi: NOT FOUND - run Setup Wizard to build minimap2 index\n")
+    if (remove_host == 1L) {
+      cat("[WIRE] WARNING: remove_host=1 but no minimap2 index found - pipeline will fail\n")
+    }
+  }
+
   # --- build params.common ---
   params_common <- list(
     min_qscore  = quality_threshold,
@@ -977,18 +1210,88 @@ generate_lr_meta_config <- function(params) {
     tools_obj$qfilter$min_len <- min_read_length
   }
 
+  # minimap2 index: always output when found (pipeline ignores if remove_host=0)
+  # Pipeline reads: .tools.minimap2.human_mmi + .tools.minimap2.split_prefix (lr_meta.sh)
+  if (human_mmi_path_lr != "") {
+    tools_obj$minimap2 <- list(
+      human_mmi    = human_mmi_path_lr,
+      split_prefix = minimap2_split_lr
+    )
+  }
+
   # Dorado settings (FAST5/POD5 only)
   if (input_format %in% c("fast5", "pod5")) {
     dorado_obj <- list()
-    if (!is.null(params$dorado_model)      && nchar(trimws(params$dorado_model)) > 0)
-      dorado_obj$model      <- trimws(params$dorado_model)
-    if (!is.null(params$dorado_bin)        && nchar(trimws(params$dorado_bin)) > 0)
-      dorado_obj$bin        <- trimws(params$dorado_bin)
-    if (!is.null(params$dorado_models_dir) && nchar(trimws(params$dorado_models_dir)) > 0)
-      dorado_obj$models_dir <- trimws(params$dorado_models_dir)
+
+    # Auto-detect Dorado binary for Docker (Linux version at tools/dorado/)
+    # Wizard downloads Linux version to tools/dorado/ for use inside Docker container
+    dorado_bin_host <- file.path(repo_root, "tools", "dorado", "bin", "dorado")
+
+    if (!file.exists(dorado_bin_host)) {
+      # Check for version-specific installations (e.g., dorado-0.9.6)
+      tools_dir <- file.path(repo_root, "tools")
+      dorado_dirs <- list.dirs(tools_dir, full.names = TRUE, recursive = FALSE)
+      dorado_dirs <- dorado_dirs[grepl("^dorado-[0-9]", basename(dorado_dirs))]
+      dorado_dirs <- dorado_dirs[!grepl("-host$", basename(dorado_dirs))]  # Skip macOS host binaries
+
+      if (length(dorado_dirs) > 0) {
+        # Use the first (or newest) version found
+        dorado_dirs <- sort(dorado_dirs, decreasing = TRUE)
+        dorado_bin_host <- file.path(dorado_dirs[1], "bin", "dorado")
+      }
+    }
+
+    # Binary path — tools/ is at the repo root, which is OUTSIDE main/.
+    # Docker mounts main/ at /work, so /work/tools/ does NOT exist.
+    # run_in_container.sh also mounts /Users:/Users (macOS) and REPO_ROOT:REPO_ROOT,
+    # so the host absolute path of the binary is directly accessible inside the container.
+    if (file.exists(dorado_bin_host)) {
+      dorado_obj$bin       <- dorado_bin_host   # tools.dorado.bin  (nested, legacy)
+      tools_obj$dorado_bin <- dorado_bin_host   # tools.dorado_bin  (flat — what lr_meta.sh reads)
+      cat("[WIRE] tools.dorado_bin:", dorado_bin_host, "\n")
+    } else {
+      cat("[WIRE] WARNING: Dorado Linux binary not found under tools/\n")
+      cat("[WIRE] Run Setup Wizard to download Dorado for Docker\n")
+    }
+
+    # Model: Use NAME ONLY like CLI does - script will combine with models directory
+    dorado_model <- if (!is.null(params$dorado_model) && nchar(trimws(params$dorado_model)) > 0) {
+      trimws(params$dorado_model)
+    } else {
+      # Auto-detect: prefer v3.5.2 if installed (for 4kHz data), else v5.2.0
+      models_dir_host <- file.path(repo_root, "tools", "models", "dorado")
+      v352_name <- "dna_r10.4.1_e8.2_400bps_hac@v3.5.2"
+      v420_name <- "dna_r10.4.1_e8.2_400bps_hac@v4.2.0"
+      v520_name <- "dna_r10.4.1_e8.2_400bps_hac@v5.2.0"
+
+      v352_path <- file.path(models_dir_host, v352_name)
+      v420_path <- file.path(models_dir_host, v420_name)
+      v520_path <- file.path(models_dir_host, v520_name)
+
+      if (dir.exists(v352_path)) {
+        cat("[WIRE] Auto-detected v3.5.2 model for 4kHz data\n")
+        v352_name
+      } else if (dir.exists(v420_path)) {
+        cat("[WIRE] Auto-detected v4.2.0 model\n")
+        v420_name
+      } else if (dir.exists(v520_path)) {
+        cat("[WIRE] Auto-detected v5.2.0 model\n")
+        v520_name
+      } else {
+        cat("[WIRE] No models found, defaulting to v5.2.0 (will download on demand)\n")
+        v520_name
+      }
+    }
+    dorado_obj$model <- dorado_model
+    cat("[WIRE] tools.dorado.model:", dorado_model, "\n")
+
     # Barcoding/ligation kit inside dorado block for FAST5/POD5
-    if (!is.null(barcoding_kit)) dorado_obj$barcode_kit  <- barcoding_kit
-    if (!is.null(ligation_kit))  dorado_obj$ligation_kit <- ligation_kit
+    if (!is.null(barcoding_kit)) dorado_obj$barcode_kit   <- barcoding_kit
+    if (!is.null(ligation_kit)) {
+      dorado_obj$ligation_kit   <- ligation_kit
+      dorado_obj$sequencing_kit <- ligation_kit  # Dorado 0.9.6 requires --sequencing-kit for trim
+      cat("[WIRE] tools.dorado.sequencing_kit:", ligation_kit, "(copied from ligation_kit)\n")
+    }
     if (length(dorado_obj) > 0) tools_obj$dorado <- dorado_obj
   } else {
     # FASTQ: kit values go in top-level tools block
@@ -1082,6 +1385,7 @@ generate_lr_meta_config <- function(params) {
   cat("  params.common.demultiplex:     ", if (!is.null(config$params$common$demultiplex)) config$params$common$demultiplex else "(omitted)", "\n")
   cat("  tools.qfilter.min_q:           ", config$tools$qfilter$min_q, "\n")
   cat("  tools.kraken2.db:              ", config$tools$kraken2$db, "\n")
+  cat("  tools.minimap2.human_mmi:      ", if (!is.null(config$tools$minimap2$human_mmi)) config$tools$minimap2$human_mmi else "(not set)", "\n")
   cat("  output.selected:               ", paste(config$output$selected, collapse=", "), "\n")
   cat("  postprocess.enabled:           ", config$postprocess$enabled, "\n")
   cat("  postprocess.steps.heatmap:     ", config$postprocess$steps$heatmap, "\n")
@@ -1093,6 +1397,7 @@ generate_lr_meta_config <- function(params) {
   if (!is.null(config$tools$dorado)) {
     cat("  tools.dorado.barcode_kit:      ", config$tools$dorado$barcode_kit %||% "(none)", "\n")
     cat("  tools.dorado.ligation_kit:     ", config$tools$dorado$ligation_kit %||% "(none)", "\n")
+    cat("  tools.dorado.sequencing_kit:   ", config$tools$dorado$sequencing_kit %||% "(none)", "\n")
   }
   cat("========== LR_META CONFIG COMPLETE ==========\n\n")
 

@@ -56,25 +56,25 @@ short_read_ui <- function(id) {
                 condition = sprintf("!input['%s']", ns("paired_end")),
                 div(
                   class = "mb-3",
-                  tags$label(class = "form-label", "FASTQ Files"),
+                  tags$label(class = "form-label", "FASTQ File or Directory"),
                   div(
                     class = "input-group mb-2",
                     tags$input(
                       type = "text",
                       class = "form-control",
                       id = ns("input_path_display"),
-                      placeholder = "Click to select files or dir",
-                      readonly = "readonly"
+                      placeholder = "Browse for file or enter directory path",
+                      onchange = sprintf("Shiny.setInputValue('%s', this.value)", ns("input_path"))
                     ),
                     div(
                       class = "input-group-append",
-                      shinyFilesButton(ns("input_path_browse"), "Select Files",
-                                       "Select FASTQ file",
-                                       multiple = FALSE,
+                      shinyFilesButton(ns("input_file_browse"), "Browse",
+                                       "Select FASTQ file(s)",
+                                       multiple = TRUE,
                                        class = "btn btn-outline-secondary")
                     )
                   ),
-                  tags$small(class = "text-muted", "No file size or count limits. Large datasets may take longer to process."),
+                  tags$small(class = "text-muted", "FASTQ, FQ, .gz files supported. Can select multiple files or enter directory path."),
                   div(style = "display: none;",
                     textInput(ns("input_path"), NULL, value = "")
                   )

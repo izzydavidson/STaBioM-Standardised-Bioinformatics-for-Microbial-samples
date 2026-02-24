@@ -12,14 +12,20 @@ dashboard_ui <- function(id) {
         p(class = "text-muted", "Overview of sequencing analysis projects")
       ),
 
-      # Return to Wizard button
+      # Return to Wizard and Refresh buttons
       div(
-        class = "mb-4",
+        class = "mb-4 d-flex gap-2",
         actionButton(
           ns("return_to_wizard"),
           "Return to Wizard",
           icon = icon("wand-magic-sparkles"),
           class = "btn btn-primary"
+        ),
+        actionButton(
+          ns("refresh_dashboard"),
+          "Refresh",
+          icon = icon("rotate"),
+          class = "btn btn-outline-secondary"
         )
       ),
 

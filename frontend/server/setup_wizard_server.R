@@ -4,6 +4,12 @@
 # Calls wizard_defs.R functions for detection; launches downloads via
 # processx background subprocess for real-time log streaming.
 # Does NOT modify main/ or cli/.
+#
+# Selection mechanism: pure JS CSS-class toggling via data-wiz-id attributes.
+# No Shiny checkbox inputs — avoids double-toggle and re-render reset bugs.
+# JS sends count to input$wiz_n_sel; install button triggers JS collection of
+# selected IDs which are passed to input$pending_install as a comma-separated
+# string, triggering the actual download.
 # ---------------------------------------------------------------------------
 
 setup_wizard_server <- function(id, shared) {
@@ -31,14 +37,12 @@ setup_wizard_server <- function(id, shared) {
     # Docker check — auto on first render
     # -----------------------------------------------------------------------
     observe({
-      # Run once when module starts
       docker_ok(wizard_check_docker())
     })
 
     output$docker_status_ui <- renderUI({
       ok <- docker_ok()
       if (is.na(ok)) {
-        # Not yet checked
         div(class = "wiz-docker-row",
             div(class = "wiz-docker-icon wiz-dok-chk", "..."),
             span(style = "color:#64748b; font-size:.875rem;", "Checking Docker..."),
@@ -74,21 +78,14 @@ setup_wizard_server <- function(id, shared) {
     })
 
     # -----------------------------------------------------------------------
-    # Build a single item card (database, tool, or model)
+    # Build a single item card
+    # Uses data-wiz-id attribute for pure JS class-based selection.
+    # No Shiny inputs inside the card — avoids double-toggle / re-render bugs.
     # -----------------------------------------------------------------------
-    make_item_card <- function(cb_id, name, desc, meta, is_installed) {
+    make_item_card <- function(item_id, name, desc, meta, is_installed) {
       cls <- if (is_installed) "wiz-item wiz-installed" else "wiz-item"
-      cb_val  <- is_installed       # pre-ticked if already installed
-      cb_ctrl <- if (is_installed) {
-        # Disabled — no need to re-download
-        tags$input(type = "checkbox", id = cb_id, checked = NA,
-                   disabled = NA, style = "width:18px;height:18px;margin-top:2px;flex-shrink:0;")
-      } else {
-        checkboxInput(cb_id, label = NULL, value = FALSE, width = "22px")
-      }
-
       div(class = cls,
-          div(style = "margin-top:2px; flex-shrink:0;", cb_ctrl),
+          `data-wiz-id` = item_id,
           div(class = "wiz-item-body",
               div(class = "wiz-item-name", name),
               div(class = "wiz-item-desc", desc),
@@ -106,10 +103,10 @@ setup_wizard_server <- function(id, shared) {
     output$databases_ui <- renderUI({
       inst <- wiz_installed()
       tagList(lapply(seq_along(WIZARD_DATABASES), function(i) {
-        db   <- WIZARD_DATABASES[[i]]
+        db        <- WIZARD_DATABASES[[i]]
         inst_flag <- db$id %in% inst$databases
         make_item_card(
-          cb_id        = ns(paste0("db_", i)),
+          item_id      = db$id,
           name         = db$name,
           desc         = db$desc,
           meta         = sprintf("Size: ~%s GB | Pipelines: %s", db$size, db$pipelines),
@@ -119,21 +116,48 @@ setup_wizard_server <- function(id, shared) {
     })
 
     # -----------------------------------------------------------------------
-    # Render tool cards
+    # Render tool cards (VALENCIA + Dorado binaries)
     # -----------------------------------------------------------------------
     output$tools_ui <- renderUI({
       inst <- wiz_installed()
-      tagList(lapply(seq_along(WIZARD_TOOLS), function(i) {
-        tool      <- WIZARD_TOOLS[[i]]
-        inst_flag <- tool$id %in% inst$tools
-        make_item_card(
-          cb_id        = ns(paste0("tool_", i)),
-          name         = tool$name,
-          desc         = tool$desc,
-          meta         = sprintf("Size: %s | For: %s samples", tool$size, tool$samples),
-          is_installed = inst_flag
-        )
-      }))
+      tagList(
+        # VALENCIA and other analysis tools
+        lapply(seq_along(WIZARD_TOOLS), function(i) {
+          tool      <- WIZARD_TOOLS[[i]]
+          inst_flag <- tool$id %in% inst$tools
+          make_item_card(
+            item_id      = tool$id,
+            name         = tool$name,
+            desc         = tool$desc,
+            meta         = sprintf("Size: %s | For: %s samples", tool$size, tool$samples),
+            is_installed = inst_flag
+          )
+        }),
+        # Dorado basecalling binaries
+        lapply(seq_along(WIZARD_DORADO_BINARIES), function(i) {
+          b         <- WIZARD_DORADO_BINARIES[[i]]
+          inst_flag <- b$id %in% inst$tools
+          make_item_card(
+            item_id      = b$id,
+            name         = b$name,
+            desc         = b$desc,
+            meta         = sprintf("Size: %s | Required for Dorado basecalling", b$size),
+            is_installed = inst_flag
+          )
+        }),
+        # Reference genome indexes (minimap2)
+        lapply(seq_along(WIZARD_REFERENCE_INDEXES), function(i) {
+          idx       <- WIZARD_REFERENCE_INDEXES[[i]]
+          inst_flag <- idx$id %in% inst$tools
+          make_item_card(
+            item_id      = idx$id,
+            name         = idx$name,
+            desc         = idx$desc,
+            meta         = sprintf("Size: %s | %s", idx$size, idx$requires),
+            is_installed = inst_flag
+          )
+        })
+      )
     })
 
     # -----------------------------------------------------------------------
@@ -145,7 +169,7 @@ setup_wizard_server <- function(id, shared) {
         model     <- WIZARD_DORADO_MODELS[[i]]
         inst_flag <- model$id %in% inst$models
         make_item_card(
-          cb_id        = ns(paste0("model_", i)),
+          item_id      = model$id,
           name         = model$name,
           desc         = model$desc,
           meta         = sprintf("Size: %s", model$size),
@@ -155,27 +179,12 @@ setup_wizard_server <- function(id, shared) {
     })
 
     # -----------------------------------------------------------------------
-    # Selection count badge in footer
+    # Selection count badge — driven by JS via input$wiz_n_sel
+    # JS sets this via Shiny.setInputValue('setup_wizard-wiz_n_sel', count)
     # -----------------------------------------------------------------------
     sel_count <- reactive({
-      inst <- wiz_installed()
-
-      n_db <- sum(vapply(seq_along(WIZARD_DATABASES), function(i) {
-        !( WIZARD_DATABASES[[i]]$id %in% inst$databases ) &&
-          isTRUE(input[[paste0("db_", i)]])
-      }, logical(1)))
-
-      n_tool <- sum(vapply(seq_along(WIZARD_TOOLS), function(i) {
-        !( WIZARD_TOOLS[[i]]$id %in% inst$tools ) &&
-          isTRUE(input[[paste0("tool_", i)]])
-      }, logical(1)))
-
-      n_model <- sum(vapply(seq_along(WIZARD_DORADO_MODELS), function(i) {
-        !( WIZARD_DORADO_MODELS[[i]]$id %in% inst$models ) &&
-          isTRUE(input[[paste0("model_", i)]])
-      }, logical(1)))
-
-      n_db + n_tool + n_model
+      n <- input$wiz_n_sel
+      if (is.null(n)) 0L else as.integer(n)
     })
 
     output$sel_count_ui <- renderUI({
@@ -229,7 +238,13 @@ setup_wizard_server <- function(id, shared) {
         all_lines <- c(dl_log_lines(), new_lines)
         done_line <- grep("^\\[DONE:", all_lines, value = TRUE)
 
-        if (length(done_line) > 0 && grepl("\\[DONE:ok\\]", done_line[length(done_line)])) {
+        # Primary check: [DONE:ok] in output. Fallback: exit code 0 (from quit(status=0))
+        # if the output was flushed before we could read it (rare pipe timing issue).
+        is_success <- (length(done_line) > 0 &&
+                       grepl("\\[DONE:ok\\]", done_line[length(done_line)])) ||
+                      (length(done_line) == 0 && exit_code == 0L)
+
+        if (is_success) {
           wizard_mark_complete(repo_root)
           shared$setup_complete <- TRUE
           dl_log_lines(c(all_lines,
@@ -288,32 +303,54 @@ setup_wizard_server <- function(id, shared) {
 
     # -----------------------------------------------------------------------
     # "Download & Install Selected" button
+    # Uses JS to collect .wiz-selected item IDs from the DOM, then sets
+    # input$pending_install to trigger the actual install observer.
     # -----------------------------------------------------------------------
     observeEvent(input$start_install, {
+      runjs(sprintf("
+        (function() {
+          var ids = [];
+          document.querySelectorAll('.wiz-item.wiz-selected[data-wiz-id]').forEach(function(el) {
+            ids.push(el.getAttribute('data-wiz-id'));
+          });
+          Shiny.setInputValue('%s',
+            ids.length > 0 ? ids.join(',') : '__empty__',
+            {priority: 'event'});
+        })();
+      ", ns("pending_install")))
+    })
+
+    # -----------------------------------------------------------------------
+    # Actual install work — triggered by input$pending_install
+    # -----------------------------------------------------------------------
+    observeEvent(input$pending_install, {
+      id_str <- input$pending_install
+      if (is.null(id_str) || id_str == "__empty__" || nchar(trimws(id_str)) == 0) {
+        showNotification(
+          "No items selected. Click cards to select them, then click Download.",
+          type = "warning", duration = 4)
+        return()
+      }
+
+      all_ids <- trimws(strsplit(id_str, ",")[[1]])
+      all_ids <- all_ids[nchar(all_ids) > 0]
+
       inst <- isolate(wiz_installed())
 
-      # Collect selected (non-installed) items
-      sel_db_ids <- Filter(Negate(is.null), lapply(seq_along(WIZARD_DATABASES), function(i) {
-        db <- WIZARD_DATABASES[[i]]
-        if (!(db$id %in% inst$databases) && isTRUE(input[[paste0("db_", i)]]))
-          db$id else NULL
-      }))
+      # Categorise IDs into databases / tools / models
+      db_ids    <- vapply(WIZARD_DATABASES,         function(x) x$id, "")
+      tool_ids  <- c(vapply(WIZARD_TOOLS,            function(x) x$id, ""),
+                     vapply(WIZARD_DORADO_BINARIES,  function(x) x$id, ""),
+                     vapply(WIZARD_REFERENCE_INDEXES, function(x) x$id, ""))
+      model_ids <- vapply(WIZARD_DORADO_MODELS,     function(x) x$id, "")
 
-      sel_tool_ids <- Filter(Negate(is.null), lapply(seq_along(WIZARD_TOOLS), function(i) {
-        tool <- WIZARD_TOOLS[[i]]
-        if (!(tool$id %in% inst$tools) && isTRUE(input[[paste0("tool_", i)]]))
-          tool$id else NULL
-      }))
-
-      sel_model_ids <- Filter(Negate(is.null), lapply(seq_along(WIZARD_DORADO_MODELS), function(i) {
-        model <- WIZARD_DORADO_MODELS[[i]]
-        if (!(model$id %in% inst$models) && isTRUE(input[[paste0("model_", i)]]))
-          model$id else NULL
-      }))
+      sel_db_ids    <- all_ids[all_ids %in% db_ids    & !(all_ids %in% inst$databases)]
+      sel_tool_ids  <- all_ids[all_ids %in% tool_ids  & !(all_ids %in% inst$tools)]
+      sel_model_ids <- all_ids[all_ids %in% model_ids & !(all_ids %in% inst$models)]
 
       total <- length(sel_db_ids) + length(sel_tool_ids) + length(sel_model_ids)
       if (total == 0) {
-        showNotification("No items selected. Tick items to download, then click again.",
+        showNotification("All selected items are already installed.",
                          type = "warning", duration = 4)
         return()
       }
@@ -393,7 +430,13 @@ wizard_run_downloads(
         # Refresh install state before showing
         wiz_installed(wizard_detect_installed(repo_root))
         docker_ok(wizard_check_docker())
-        shinyjs::show("setup-wizard-overlay", asis = TRUE)
+        # Show wizard overlay with flex display
+        shinyjs::show("setup-wizard-overlay", asis = TRUE, anim = TRUE, animType = "fade")
+        # Force correct display type via JS (shinyjs::show sets display:block by default)
+        shinyjs::runjs("
+          var elem = document.getElementById('setup-wizard-overlay');
+          if (elem) elem.style.display = 'flex';
+        ")
         shared$show_wizard <- FALSE
       }
     }, ignoreNULL = TRUE, ignoreInit = TRUE)

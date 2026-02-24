@@ -9,12 +9,70 @@ long_read_server <- function(id, shared) {
       Project = dirname(getwd())
     )
 
+    # --- Detect installed Dorado models (uses same logic as wizard) ---
+    detect_installed_models <- function() {
+      repo_root <- dirname(getwd())
+      models_dir <- file.path(repo_root, "tools", "models", "dorado")
+
+      # Use exact same model list as wizard_defs.R WIZARD_DORADO_MODELS
+      wizard_models <- list(
+        list(id = "dna_r10.4.1_e8.2_400bps_hac@v5.2.0", name = "HAC v5.2.0 (RECOMMENDED)", desc = "High accuracy for modern 5kHz ONT data"),
+        list(id = "dna_r10.4.1_e8.2_400bps_sup@v5.2.0", name = "SUP v5.2.0", desc = "Super accuracy for 5kHz ONT data (slower)"),
+        list(id = "dna_r10.4.1_e8.2_400bps_hac@v5.0.0", name = "HAC v5.0.0", desc = "High accuracy stable release"),
+        list(id = "dna_r10.4.1_e8.2_400bps_hac@v4.3.0", name = "HAC v4.3.0", desc = "Legacy high accuracy model"),
+        list(id = "dna_r10.4.1_e8.2_400bps_hac@v4.2.0", name = "HAC v4.2.0", desc = "Legacy baseline model"),
+        list(id = "dna_r10.4.1_e8.2_400bps_hac@v3.5.2", name = "HAC v3.5.2 (Legacy 4kHz)", desc = "High accuracy for LEGACY 4kHz R10.4.1 E8.2 data")
+      )
+
+      installed <- character(0)
+      if (dir.exists(models_dir)) {
+        for (m in wizard_models) {
+          if (dir.exists(file.path(models_dir, m$id))) {
+            installed <- c(installed, m$id)
+          }
+        }
+      }
+      installed
+    }
+
+    # Build Dorado model choices matching wizard display
+    # Uses exact same model list and indicators as wizard_defs.R WIZARD_DORADO_MODELS
+    build_dorado_choices <- function() {
+      installed <- detect_installed_models()
+      checkmark <- "\u2713"  # ✓ unicode checkmark (matches wizard badge)
+
+      # Model definitions matching wizard_defs.R WIZARD_DORADO_MODELS exactly
+      wizard_models <- list(
+        list(id = "dna_r10.4.1_e8.2_400bps_hac@v5.2.0", name = "HAC v5.2.0 (RECOMMENDED)"),
+        list(id = "dna_r10.4.1_e8.2_400bps_sup@v5.2.0", name = "SUP v5.2.0"),
+        list(id = "dna_r10.4.1_e8.2_400bps_hac@v5.0.0", name = "HAC v5.0.0"),
+        list(id = "dna_r10.4.1_e8.2_400bps_hac@v4.3.0", name = "HAC v4.3.0"),
+        list(id = "dna_r10.4.1_e8.2_400bps_hac@v4.2.0", name = "HAC v4.2.0"),
+        list(id = "dna_r10.4.1_e8.2_400bps_hac@v3.5.2", name = "HAC v3.5.2 (Legacy 4kHz)")
+      )
+
+      # Build choices with ✓ checkmark for installed models (matches wizard)
+      choices <- c("Auto-detect" = "")
+      for (m in wizard_models) {
+        label <- paste0(m$name, if (m$id %in% installed) paste0(" ", checkmark) else "")
+        choices <- c(choices, setNames(m$id, label))
+      }
+      choices
+    }
+
+    # Update dorado_model choices when UI loads and periodically (to detect wizard installs)
+    observe({
+      # Re-check every time the tab is accessed or models might have changed
+      invalidateLater(5000)  # Check every 5 seconds for newly installed models
+      updateSelectInput(session, "dorado_model", choices = build_dorado_choices())
+    })
+
     # --- File / directory choosers ---
     shinyFileChoose(input, "input_file_browse", roots = volumes, session = session,
-                    filetypes = c("fastq", "fq", "gz", ""))
+                    filetypes = c("fastq", "fq", "gz", "fast5", "pod5", ""))
 
-    shinyDirChoose(input, "input_dir_browse",         roots = volumes, session = session)
     shinyDirChoose(input, "kraken_db_browse",         roots = volumes, session = session)
+    shinyDirChoose(input, "external_db_dir_browse",   roots = volumes, session = session)
     shinyDirChoose(input, "dorado_models_dir_browse", roots = volumes, session = session)
     shinyFileChoose(input, "dorado_bin_browse", roots = volumes, session = session, filetypes = c(""))
 
@@ -23,21 +81,31 @@ long_read_server <- function(id, shared) {
       if (!is.integer(input$input_file_browse)) {
         fp <- parseFilePaths(volumes, input$input_file_browse)
         if (nrow(fp) > 0) {
-          full_path <- as.character(fp$datapath[1])
-          updateTextInput(session, "input_path", value = full_path)
-          shinyjs::runjs(sprintf("$('#%s').val('%s')", session$ns("input_path_display"), full_path))
-        }
-      }
-    })
+          full_paths <- as.character(fp$datapath)
 
-    # Populate input_path from directory browse
-    observeEvent(input$input_dir_browse, {
-      if (!is.integer(input$input_dir_browse)) {
-        dp <- parseDirPath(volumes, input$input_dir_browse)
-        if (length(dp) > 0 && nchar(dp) > 0) {
-          full_path <- as.character(dp)
-          updateTextInput(session, "input_path", value = full_path)
-          shinyjs::runjs(sprintf("$('#%s').val('%s')", session$ns("input_path_display"), full_path))
+          # If multiple files selected from same directory, pass the directory instead
+          # (pipeline expects directory path for batch processing, not comma-separated files)
+          if (length(full_paths) > 1) {
+            dirs <- unique(dirname(full_paths))
+            if (length(dirs) == 1) {
+              # All files in same directory - use directory path
+              final_path <- dirs[1]
+            } else {
+              # Files from different directories - use first file and show warning
+              final_path <- full_paths[1]
+              showNotification(
+                "Multiple files from different directories selected. Using first file only. To process multiple files, select files from the same directory or enter the directory path directly.",
+                type = "warning",
+                duration = 10
+              )
+            }
+          } else {
+            # Single file selected
+            final_path <- full_paths[1]
+          }
+
+          updateTextInput(session, "input_path", value = final_path)
+          shinyjs::runjs(sprintf("$('#%s').val('%s')", session$ns("input_path_display"), final_path))
         }
       }
     })
@@ -50,6 +118,18 @@ long_read_server <- function(id, shared) {
           full_path <- as.character(dp)
           updateTextInput(session, "kraken_db", value = full_path)
           shinyjs::runjs(sprintf("$('#%s').val('%s')", session$ns("kraken_db_display"), full_path))
+        }
+      }
+    })
+
+    # Populate external_db_dir from directory browse
+    observeEvent(input$external_db_dir_browse, {
+      if (!is.integer(input$external_db_dir_browse)) {
+        dp <- parseDirPath(volumes, input$external_db_dir_browse)
+        if (length(dp) > 0 && nchar(dp) > 0) {
+          full_path <- as.character(dp)
+          updateTextInput(session, "external_db_dir", value = full_path)
+          shinyjs::runjs(sprintf("$('#%s').val('%s')", session$ns("external_db_dir_display"), full_path))
         }
       }
     })
@@ -140,8 +220,13 @@ long_read_server <- function(id, shared) {
         errors <- c(errors, "Input path is required")
       }
 
-      if (input$pipeline == "lr_meta" && nchar(input$kraken_db) == 0) {
-        errors <- c(errors, "Kraken2 database path is required for metagenomics")
+      if (input$pipeline == "lr_meta") {
+        kraken_db_provided <- nchar(input$kraken_db) > 0 ||
+          (nchar(input$external_db_dir %||% "") > 0 &&
+           (input$database_type %||% "auto") %in% c("auto", "kraken2"))
+        if (!kraken_db_provided) {
+          errors <- c(errors, "Kraken2 database path is required for metagenomics")
+        }
       }
 
       if (input$input_format %in% c("fast5", "pod5") && nchar(input$barcoding_kit) == 0) {
@@ -187,15 +272,15 @@ long_read_server <- function(id, shared) {
       if (length(selected) == 0) c("all") else selected
     })
 
-    # Determine effective kit values:
-    # - FAST5/POD5: use kits from Input Configuration section (required for Dorado)
-    # - FASTQ: use kits from Processing Parameters section (optional)
+    # Kit values from Input Configuration section
+    # - FAST5/POD5: required for Dorado basecalling
+    # - FASTQ: optional for demultiplexing
     get_effective_barcoding_kit <- reactive({
-      if (input$input_format %in% c("fast5", "pod5")) input$barcoding_kit else input$barcoding_kit_proc
+      input$barcoding_kit
     })
 
     get_effective_ligation_kit <- reactive({
-      if (input$input_format %in% c("fast5", "pod5")) input$ligation_kit else input$ligation_kit_proc
+      input$ligation_kit
     })
 
     # --- Build CLI command (dry-run preview only) ---
@@ -299,6 +384,8 @@ long_read_server <- function(id, shared) {
         barcoding_kit     = get_effective_barcoding_kit(),
         ligation_kit      = get_effective_ligation_kit(),
         kraken_db         = input$kraken_db,
+        external_db_dir   = input$external_db_dir,
+        database_type     = input$database_type,
         human_depletion   = input$human_depletion,
         valencia          = input$valencia,
         dorado_bin        = input$dorado_bin,

@@ -265,12 +265,23 @@ pipeline_modal_server <- function(id, shared) {
         # stdout = NULL / stderr = NULL = inherit the parent R process's
         # terminal — no pipe, no buffer, no blocking.
         # proc$is_alive() and proc$get_exit_status() work via PID, not pipe.
+        #
+        # DORADO_MODEL_DIR tells the pipeline where to find Dorado models.
+        # tools/ is at the repo root, OUTSIDE main/. Docker mounts main/ at /work,
+        # so /work/tools/ does NOT exist. However run_in_container.sh mounts
+        # /Users:/Users (macOS) so the host absolute path is accessible in the container.
+        proc_env <- c(
+          Sys.getenv(),
+          DORADO_MODEL_DIR = file.path(repo_root, "tools", "models", "dorado")
+        )
+
         proc <- processx::process$new(
           command = run_script,
           args = c("--config", config_file),
           wd = repo_root,
           stdout = NULL,
           stderr = NULL,
+          env = proc_env,
           supervise = FALSE   # FALSE = wrapper outlives Shiny restarts;
                               # supervise=TRUE was killing the wrapper on restart,
                               # so frontend_postprocess.R never ran after Docker finished.
@@ -602,19 +613,24 @@ pipeline_modal_server <- function(id, shared) {
       }
 
       colored_lines <- sapply(lines, function(line) {
-        style <- if (grepl("ERROR", line, ignore.case = TRUE)) {
+        # Strip ANSI color codes (e.g., [31m, [1m, [0m) for clean display
+        # LR pipelines use ANSI codes; SR pipelines don't
+        clean_line <- gsub("\033\\[[0-9;]+m", "", line)  # \033 = ESC character
+        clean_line <- gsub("\\[([0-9]{1,2}(;[0-9]{1,2})?)?[mGKH]", "", clean_line)  # fallback for literal codes
+
+        style <- if (grepl("ERROR", clean_line, ignore.case = TRUE)) {
           "color: #ff4d4d; font-weight: bold;"
-        } else if (grepl("WARNING", line, ignore.case = TRUE)) {
+        } else if (grepl("WARNING", clean_line, ignore.case = TRUE)) {
           "color: #ffa500; font-weight: bold;"
-        } else if (grepl("succeeded", line, ignore.case = TRUE)) {
+        } else if (grepl("succeeded", clean_line, ignore.case = TRUE)) {
           "color: #00cc66; font-weight: bold;"
-        } else if (grepl("Started|started", line)) {
+        } else if (grepl("Started|started", clean_line)) {
           "color: #00e5ff;"
         } else {
           "color: #888888;"
         }
 
-        escaped_line <- htmltools::htmlEscape(line)
+        escaped_line <- htmltools::htmlEscape(clean_line)
         paste0("<span style='", style, "'>", escaped_line, "</span>")
       }, USE.NAMES = FALSE)
 

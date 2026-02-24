@@ -82,52 +82,29 @@ long_read_ui <- function(id) {
               hr(),
               h3(icon("upload"), " Input Files"),
 
-              # FASTQ: file or directory browse
-              conditionalPanel(
-                condition = sprintf("input['%s'] == 'fastq'", ns("input_format")),
+              div(
+                class = "mb-3",
+                tags$label(class = "form-label", "Input File or Directory"),
                 div(
-                  class = "mb-3",
-                  tags$label(class = "form-label", "FASTQ File or Directory"),
-                  div(
-                    class = "input-group mb-2",
-                    tags$input(type = "text", class = "form-control",
-                      id = ns("input_path_display"),
-                      placeholder = "Click to browse for file or directory",
-                      readonly = "readonly"),
-                    div(class = "input-group-append",
-                      shinyFilesButton(ns("input_file_browse"), "File",
-                        "Select FASTQ file", multiple = FALSE,
-                        class = "btn btn-outline-secondary"),
-                      shinyDirButton(ns("input_dir_browse"), "Dir",
-                        "Select FASTQ directory",
-                        class = "btn btn-outline-secondary")
-                    )
+                  class = "input-group mb-2",
+                  tags$input(
+                    type = "text",
+                    class = "form-control",
+                    id = ns("input_path_display"),
+                    placeholder = "Browse for file or enter directory path",
+                    onchange = sprintf("Shiny.setInputValue('%s', this.value)", ns("input_path"))
                   ),
-                  tags$small(class = "text-muted", "FASTQ, FQ (.gz supported)"),
-                  div(style = "display: none;", textInput(ns("input_path"), NULL, value = ""))
-                )
-              ),
-
-              # FAST5 / POD5: directory only
-              conditionalPanel(
-                condition = sprintf("input['%s'] == 'fast5' || input['%s'] == 'pod5'", ns("input_format"), ns("input_format")),
-                div(
-                  class = "mb-3",
-                  tags$label(class = "form-label", "FAST5/POD5 Directory"),
                   div(
-                    class = "input-group mb-2",
-                    tags$input(type = "text", class = "form-control",
-                      id = ns("input_path_display"),
-                      placeholder = "Click to browse for FAST5/POD5 directory",
-                      readonly = "readonly"),
-                    div(class = "input-group-append",
-                      shinyDirButton(ns("input_dir_browse"), "Browse",
-                        "Select FAST5/POD5 directory",
-                        class = "btn btn-primary")
-                    )
-                  ),
-                  tags$small(class = "text-muted", "Select the directory containing FAST5 or POD5 files."),
-                  div(style = "display: none;", textInput(ns("input_path"), NULL, value = ""))
+                    class = "input-group-append",
+                    shinyFilesButton(ns("input_file_browse"), "Browse",
+                      "Select file(s)",
+                      multiple = TRUE,
+                      class = "btn btn-outline-secondary")
+                  )
+                ),
+                tags$small(class = "text-muted", "FASTQ, FQ, .gz, FAST5, POD5 files supported. Can select multiple files or enter directory path."),
+                div(style = "display: none;",
+                  textInput(ns("input_path"), NULL, value = "")
                 )
               ),
 
@@ -180,12 +157,7 @@ long_read_ui <- function(id) {
                     class = "col-md-12 mb-3",
                     tags$label(class = "form-label", "Dorado Model"),
                     selectInput(ns("dorado_model"), NULL,
-                      choices = c(
-                        "Auto-detect" = "",
-                        "dna_r10.4.1_e8.2_400bps_hac@v5.2.0 (HAC)" = "dna_r10.4.1_e8.2_400bps_hac@v5.2.0",
-                        "dna_r10.4.1_e8.2_400bps_sup@v5.2.0 (SUP)" = "dna_r10.4.1_e8.2_400bps_sup@v5.2.0",
-                        "dna_r10.4.1_e8.2_400bps_fast@v5.2.0 (FAST)" = "dna_r10.4.1_e8.2_400bps_fast@v5.2.0"
-                      ),
+                      choices = c("Loading..." = ""),
                       selected = ""
                     )
                   )
@@ -245,27 +217,42 @@ long_read_ui <- function(id) {
                   rows = 2, value = ""),
                 tags$small(class = "text-muted", "Optional. Used for demultiplexing.")
               ),
-              # FASTQ-only kit fields (optional when fastq)
-              conditionalPanel(
-                condition = sprintf("input['%s'] == 'fastq'", ns("input_format")),
-                div(
-                  class = "row",
-                  div(
-                    class = "col-md-6 mb-3",
-                    tags$label(class = "form-label", "Barcoding Kit (Optional)"),
-                    textInput(ns("barcoding_kit_proc"), NULL, placeholder = "e.g., SQK-RBK004")
-                  ),
-                  div(
-                    class = "col-md-6 mb-3",
-                    tags$label(class = "form-label", "Ligation Kit (Optional)"),
-                    textInput(ns("ligation_kit_proc"), NULL, placeholder = "e.g., SQK-LSK109")
-                  )
-                )
-              ),
               div(
                 class = "mb-3",
                 tags$label(class = "form-label", "Number of Threads"),
                 numericInput(ns("threads"), NULL, value = 4, min = 1, max = 32)
+              ),
+
+              div(
+                class = "mb-3",
+                tags$label(class = "form-label", "External Database Directory (Optional)"),
+                div(
+                  class = "input-group mb-2",
+                  tags$input(type = "text", class = "form-control",
+                    id = ns("external_db_dir_display"),
+                    placeholder = "/path/to/database",
+                    onchange = sprintf("Shiny.setInputValue('%s', this.value)", ns("external_db_dir"))
+                  ),
+                  div(class = "input-group-append",
+                    shinyDirButton(ns("external_db_dir_browse"), "Browse",
+                      "Select external database directory",
+                      class = "btn btn-outline-secondary")
+                  )
+                ),
+                tags$small(class = "text-muted", "Optionally mount an external database directory"),
+                div(style = "display: none;", textInput(ns("external_db_dir"), NULL, value = ""))
+              ),
+
+              conditionalPanel(
+                condition = sprintf("input['%s'] == 'lr_meta' && input['%s'] != ''", ns("pipeline"), ns("external_db_dir")),
+                div(
+                  class = "mb-3",
+                  tags$label(class = "form-label", "Database Type (if using external database)"),
+                  selectInput(ns("database_type"), NULL,
+                    choices = c("Auto-detect" = "auto", "Kraken2" = "kraken2"),
+                    selected = "auto"
+                  )
+                )
               )
             )
           ),
@@ -321,8 +308,8 @@ long_read_ui <- function(id) {
                       class = "input-group mb-2",
                       tags$input(type = "text", class = "form-control",
                         id = ns("kraken_db_display"),
-                        placeholder = "Click to browse for Kraken2 database directory",
-                        readonly = "readonly"),
+                        placeholder = "Enter path or browse for Kraken2 database directory",
+                        onchange = sprintf("Shiny.setInputValue('%s', this.value)", ns("kraken_db"))),
                       div(class = "input-group-append",
                         shinyDirButton(ns("kraken_db_browse"), "Browse",
                           "Select Kraken2 database directory",

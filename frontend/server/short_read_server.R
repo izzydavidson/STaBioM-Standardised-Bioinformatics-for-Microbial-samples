@@ -9,21 +9,43 @@ short_read_server <- function(id, shared) {
       Project = dirname(getwd())
     )
 
-    shinyFileChoose(input, "input_path_browse", roots = volumes, session = session,
-                    filetypes = c("fastq", "fq", "gz", ""))
+    shinyFileChoose(input, "input_file_browse", roots = volumes, session = session,
+                    filetypes = c("fastq", "fq", "gz", "fast5", "pod5", ""))
 
     shinyFileChoose(input, "input_r1_browse", roots = volumes, session = session,
-                    filetypes = c("fastq", "fq", "gz", ""))
+                    filetypes = c("fastq", "fq", "gz", "fast5", "pod5", ""))
     shinyFileChoose(input, "input_r2_browse", roots = volumes, session = session,
-                    filetypes = c("fastq", "fq", "gz", ""))
+                    filetypes = c("fastq", "fq", "gz", "fast5", "pod5", ""))
 
-    observeEvent(input$input_path_browse, {
-      if (!is.integer(input$input_path_browse)) {
-        file_path <- parseFilePaths(volumes, input$input_path_browse)
+    observeEvent(input$input_file_browse, {
+      if (!is.integer(input$input_file_browse)) {
+        file_path <- parseFilePaths(volumes, input$input_file_browse)
         if (nrow(file_path) > 0) {
-          full_path <- as.character(file_path$datapath[1])
-          updateTextInput(session, "input_path", value = full_path)
-          shinyjs::runjs(sprintf("$('#%s').val('%s')", session$ns("input_path_display"), full_path))
+          full_paths <- as.character(file_path$datapath)
+
+          # If multiple files selected from same directory, pass the directory instead
+          # (pipeline expects directory path for batch processing, not comma-separated files)
+          if (length(full_paths) > 1) {
+            dirs <- unique(dirname(full_paths))
+            if (length(dirs) == 1) {
+              # All files in same directory - use directory path
+              final_path <- dirs[1]
+            } else {
+              # Files from different directories - use first file and show warning
+              final_path <- full_paths[1]
+              showNotification(
+                "Multiple files from different directories selected. Using first file only. To process multiple files, select files from the same directory or enter the directory path directly.",
+                type = "warning",
+                duration = 10
+              )
+            }
+          } else {
+            # Single file selected
+            final_path <- full_paths[1]
+          }
+
+          updateTextInput(session, "input_path", value = final_path)
+          shinyjs::runjs(sprintf("$('#%s').val('%s')", session$ns("input_path_display"), final_path))
         }
       }
     })
