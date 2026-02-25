@@ -38,6 +38,24 @@ if (is.null(outputs_json) || is.null(out_dir)) {
 outputs <- fromJSON(outputs_json)
 params  <- tryCatch(fromJSON(params_json), error = function(e) list())
 
+`%||%` <- function(x, y) if (is.null(x)) y else x
+
+# Apply barcode -> sample name mapping from sample sheet (if provided via params_json)
+apply_sample_map <- function(df, sample_col, params) {
+  tsv <- params$sample_sheet %||% NULL
+  if (is.null(tsv) || !nzchar(tsv) || !file.exists(tsv)) return(df)
+  sheet <- tryCatch(
+    read.delim(tsv, stringsAsFactors = FALSE, na.strings = ""),
+    error = function(e) NULL
+  )
+  if (is.null(sheet) || !all(c("barcode", "sample_name") %in% colnames(sheet))) return(df)
+  name_map <- setNames(sheet$sample_name, sheet$barcode)
+  bc_key   <- sub(".*_(barcode[0-9]+)$", "\\1", df[[sample_col]])
+  mapped   <- name_map[bc_key]
+  df[[sample_col]] <- ifelse(!is.na(mapped) & nzchar(mapped), mapped, df[[sample_col]])
+  df
+}
+
 cat("[piechart] Module:", module_name, "\n")
 cat("[piechart] Output dir:", out_dir, "\n")
 
@@ -227,11 +245,13 @@ if (module_name %in% c("sr_meta", "lr_meta", "lr_amp") || is.null(module_name)) 
 
     if (file.exists(genus_tidy)) {
       genus_data <- read.csv(genus_tidy, stringsAsFactors = FALSE)
+      genus_data <- apply_sample_map(genus_data, "sample_id", params)
       if (generate_piechart_grid(genus_data, "sample_id", "genus", "reads", "Genus", top_n, out_dir))
         generated_any <- TRUE
     }
     if (file.exists(species_tidy)) {
       species_data <- read.csv(species_tidy, stringsAsFactors = FALSE)
+      species_data <- apply_sample_map(species_data, "sample_id", params)
       if (generate_piechart_grid(species_data, "sample_id", "species", "reads", "Species", top_n, out_dir))
         generated_any <- TRUE
     }

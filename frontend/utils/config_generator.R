@@ -13,6 +13,12 @@ pp_step <- function(key, output_selected, postprocess_enabled) {
   if (postprocess_enabled == 1L && key %in% output_selected) 1L else 0L
 }
 
+# Helper: format a postprocess step value for cat() — handles both plain int and
+# list form (list(enabled=1L, params=list(...))) produced when sample_map is set.
+.fmt_step <- function(x) {
+  if (is.list(x)) paste0(x$enabled, " [+params]") else as.character(x)
+}
+
 generate_sr_amp_config <- function(params) {
   cat("\n========== BUILDING SR_AMP CONFIG ==========\n")
 
@@ -326,6 +332,29 @@ generate_sr_amp_config <- function(params) {
     cat("[WIRE] host.resources.external_db.host_path:", trimws(params$external_db_dir), "\n")
   }
 
+  # --- sample_map (barcode → sample name) ---
+  sample_map <- if (!is.null(params$sample_map) && length(params$sample_map) > 0) {
+    params$sample_map
+  } else NULL
+
+  if (!is.null(sample_map)) {
+    config$sample_map   <- sample_map
+    sample_sheet_path   <- file.path(params$output_dir, params$run_id, "sample_sheet.tsv")
+    config$sample_sheet <- sample_sheet_path
+
+    for (sn in c("heatmap", "piechart", "stacked_bar", "results_csv")) {
+      current_val <- config$postprocess$steps[[sn]]
+      if (!is.null(current_val) && identical(current_val, 1L)) {
+        config$postprocess$steps[[sn]] <- list(
+          enabled = 1L,
+          params  = list(sample_sheet = sample_sheet_path)
+        )
+      }
+    }
+    cat("[WIRE] sample_map:", length(sample_map), "entries\n")
+    cat("[WIRE] sample_sheet:", sample_sheet_path, "\n")
+  }
+
   # --- pre-return audit ---
   cat("\n[AUDIT] sr_amp config field check:\n")
   cat("  pipeline_id:                        ", config$pipeline_id, "\n")
@@ -346,10 +375,10 @@ generate_sr_amp_config <- function(params) {
   cat("  qiime2.dada2.n_threads:             ", config$qiime2$dada2$n_threads, "\n")
   cat("  output.selected:                    ", paste(config$output$selected, collapse=", "), "\n")
   cat("  postprocess.enabled:                ", config$postprocess$enabled, "[TYPE:", class(config$postprocess$enabled), "]\n")
-  cat("  postprocess.steps.heatmap:          ", config$postprocess$steps$heatmap, "\n")
-  cat("  postprocess.steps.piechart:         ", config$postprocess$steps$piechart, "\n")
-  cat("  postprocess.steps.stacked_bar:      ", config$postprocess$steps$stacked_bar, "\n")
-  cat("  postprocess.steps.results_csv:      ", config$postprocess$steps$results_csv, "\n")
+  cat("  postprocess.steps.heatmap:          ", .fmt_step(config$postprocess$steps$heatmap), "\n")
+  cat("  postprocess.steps.piechart:         ", .fmt_step(config$postprocess$steps$piechart), "\n")
+  cat("  postprocess.steps.stacked_bar:      ", .fmt_step(config$postprocess$steps$stacked_bar), "\n")
+  cat("  postprocess.steps.results_csv:      ", .fmt_step(config$postprocess$steps$results_csv), "\n")
   cat("  postprocess.steps.relative_abundance:", config$postprocess$steps$relative_abundance, "\n")
   cat("  postprocess.steps.valencia:         ", config$postprocess$steps$valencia, "\n")
   if (!is.null(config$valencia)) {
@@ -587,6 +616,14 @@ generate_sr_meta_config <- function(params) {
     )
   }
 
+  # --- Kraken2 memory mapping (low-RAM mode) ---
+  # CLI reads: .params.kraken2.memory_mapping (sr_meta.sh)
+  kraken_memory_mapping <- if (!is.null(params$kraken_memory_mapping) && isTRUE(params$kraken_memory_mapping)) TRUE else FALSE
+  cat("[WIRE] params.kraken2.memory_mapping:", kraken_memory_mapping, "\n")
+  if (kraken_memory_mapping) {
+    config$params$kraken2 <- list(memory_mapping = TRUE)
+  }
+
   # --- minimap2 index (always output when found, pipeline ignores if remove_host=0) ---
   # Pipeline reads: .tools.minimap2.human_mmi (sr_meta.sh, run_in_container.sh)
   #                 .tools.minimap2.split_prefix (sr_meta.sh)
@@ -614,6 +651,29 @@ generate_sr_meta_config <- function(params) {
     config$postprocess$steps$valencia <- 0L
   }
 
+  # --- sample_map (barcode → sample name) ---
+  sample_map <- if (!is.null(params$sample_map) && length(params$sample_map) > 0) {
+    params$sample_map
+  } else NULL
+
+  if (!is.null(sample_map)) {
+    config$sample_map   <- sample_map
+    sample_sheet_path   <- file.path(params$output_dir, params$run_id, "sample_sheet.tsv")
+    config$sample_sheet <- sample_sheet_path
+
+    for (sn in c("heatmap", "piechart", "stacked_bar", "results_csv")) {
+      current_val <- config$postprocess$steps[[sn]]
+      if (!is.null(current_val) && identical(current_val, 1L)) {
+        config$postprocess$steps[[sn]] <- list(
+          enabled = 1L,
+          params  = list(sample_sheet = sample_sheet_path)
+        )
+      }
+    }
+    cat("[WIRE] sample_map:", length(sample_map), "entries\n")
+    cat("[WIRE] sample_sheet:", sample_sheet_path, "\n")
+  }
+
   # --- pre-return audit ---
   cat("\n[AUDIT] sr_meta config field check:\n")
   cat("  pipeline_id:                        ", config$pipeline_id, "\n")
@@ -631,14 +691,15 @@ generate_sr_meta_config <- function(params) {
   cat("  params.common.remove_host:          ", config$params$common$remove_host, "\n")
   cat("  output.selected:                    ", paste(config$output$selected, collapse=", "), "\n")
   cat("  postprocess.enabled:                ", config$postprocess$enabled, "[TYPE:", class(config$postprocess$enabled), "]\n")
-  cat("  postprocess.steps.heatmap:          ", config$postprocess$steps$heatmap, "\n")
-  cat("  postprocess.steps.piechart:         ", config$postprocess$steps$piechart, "\n")
-  cat("  postprocess.steps.stacked_bar:      ", config$postprocess$steps$stacked_bar, "\n")
-  cat("  postprocess.steps.results_csv:      ", config$postprocess$steps$results_csv, "\n")
+  cat("  postprocess.steps.heatmap:          ", .fmt_step(config$postprocess$steps$heatmap), "\n")
+  cat("  postprocess.steps.piechart:         ", .fmt_step(config$postprocess$steps$piechart), "\n")
+  cat("  postprocess.steps.stacked_bar:      ", .fmt_step(config$postprocess$steps$stacked_bar), "\n")
+  cat("  postprocess.steps.results_csv:      ", .fmt_step(config$postprocess$steps$results_csv), "\n")
   cat("  postprocess.steps.relative_abundance:", config$postprocess$steps$relative_abundance, "\n")
   if (!is.null(config$host$resources$kraken2_db)) {
     cat("  host.resources.kraken2_db:          ", config$host$resources$kraken2_db$host_path, "\n")
   }
+  cat("  params.kraken2.memory_mapping:      ", if (!is.null(config$params$kraken2$memory_mapping)) config$params$kraken2$memory_mapping else "FALSE (omitted)", "\n")
   cat("  tools.minimap2.human_mmi:           ", if (!is.null(config$tools$minimap2$human_mmi)) config$tools$minimap2$human_mmi else "(not set)", "\n")
   cat("  postprocess.steps.valencia:         ", config$postprocess$steps$valencia, "\n")
   if (!is.null(config$valencia)) {
@@ -976,6 +1037,30 @@ generate_lr_amp_config <- function(params) {
     config$postprocess$steps$valencia <- 0L
   }
 
+  # --- sample_map (barcode → sample name) ---
+  sample_map <- if (!is.null(params$sample_map) && length(params$sample_map) > 0) {
+    params$sample_map
+  } else NULL
+
+  if (!is.null(sample_map)) {
+    config$sample_map   <- sample_map
+    sample_sheet_path   <- file.path(params$output_dir, params$run_id, "sample_sheet.tsv")
+    config$sample_sheet <- sample_sheet_path
+
+    # Embed sample_sheet path in each enabled postprocess step so R scripts receive it
+    for (sn in c("heatmap", "piechart", "stacked_bar", "results_csv")) {
+      current_val <- config$postprocess$steps[[sn]]
+      if (!is.null(current_val) && identical(current_val, 1L)) {
+        config$postprocess$steps[[sn]] <- list(
+          enabled = 1L,
+          params  = list(sample_sheet = sample_sheet_path)
+        )
+      }
+    }
+    cat("[WIRE] sample_map:", length(sample_map), "entries\n")
+    cat("[WIRE] sample_sheet:", sample_sheet_path, "\n")
+  }
+
   # --- pre-return audit ---
   cat("\n[AUDIT] lr_amp config field check:\n")
   cat("  pipeline_id:                   ", config$pipeline_id, "\n")
@@ -996,10 +1081,10 @@ generate_lr_amp_config <- function(params) {
   cat("  tools.emu.bin:                 ", if (!is.null(config$tools$emu$bin)) config$tools$emu$bin else "(not set)", "\n")
   cat("  output.selected:               ", paste(config$output$selected, collapse=", "), "\n")
   cat("  postprocess.enabled:           ", config$postprocess$enabled, "\n")
-  cat("  postprocess.steps.heatmap:     ", config$postprocess$steps$heatmap, "\n")
-  cat("  postprocess.steps.piechart:    ", config$postprocess$steps$piechart, "\n")
-  cat("  postprocess.steps.stacked_bar: ", config$postprocess$steps$stacked_bar, "\n")
-  cat("  postprocess.steps.results_csv: ", config$postprocess$steps$results_csv, "(always on)\n")
+  cat("  postprocess.steps.heatmap:     ", .fmt_step(config$postprocess$steps$heatmap), "\n")
+  cat("  postprocess.steps.piechart:    ", .fmt_step(config$postprocess$steps$piechart), "\n")
+  cat("  postprocess.steps.stacked_bar: ", .fmt_step(config$postprocess$steps$stacked_bar), "\n")
+  cat("  postprocess.steps.results_csv: ", .fmt_step(config$postprocess$steps$results_csv), "(always on)\n")
   cat("  postprocess.steps.valencia:    ", config$postprocess$steps$valencia, "\n")
   if (!is.null(config$valencia)) cat("  valencia.enabled:              ", config$valencia$enabled, "\n")
   if (!is.null(config$tools$dorado)) {
@@ -1056,8 +1141,9 @@ generate_lr_meta_config <- function(params) {
   cat("[WIRE] tools.qfilter.min_q:", quality_threshold, "\n")
 
   # --- min read length ---
-  min_read_length <- if (!is.null(params$min_read_length)) as.integer(params$min_read_length) else NULL
-  cat("[WIRE] tools.qfilter.min_len:", if (is.null(min_read_length)) "(omitted)" else min_read_length, "\n")
+  # 0 means "no filter" — omit the field entirely so the CLI uses its own default
+  min_read_length <- if (!is.null(params$min_read_length) && as.integer(params$min_read_length) > 0L) as.integer(params$min_read_length) else NULL
+  cat("[WIRE] tools.qfilter.min_len:", if (is.null(min_read_length)) "(omitted — no filter)" else min_read_length, "\n")
 
   # --- specimen ---
   specimen <- params$sample_type %||% "other"
@@ -1201,10 +1287,26 @@ generate_lr_meta_config <- function(params) {
   if (!is.null(trim_adapter)) params_common$trim_adapter <- trim_adapter
   if (!is.null(demultiplex))  params_common$demultiplex  <- demultiplex
 
+  # --- Kraken2 classification params ---
+  # CLI reads: .tools.kraken2.vaginal.confidence, .tools.kraken2.vaginal.minimum_hit_groups
+  #            .tools.kraken2.nonvaginal.confidence, .tools.kraken2.nonvaginal.minimum_hit_groups
+  kraken_confidence     <- if (!is.null(params$kraken_confidence))     as.numeric(params$kraken_confidence)     else NULL
+  kraken_min_hit_groups <- if (!is.null(params$kraken_min_hit_groups)) as.integer(params$kraken_min_hit_groups) else NULL
+  cat("[WIRE] tools.kraken2.*.confidence:", if (is.null(kraken_confidence)) "(default)" else kraken_confidence, "\n")
+  cat("[WIRE] tools.kraken2.*.minimum_hit_groups:", if (is.null(kraken_min_hit_groups)) "(default)" else kraken_min_hit_groups, "\n")
+
   # --- build tools block ---
+  kraken2_obj <- list(db = kraken_db)
+  if (!is.null(kraken_confidence) || !is.null(kraken_min_hit_groups)) {
+    kp <- list()
+    if (!is.null(kraken_confidence))     kp$confidence         <- kraken_confidence
+    if (!is.null(kraken_min_hit_groups)) kp$minimum_hit_groups <- kraken_min_hit_groups
+    kraken2_obj$vaginal    <- kp
+    kraken2_obj$nonvaginal <- kp
+  }
   tools_obj <- list(
     qfilter = list(enabled = 1L, min_q = quality_threshold),
-    kraken2 = list(db = kraken_db)
+    kraken2 = kraken2_obj
   )
   if (!is.null(min_read_length)) {
     tools_obj$qfilter$min_len <- min_read_length
@@ -1370,6 +1472,30 @@ generate_lr_meta_config <- function(params) {
     config$postprocess$steps$valencia <- 0L
   }
 
+  # --- sample_map (barcode → sample name) ---
+  sample_map <- if (!is.null(params$sample_map) && length(params$sample_map) > 0) {
+    params$sample_map
+  } else NULL
+
+  if (!is.null(sample_map)) {
+    config$sample_map   <- sample_map
+    sample_sheet_path   <- file.path(params$output_dir, params$run_id, "sample_sheet.tsv")
+    config$sample_sheet <- sample_sheet_path
+
+    # Embed sample_sheet path in each enabled postprocess step so R scripts receive it
+    for (sn in c("heatmap", "piechart", "stacked_bar", "results_csv")) {
+      current_val <- config$postprocess$steps[[sn]]
+      if (!is.null(current_val) && identical(current_val, 1L)) {
+        config$postprocess$steps[[sn]] <- list(
+          enabled = 1L,
+          params  = list(sample_sheet = sample_sheet_path)
+        )
+      }
+    }
+    cat("[WIRE] sample_map:", length(sample_map), "entries\n")
+    cat("[WIRE] sample_sheet:", sample_sheet_path, "\n")
+  }
+
   # --- pre-return audit ---
   cat("\n[AUDIT] lr_meta config field check:\n")
   cat("  pipeline_id:                   ", config$pipeline_id, "\n")
@@ -1385,13 +1511,15 @@ generate_lr_meta_config <- function(params) {
   cat("  params.common.demultiplex:     ", if (!is.null(config$params$common$demultiplex)) config$params$common$demultiplex else "(omitted)", "\n")
   cat("  tools.qfilter.min_q:           ", config$tools$qfilter$min_q, "\n")
   cat("  tools.kraken2.db:              ", config$tools$kraken2$db, "\n")
+  cat("  tools.kraken2.*.confidence:    ", if (!is.null(config$tools$kraken2$vaginal$confidence)) config$tools$kraken2$vaginal$confidence else "(default)", "\n")
+  cat("  tools.kraken2.*.min_hit_groups:", if (!is.null(config$tools$kraken2$vaginal$minimum_hit_groups)) config$tools$kraken2$vaginal$minimum_hit_groups else "(default)", "\n")
   cat("  tools.minimap2.human_mmi:      ", if (!is.null(config$tools$minimap2$human_mmi)) config$tools$minimap2$human_mmi else "(not set)", "\n")
   cat("  output.selected:               ", paste(config$output$selected, collapse=", "), "\n")
   cat("  postprocess.enabled:           ", config$postprocess$enabled, "\n")
-  cat("  postprocess.steps.heatmap:     ", config$postprocess$steps$heatmap, "\n")
-  cat("  postprocess.steps.piechart:    ", config$postprocess$steps$piechart, "\n")
-  cat("  postprocess.steps.stacked_bar: ", config$postprocess$steps$stacked_bar, "\n")
-  cat("  postprocess.steps.results_csv: ", config$postprocess$steps$results_csv, "(always on)\n")
+  cat("  postprocess.steps.heatmap:     ", .fmt_step(config$postprocess$steps$heatmap), "\n")
+  cat("  postprocess.steps.piechart:    ", .fmt_step(config$postprocess$steps$piechart), "\n")
+  cat("  postprocess.steps.stacked_bar: ", .fmt_step(config$postprocess$steps$stacked_bar), "\n")
+  cat("  postprocess.steps.results_csv: ", .fmt_step(config$postprocess$steps$results_csv), "(always on)\n")
   cat("  postprocess.steps.valencia:    ", config$postprocess$steps$valencia, "\n")
   if (!is.null(config$valencia)) cat("  valencia.enabled:              ", config$valencia$enabled, "\n")
   if (!is.null(config$tools$dorado)) {
@@ -1433,12 +1561,25 @@ save_config <- function(config, run_id) {
 
   cat("Config written to:", config_file, "\n")
 
+  # Write sample sheet TSV if sample_map is present
+  if (!is.null(config$sample_map) && length(config$sample_map) > 0 && !is.null(config$sample_sheet)) {
+    tsv_path <- config$sample_sheet
+    dir.create(dirname(tsv_path), recursive = TRUE, showWarnings = FALSE)
+    tsv_df <- data.frame(
+      barcode     = names(config$sample_map),
+      sample_name = unlist(config$sample_map),
+      stringsAsFactors = FALSE
+    )
+    write.table(tsv_df, tsv_path, sep = "\t", row.names = FALSE, quote = FALSE)
+    cat("Sample sheet written to:", tsv_path, "\n")
+  }
+
   # Verify the written file contains postprocess steps
   written <- jsonlite::fromJSON(config_file)
   cat("[VERIFY] postprocess.enabled =", written$postprocess$enabled, "\n")
-  cat("[VERIFY] postprocess.steps.piechart =", written$postprocess$steps$piechart, "\n")
-  cat("[VERIFY] postprocess.steps.heatmap =", written$postprocess$steps$heatmap, "\n")
-  cat("[VERIFY] postprocess.steps.results_csv =", written$postprocess$steps$results_csv, "\n")
+  cat("[VERIFY] postprocess.steps.piechart =", .fmt_step(written$postprocess$steps$piechart), "\n")
+  cat("[VERIFY] postprocess.steps.heatmap =", .fmt_step(written$postprocess$steps$heatmap), "\n")
+  cat("[VERIFY] postprocess.steps.results_csv =", .fmt_step(written$postprocess$steps$results_csv), "\n")
 
   config_file
 }

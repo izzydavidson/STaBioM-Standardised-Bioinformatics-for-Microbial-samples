@@ -24,7 +24,7 @@ dashboard_server <- function(id, shared) {
             return("Failed")
           }
 
-          if (grepl("Pipeline completed successfully|Pipeline finished|To retry:", log_content, ignore.case = FALSE)) {
+          if (grepl("Pipeline completed successfully|Pipeline finished|To retry:|exit_code: 0", log_content, ignore.case = FALSE)) {
             return("Completed")
           }
 

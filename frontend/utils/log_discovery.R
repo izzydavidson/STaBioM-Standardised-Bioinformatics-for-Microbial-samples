@@ -11,6 +11,20 @@ discover_run_logs <- function(run_dir, pipeline_key) {
 
   logs <- list()
 
+  # 0. Wrapper log — captured stdout/stderr of run_with_postprocess.sh.
+  #    Pre-created before the process starts so it exists even on fast failures
+  #    (e.g. exit code 125 before any pipeline log files are written).
+  wrapper_log <- file.path(run_dir, "logs", "wrapper.log")
+  if (file.exists(wrapper_log)) {
+    logs[[length(logs) + 1]] <- list(
+      name = "wrapper",
+      display_name = "Pipeline (wrapper)",
+      path = wrapper_log,
+      type = "wrapper",
+      order = -1
+    )
+  }
+
   # 1. Dispatcher log (always first)
   dispatcher_log <- file.path(run_dir, "logs", paste0(pipeline_key, ".log"))
   if (file.exists(dispatcher_log)) {

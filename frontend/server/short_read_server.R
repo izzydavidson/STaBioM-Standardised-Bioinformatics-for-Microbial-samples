@@ -1,21 +1,89 @@
 short_read_server <- function(id, shared) {
   moduleServer(id, function(input, output, session) {
 
+    ns <- session$ns
+
     volumes <- c(
-      Home = fs::path_home(),
-      Root = "/",
-      Desktop = fs::path_home("Desktop"),
+      Desktop   = fs::path_home("Desktop"),
+      Project   = dirname(getwd()),
+      Home      = fs::path_home(),
       Documents = fs::path_home("Documents"),
-      Project = dirname(getwd())
+      Root      = "/"
     )
 
+    # Helper: load saved default root for this input (falls back to "Desktop")
+    .sr_root <- function(key, default = "Desktop") get_ui_pref(paste0("sr_", key, "_root"), default)
+    .sr_rel  <- function(key) get_ui_pref(paste0("sr_", key, "_rel"), "")
+
+    # Helper: update drop-zone display field and trigger has-path class update
+    .set_display <- function(id, path) {
+      safe_path <- gsub("'", "\\\\'", path)
+      shinyjs::runjs(sprintf("$('#%s').val('%s').trigger('change')", session$ns(id), safe_path))
+    }
+
+    # --- Barcode mapping state ---
+    n_barcodes <- reactiveVal(0L)
+
+    # Reset rows when demultiplex is unchecked
+    observeEvent(input$demultiplex, {
+      if (!isTRUE(input$demultiplex)) n_barcodes(0L)
+    }, ignoreInit = TRUE)
+
+    # Add a barcode row (capped at 96 for short-read — no kit-specific limit)
+    observeEvent(input$add_barcode_row, {
+      cur <- n_barcodes()
+      if (cur < 96L) n_barcodes(cur + 1L)
+    })
+
+    # Remove the last barcode row
+    observeEvent(input$remove_barcode_row, {
+      cur <- n_barcodes()
+      if (cur > 0L) n_barcodes(cur - 1L)
+    })
+
+    # Render dynamic barcode rows
+    output$barcode_map_rows <- renderUI({
+      n <- n_barcodes()
+      if (n == 0L) return(NULL)
+      tagList(lapply(seq_len(n), function(i) {
+        bc_id <- sprintf("barcode%02d", i)
+        div(
+          class = "row mb-2 align-items-center",
+          div(class = "col-md-3", tags$code(bc_id)),
+          div(
+            class = "col-md-9",
+            textInput(
+              ns(paste0("bc_name_", i)), NULL,
+              placeholder = "Sample name",
+              value = isolate(input[[paste0("bc_name_", i)]] %||% "")
+            )
+          )
+        )
+      }))
+    })
+
+    # Collect sample_map from current barcode rows
+    get_sample_map <- reactive({
+      n <- n_barcodes()
+      if (n == 0L) return(NULL)
+      m <- list()
+      for (i in seq_len(n)) {
+        nm <- trimws(input[[paste0("bc_name_", i)]] %||% "")
+        if (nchar(nm) > 0) m[[sprintf("barcode%02d", i)]] <- nm
+      }
+      if (length(m) == 0L) NULL else m
+    })
+
     shinyFileChoose(input, "input_file_browse", roots = volumes, session = session,
-                    filetypes = c("fastq", "fq", "gz", "fast5", "pod5", ""))
+                    filetypes = c("fastq", "fq", "gz", "fast5", "pod5", ""),
+                    defaultRoot = .sr_root("input"), defaultPath = .sr_rel("input"))
 
     shinyFileChoose(input, "input_r1_browse", roots = volumes, session = session,
-                    filetypes = c("fastq", "fq", "gz", "fast5", "pod5", ""))
+                    filetypes = c("fastq", "fq", "gz", "fast5", "pod5", ""),
+                    defaultRoot = .sr_root("r1"), defaultPath = .sr_rel("r1"))
     shinyFileChoose(input, "input_r2_browse", roots = volumes, session = session,
-                    filetypes = c("fastq", "fq", "gz", "fast5", "pod5", ""))
+                    filetypes = c("fastq", "fq", "gz", "fast5", "pod5", ""),
+                    defaultRoot = .sr_root("r2"), defaultPath = .sr_rel("r2"))
 
     observeEvent(input$input_file_browse, {
       if (!is.integer(input$input_file_browse)) {
@@ -28,10 +96,8 @@ short_read_server <- function(id, shared) {
           if (length(full_paths) > 1) {
             dirs <- unique(dirname(full_paths))
             if (length(dirs) == 1) {
-              # All files in same directory - use directory path
               final_path <- dirs[1]
             } else {
-              # Files from different directories - use first file and show warning
               final_path <- full_paths[1]
               showNotification(
                 "Multiple files from different directories selected. Using first file only. To process multiple files, select files from the same directory or enter the directory path directly.",
@@ -40,12 +106,14 @@ short_read_server <- function(id, shared) {
               )
             }
           } else {
-            # Single file selected
             final_path <- full_paths[1]
           }
 
           updateTextInput(session, "input_path", value = final_path)
-          shinyjs::runjs(sprintf("$('#%s').val('%s')", session$ns("input_path_display"), final_path))
+          .set_display("input_path_display", final_path)
+          info <- vol_for_path(final_path, volumes)
+          save_ui_pref("sr_input_root", info$root)
+          save_ui_pref("sr_input_rel",  info$rel)
         }
       }
     })
@@ -56,7 +124,10 @@ short_read_server <- function(id, shared) {
         if (nrow(file_path) > 0) {
           full_path <- as.character(file_path$datapath[1])
           updateTextInput(session, "input_r1", value = full_path)
-          shinyjs::runjs(sprintf("$('#%s').val('%s')", session$ns("input_r1_display"), full_path))
+          .set_display("input_r1_display", full_path)
+          info <- vol_for_path(full_path, volumes)
+          save_ui_pref("sr_r1_root", info$root)
+          save_ui_pref("sr_r1_rel",  info$rel)
         }
       }
     })
@@ -67,7 +138,10 @@ short_read_server <- function(id, shared) {
         if (nrow(file_path) > 0) {
           full_path <- as.character(file_path$datapath[1])
           updateTextInput(session, "input_r2", value = full_path)
-          shinyjs::runjs(sprintf("$('#%s').val('%s')", session$ns("input_r2_display"), full_path))
+          .set_display("input_r2_display", full_path)
+          info <- vol_for_path(full_path, volumes)
+          save_ui_pref("sr_r2_root", info$root)
+          save_ui_pref("sr_r2_rel",  info$rel)
         }
       }
     })
@@ -316,8 +390,9 @@ short_read_server <- function(id, shared) {
         threads = threads_value,
         dada2_trunc_f = input$dada2_trunc_f,
         dada2_trunc_r = input$dada2_trunc_r,
-        kraken_db = input$kraken_db,
-        human_depletion = input$human_depletion,
+        kraken_db             = input$kraken_db,
+        kraken_memory_mapping = input$kraken_memory_mapping,
+        human_depletion       = input$human_depletion,
         trim_adapter = input$trim_adapter,
         demultiplex = input$demultiplex,
         primer_sequences = input$primer_sequences,
@@ -330,7 +405,8 @@ short_read_server <- function(id, shared) {
         output_selected = output_selected,
         enable_postprocess = any(c(isTRUE(input$output_raw_csv), isTRUE(input$output_pie_chart),
                                    isTRUE(input$output_heatmap), isTRUE(input$output_stacked_bar),
-                                   isTRUE(input$output_quality_reports)))
+                                   isTRUE(input$output_quality_reports))),
+        sample_map        = get_sample_map()
       )
 
       config <- if (input$pipeline == "sr_amp") {

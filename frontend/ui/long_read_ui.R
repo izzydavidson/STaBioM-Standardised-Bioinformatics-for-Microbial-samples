@@ -86,23 +86,31 @@ long_read_ui <- function(id) {
                 class = "mb-3",
                 tags$label(class = "form-label", "Input File or Directory"),
                 div(
-                  class = "input-group mb-2",
-                  tags$input(
-                    type = "text",
-                    class = "form-control",
-                    id = ns("input_path_display"),
-                    placeholder = "Browse for file or enter directory path",
-                    onchange = sprintf("Shiny.setInputValue('%s', this.value)", ns("input_path"))
+                  class = "file-drop-zone mb-2",
+                  div(
+                    class = "drop-zone-hint",
+                    tags$i(class = "fa fa-folder-open drop-zone-hint-icon"),
+                    div(
+                      class = "drop-zone-hint-text",
+                      tags$strong("Drop file(s) here, or click Browse"),
+                      tags$span(" — FASTQ, FQ, .gz, FAST5, POD5. Multiple files or a directory.")
+                    )
                   ),
                   div(
-                    class = "input-group-append",
+                    class = "drop-zone-controls",
+                    tags$input(
+                      type = "text",
+                      class = "form-control drop-zone-path-input",
+                      id = ns("input_path_display"),
+                      placeholder = "No file selected",
+                      onchange = sprintf("Shiny.setInputValue('%s', this.value)", ns("input_path"))
+                    ),
                     shinyFilesButton(ns("input_file_browse"), "Browse",
                       "Select file(s)",
                       multiple = TRUE,
-                      class = "btn btn-outline-secondary")
+                      class = "btn btn-primary btn-sm")
                   )
                 ),
-                tags$small(class = "text-muted", "FASTQ, FQ, .gz, FAST5, POD5 files supported. Can select multiple files or enter directory path."),
                 div(style = "display: none;",
                   textInput(ns("input_path"), NULL, value = "")
                 )
@@ -123,15 +131,25 @@ long_read_ui <- function(id) {
                     class = "col-md-6 mb-3",
                     tags$label(class = "form-label", "Dorado Binary Path (optional)"),
                     div(
-                      class = "input-group mb-2",
-                      tags$input(type = "text", class = "form-control",
-                        id = ns("dorado_bin_display"),
-                        placeholder = "Auto-detected if installed via wizard",
-                        readonly = "readonly"),
-                      div(class = "input-group-append",
+                      class = "file-drop-zone mb-2",
+                      div(
+                        class = "drop-zone-hint",
+                        tags$i(class = "fa fa-microchip drop-zone-hint-icon"),
+                        div(
+                          class = "drop-zone-hint-text",
+                          tags$strong("Drop binary here, or click Browse"),
+                          tags$span(" — auto-detected if installed via Setup Wizard")
+                        )
+                      ),
+                      div(
+                        class = "drop-zone-controls",
+                        tags$input(type = "text", class = "form-control drop-zone-path-input",
+                          id = ns("dorado_bin_display"),
+                          placeholder = "No binary selected",
+                          onchange = sprintf("Shiny.setInputValue('%s', this.value)", ns("dorado_bin"))),
                         shinyFilesButton(ns("dorado_bin_browse"), "Browse",
                           "Select Dorado binary", multiple = FALSE,
-                          class = "btn btn-outline-secondary")
+                          class = "btn btn-primary btn-sm")
                       )
                     ),
                     div(style = "display: none;", textInput(ns("dorado_bin"), NULL, value = ""))
@@ -140,15 +158,25 @@ long_read_ui <- function(id) {
                     class = "col-md-6 mb-3",
                     tags$label(class = "form-label", "Dorado Models Directory (optional)"),
                     div(
-                      class = "input-group mb-2",
-                      tags$input(type = "text", class = "form-control",
-                        id = ns("dorado_models_dir_display"),
-                        placeholder = "Auto-detected if installed via wizard",
-                        readonly = "readonly"),
-                      div(class = "input-group-append",
+                      class = "file-drop-zone mb-2",
+                      div(
+                        class = "drop-zone-hint",
+                        tags$i(class = "fa fa-folder drop-zone-hint-icon"),
+                        div(
+                          class = "drop-zone-hint-text",
+                          tags$strong("Drop folder here, or click Browse"),
+                          tags$span(" — auto-detected if installed via Setup Wizard")
+                        )
+                      ),
+                      div(
+                        class = "drop-zone-controls",
+                        tags$input(type = "text", class = "form-control drop-zone-path-input",
+                          id = ns("dorado_models_dir_display"),
+                          placeholder = "No directory selected",
+                          onchange = sprintf("Shiny.setInputValue('%s', this.value)", ns("dorado_models_dir"))),
                         shinyDirButton(ns("dorado_models_dir_browse"), "Browse",
                           "Select Dorado models directory",
-                          class = "btn btn-outline-secondary")
+                          class = "btn btn-primary btn-sm")
                       )
                     ),
                     div(style = "display: none;", textInput(ns("dorado_models_dir"), NULL, value = ""))
@@ -187,8 +215,8 @@ long_read_ui <- function(id) {
                   tags$span("Minimum Read Length: "),
                   tags$span(class = "text-primary", textOutput(ns("min_read_length_display"), inline = TRUE), " bp")
                 ),
-                sliderInput(ns("min_read_length"), NULL, min = 500, max = 10000, value = 1000, step = 500),
-                tags$small(class = "text-muted", "500 bp → 10 kb")
+                sliderInput(ns("min_read_length"), NULL, min = 0, max = 9000, value = 1000, step = 500),
+                tags$small(class = "text-muted", "0 (no filter) \u2192 9000 bp")
               ),
               div(
                 class = "row",
@@ -227,19 +255,28 @@ long_read_ui <- function(id) {
                 class = "mb-3",
                 tags$label(class = "form-label", "External Database Directory (Optional)"),
                 div(
-                  class = "input-group mb-2",
-                  tags$input(type = "text", class = "form-control",
-                    id = ns("external_db_dir_display"),
-                    placeholder = "/path/to/database",
-                    onchange = sprintf("Shiny.setInputValue('%s', this.value)", ns("external_db_dir"))
+                  class = "file-drop-zone mb-2",
+                  div(
+                    class = "drop-zone-hint",
+                    tags$i(class = "fa fa-database drop-zone-hint-icon"),
+                    div(
+                      class = "drop-zone-hint-text",
+                      tags$strong("Drop folder here, or click Browse"),
+                      tags$span(" — optionally mount an external database directory")
+                    )
                   ),
-                  div(class = "input-group-append",
+                  div(
+                    class = "drop-zone-controls",
+                    tags$input(type = "text", class = "form-control drop-zone-path-input",
+                      id = ns("external_db_dir_display"),
+                      placeholder = "No directory selected",
+                      onchange = sprintf("Shiny.setInputValue('%s', this.value)", ns("external_db_dir"))
+                    ),
                     shinyDirButton(ns("external_db_dir_browse"), "Browse",
                       "Select external database directory",
-                      class = "btn btn-outline-secondary")
+                      class = "btn btn-primary btn-sm")
                   )
                 ),
-                tags$small(class = "text-muted", "Optionally mount an external database directory"),
                 div(style = "display: none;", textInput(ns("external_db_dir"), NULL, value = ""))
               ),
 
@@ -305,15 +342,24 @@ long_read_ui <- function(id) {
                     class = "col-md-12 mb-3",
                     tags$label(class = "form-label", "Kraken2 Database Path"),
                     div(
-                      class = "input-group mb-2",
-                      tags$input(type = "text", class = "form-control",
-                        id = ns("kraken_db_display"),
-                        placeholder = "Enter path or browse for Kraken2 database directory",
-                        onchange = sprintf("Shiny.setInputValue('%s', this.value)", ns("kraken_db"))),
-                      div(class = "input-group-append",
+                      class = "file-drop-zone mb-2",
+                      div(
+                        class = "drop-zone-hint",
+                        tags$i(class = "fa fa-database drop-zone-hint-icon"),
+                        div(
+                          class = "drop-zone-hint-text",
+                          tags$strong("Drop Kraken2 database folder here, or click Browse")
+                        )
+                      ),
+                      div(
+                        class = "drop-zone-controls",
+                        tags$input(type = "text", class = "form-control drop-zone-path-input",
+                          id = ns("kraken_db_display"),
+                          placeholder = "No directory selected",
+                          onchange = sprintf("Shiny.setInputValue('%s', this.value)", ns("kraken_db"))),
                         shinyDirButton(ns("kraken_db_browse"), "Browse",
                           "Select Kraken2 database directory",
-                          class = "btn btn-outline-secondary")
+                          class = "btn btn-primary btn-sm")
                       )
                     ),
                     div(style = "display: none;", textInput(ns("kraken_db"), NULL, value = ""))
@@ -322,6 +368,18 @@ long_read_ui <- function(id) {
                     class = "col-md-12 mb-3",
                     checkboxInput(ns("human_depletion"), "Human Read Depletion", value = FALSE),
                     tags$small(class = "text-muted", "Remove human-derived sequences from the dataset")
+                  ),
+                  div(
+                    class = "col-md-6 mb-3",
+                    tags$label(class = "form-label", "Kraken2 Confidence Threshold"),
+                    numericInput(ns("kraken_confidence"), NULL, value = 0.05, min = 0, max = 1, step = 0.01),
+                    tags$small(class = "text-muted", "Fraction of k-mers supporting classification (0\u20131). Default: 0.05 (vaginal), 0.02 (other)")
+                  ),
+                  div(
+                    class = "col-md-6 mb-3",
+                    tags$label(class = "form-label", "Kraken2 Minimum Hit Groups"),
+                    numericInput(ns("kraken_min_hit_groups"), NULL, value = 2L, min = 1, max = 100, step = 1),
+                    tags$small(class = "text-muted", "Distinct k-mer hit groups required for a classification. Default: 2")
                   )
                 ),
                 # Output Types
@@ -341,6 +399,31 @@ long_read_ui <- function(id) {
                     div(class = "col-md-6",
                       checkboxInput(ns("output_quality_reports"), "Quality Reports", value = FALSE))
                   )
+                )
+              )
+            )
+          ),
+
+          # ── Sample Barcode Mapping (Optional) ────────────────────
+          conditionalPanel(
+            condition = sprintf("input['%s'] != '' || input['%s'] == true", ns("barcoding_kit"), ns("demultiplex")),
+            div(
+              class = "card mb-4",
+              div(
+                class = "card-body",
+                h4("Sample Barcode Mapping (Optional)"),
+                tags$p(
+                  class = "text-muted",
+                  style = "font-size: 0.875rem;",
+                  "Map barcode numbers to meaningful sample names. The selected barcoding kit determines the maximum number of barcodes available."
+                ),
+                uiOutput(ns("barcode_map_rows")),
+                div(
+                  class = "d-flex gap-2 mt-2",
+                  actionButton(ns("add_barcode_row"), "+ Add barcode",
+                    class = "btn btn-sm btn-outline-primary"),
+                  actionButton(ns("remove_barcode_row"), "Remove last",
+                    class = "btn btn-sm btn-outline-secondary")
                 )
               )
             )

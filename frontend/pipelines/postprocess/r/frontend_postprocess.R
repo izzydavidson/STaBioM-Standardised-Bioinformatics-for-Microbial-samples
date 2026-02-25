@@ -8,7 +8,7 @@
 #
 # Gaps filled:
 #   G1a/b. FastQC HTML promoted to results/qc/fastqc/ and final/qc/fastqc/
-#   G2.    Piechart re-run (QIIME2 pipelines only: sr_amp, sr_meta)
+#   G2.    Piechart re-run (all pipelines: sr_amp, sr_meta, lr_amp, lr_meta)
 #   G3a.   Valencia R visualisation fallback (all pipelines)
 #   G3b.   Abundance tables fallback via results_csv.R (sr_amp only)
 #   G4.    results/tables   -> final/tables
@@ -114,6 +114,34 @@ copy_files <- function(src_files, dst_dir, label) {
 }
 
 # ---------------------------------------------------------------------------
+# G0. Apply sample_map: rename barcode* sample IDs -> user-defined names
+# Runs a host-side Python script that rewrites sample_id values in all
+# postprocess tidy CSVs and output CSVs before the R plot scripts are
+# re-invoked.  Only active when config contains a sample_map.
+# ---------------------------------------------------------------------------
+log_msg("--- G0: Apply sample_map renaming (if configured) ---")
+if (!is.null(config$sample_map) && length(config$sample_map) > 0) {
+  apply_map_script <- file.path(repo_root, "frontend", "pipelines", "postprocess",
+                                "python", "apply_sample_map.py")
+  if (file.exists(apply_map_script)) {
+    apply_map_log <- file.path(module_dir, "logs", "r_postprocess", "apply_sample_map.log")
+    dir.create(dirname(apply_map_log), recursive = TRUE, showWarnings = FALSE)
+    rc_map <- tryCatch(
+      system2("python3", args = c(apply_map_script, "--config", config_file),
+              stdout = apply_map_log, stderr = apply_map_log, wait = TRUE),
+      error = function(e) { log_msg("apply_sample_map.py error:", e$message); -1L }
+    )
+    log_msg("apply_sample_map.py exit code:", rc_map)
+    if (file.exists(apply_map_log))
+      log_msg(paste(readLines(apply_map_log), collapse = "\n"))
+  } else {
+    log_msg("apply_sample_map.py not found at:", apply_map_script)
+  }
+} else {
+  log_msg("No sample_map in config — skipping renaming")
+}
+
+# ---------------------------------------------------------------------------
 # G1a. FastQC HTML -> results/qc/fastqc/
 # ---------------------------------------------------------------------------
 fastqc_src <- file.path(module_dir, "results", "fastqc")
@@ -129,16 +157,15 @@ if (dir.exists(fastqc_src)) {
 
 # ---------------------------------------------------------------------------
 # G2. Re-run fixed piechart -> results/plots/
-# QIIME2 pipelines only (sr_amp, sr_meta).
-# Main's piechart.R puts legend on a new page for single-sample runs.
-# The fixed frontend piechart.R allocates n_samples+1 grid slots so the
-# legend always shares the same page as the pie.
+# All pipelines: main's piechart.R puts legend on a new page when the grid
+# is exactly full.  The fixed frontend piechart.R allocates n_samples+1
+# grid slots so the legend always shares the same page as the pie charts.
 #
 # NOTE: processx::run() with 90-second timeout prevents deadlock from
 # nested R subprocess library lock contention on macOS.
 # ---------------------------------------------------------------------------
-log_msg("--- G2: Re-run fixed piechart (QIIME2 pipelines only) ---")
-if (is_qiime2_pipeline && file.exists(outputs_json)) {
+log_msg("--- G2: Re-run fixed piechart (all pipelines) ---")
+if (file.exists(outputs_json)) {
   plots_dir <- file.path(results_dir, "plots")
   dir.create(plots_dir, recursive = TRUE, showWarnings = FALSE)
 
@@ -147,9 +174,18 @@ if (is_qiime2_pipeline && file.exists(outputs_json)) {
     piechart_log <- file.path(module_dir, "logs", "r_postprocess", "piechart_fixed.log")
     dir.create(dirname(piechart_log), recursive = TRUE, showWarnings = FALSE)
 
+    piechart_params_json <- tryCatch({
+      step <- config$postprocess$steps$piechart
+      if (is.list(step) && !is.null(step$params)) {
+        jsonlite::toJSON(step$params, auto_unbox = TRUE)
+      } else "{}"
+    }, error = function(e) "{}")
+    log_msg("G2: piechart params_json:", piechart_params_json)
+
     piechart_args <- c(frontend_piechart,
                        "--outputs_json", outputs_json,
                        "--out_dir",      plots_dir,
+                       "--params_json",  piechart_params_json,
                        "--module",       pipeline_key)
 
     rc <- tryCatch({
@@ -172,10 +208,71 @@ if (is_qiime2_pipeline && file.exists(outputs_json)) {
   } else {
     log_msg("Frontend piechart.R not found at:", frontend_piechart)
   }
-} else if (!is_qiime2_pipeline) {
-  log_msg("Skipping piechart re-run for non-QIIME2 pipeline:", pipeline_key)
 } else {
   log_msg("outputs.json not found; skipping piechart re-run")
+}
+
+# ---------------------------------------------------------------------------
+# G2b. Re-run heatmap, stacked_bar, results_csv from HOST using renamed data.
+# Only runs when sample_map is configured — regenerates plots so sample labels
+# in PNGs/PDFs match the user-defined names applied in G0.
+# Calls the unmodified main/ R scripts; graceful failure if packages missing.
+# ---------------------------------------------------------------------------
+log_msg("--- G2b: Re-run R plot scripts with renamed data (sample_map only) ---")
+if (!is.null(config$sample_map) && length(config$sample_map) > 0 &&
+    file.exists(outputs_json)) {
+
+  plots_dir_g2b  <- file.path(results_dir, "plots")
+  tables_dir_g2b <- file.path(results_dir, "tables")
+  dir.create(plots_dir_g2b,  recursive = TRUE, showWarnings = FALSE)
+  dir.create(tables_dir_g2b, recursive = TRUE, showWarnings = FALSE)
+
+  rerun_scripts <- list(
+    list(script = "heatmap.R",     out = plots_dir_g2b),
+    list(script = "stacked_bar.R", out = plots_dir_g2b),
+    list(script = "results_csv.R", out = tables_dir_g2b)
+  )
+
+  for (item in rerun_scripts) {
+    script_path <- file.path(repo_root, "main", "pipelines", "postprocess", "r", item$script)
+    if (!file.exists(script_path)) {
+      log_msg(item$script, "not found — skipping")
+      next
+    }
+    rr_log <- file.path(module_dir, "logs", "r_postprocess",
+                        paste0(sub("\\.R$", "", item$script), "_rerun.log"))
+    dir.create(dirname(rr_log), recursive = TRUE, showWarnings = FALSE)
+
+    rc_rr <- tryCatch({
+      if (requireNamespace("processx", quietly = TRUE)) {
+        res <- processx::run(
+          "Rscript",
+          c(script_path,
+            "--outputs_json", outputs_json,
+            "--out_dir",      item$out,
+            "--params_json",  "{}",
+            "--module",       pipeline_key),
+          stdout = rr_log, stderr = rr_log,
+          timeout = 120, error_on_status = FALSE
+        )
+        res$status
+      } else {
+        system2("Rscript",
+                args   = c(script_path,
+                           "--outputs_json", outputs_json,
+                           "--out_dir",      item$out,
+                           "--params_json",  "{}",
+                           "--module",       pipeline_key),
+                stdout = rr_log, stderr = rr_log, wait = TRUE)
+      }
+    }, error = function(e) {
+      log_msg(item$script, "re-run error:", e$message)
+      -1L
+    })
+    log_msg(item$script, "re-run exit code:", rc_rr)
+  }
+} else {
+  log_msg("No sample_map or no outputs.json — skipping R plot re-runs")
 }
 
 # ---------------------------------------------------------------------------

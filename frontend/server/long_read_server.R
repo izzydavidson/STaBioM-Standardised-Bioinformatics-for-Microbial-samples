@@ -1,13 +1,35 @@
+# Kit barcode count lookup — caps the "+ Add barcode" button
+KIT_BARCODE_COUNTS <- list(
+  "EXP-PBC001"    = 12L, "EXP-PBC096"    = 96L,
+  "EXP-NBD104"    = 24L, "EXP-NBD196"    = 96L,
+  "SQK-RBK004"    = 12L, "SQK-RBK110"    = 96L,
+  "SQK-16S024"    = 24L, "SQK-NBD114-24" = 24L,
+  "SQK-NBD114-96" = 96L, "SQK-RPB114-24" = 24L
+)
+
+get_kit_max <- function(kit) {
+  for (k in names(KIT_BARCODE_COUNTS)) {
+    if (grepl(k, kit, fixed = TRUE)) return(KIT_BARCODE_COUNTS[[k]])
+  }
+  96L  # safe default for unknown kits
+}
+
 long_read_server <- function(id, shared) {
   moduleServer(id, function(input, output, session) {
 
+    ns <- session$ns
+
     volumes <- c(
-      Home    = fs::path_home(),
-      Root    = "/",
-      Desktop = fs::path_home("Desktop"),
+      Desktop   = fs::path_home("Desktop"),
+      Project   = dirname(getwd()),
+      Home      = fs::path_home(),
       Documents = fs::path_home("Documents"),
-      Project = dirname(getwd())
+      Root      = "/"
     )
+
+    # Helper: load saved default root for this input (falls back to "Desktop")
+    .lr_root <- function(key, default = "Desktop") get_ui_pref(paste0("lr_", key, "_root"), default)
+    .lr_rel  <- function(key) get_ui_pref(paste0("lr_", key, "_rel"), "")
 
     # --- Detect installed Dorado models (uses same logic as wizard) ---
     detect_installed_models <- function() {
@@ -67,14 +89,81 @@ long_read_server <- function(id, shared) {
       updateSelectInput(session, "dorado_model", choices = build_dorado_choices())
     })
 
-    # --- File / directory choosers ---
-    shinyFileChoose(input, "input_file_browse", roots = volumes, session = session,
-                    filetypes = c("fastq", "fq", "gz", "fast5", "pod5", ""))
+    # --- Barcode mapping state ---
+    n_barcodes <- reactiveVal(0L)
 
-    shinyDirChoose(input, "kraken_db_browse",         roots = volumes, session = session)
-    shinyDirChoose(input, "external_db_dir_browse",   roots = volumes, session = session)
-    shinyDirChoose(input, "dorado_models_dir_browse", roots = volumes, session = session)
-    shinyFileChoose(input, "dorado_bin_browse", roots = volumes, session = session, filetypes = c(""))
+    # Reset rows when the kit changes
+    observeEvent(input$barcoding_kit, {
+      n_barcodes(0L)
+    }, ignoreInit = TRUE)
+
+    # Add a barcode row (capped by kit max)
+    observeEvent(input$add_barcode_row, {
+      cur     <- n_barcodes()
+      max_bc  <- get_kit_max(input$barcoding_kit %||% "")
+      if (cur < max_bc) n_barcodes(cur + 1L)
+    })
+
+    # Remove the last barcode row
+    observeEvent(input$remove_barcode_row, {
+      cur <- n_barcodes()
+      if (cur > 0L) n_barcodes(cur - 1L)
+    })
+
+    # Render dynamic barcode rows
+    output$barcode_map_rows <- renderUI({
+      n <- n_barcodes()
+      if (n == 0L) return(NULL)
+      tagList(lapply(seq_len(n), function(i) {
+        bc_id <- sprintf("barcode%02d", i)
+        div(
+          class = "row mb-2 align-items-center",
+          div(class = "col-md-3", tags$code(bc_id)),
+          div(
+            class = "col-md-9",
+            textInput(
+              ns(paste0("bc_name_", i)), NULL,
+              placeholder = "Sample name",
+              value = isolate(input[[paste0("bc_name_", i)]] %||% "")
+            )
+          )
+        )
+      }))
+    })
+
+    # Collect sample_map from current barcode rows
+    get_sample_map <- reactive({
+      n <- n_barcodes()
+      if (n == 0L) return(NULL)
+      m <- list()
+      for (i in seq_len(n)) {
+        nm <- trimws(input[[paste0("bc_name_", i)]] %||% "")
+        if (nchar(nm) > 0) m[[sprintf("barcode%02d", i)]] <- nm
+      }
+      if (length(m) == 0L) NULL else m
+    })
+
+    # --- File / directory choosers (defaultRoot from saved prefs) ---
+    shinyFileChoose(input, "input_file_browse", roots = volumes, session = session,
+                    filetypes = c("fastq", "fq", "gz", "fast5", "pod5", ""),
+                    defaultRoot = .lr_root("input"), defaultPath = .lr_rel("input"))
+
+    shinyDirChoose(input, "kraken_db_browse", roots = volumes, session = session,
+                   defaultRoot = .lr_root("kraken", "Home"), defaultPath = .lr_rel("kraken"))
+    shinyDirChoose(input, "external_db_dir_browse", roots = volumes, session = session,
+                   defaultRoot = .lr_root("extdb", "Home"), defaultPath = .lr_rel("extdb"))
+    shinyDirChoose(input, "dorado_models_dir_browse", roots = volumes, session = session,
+                   defaultRoot = .lr_root("dorado_models", "Home"), defaultPath = .lr_rel("dorado_models"))
+    shinyFileChoose(input, "dorado_bin_browse", roots = volumes, session = session,
+                    filetypes = c(""),
+                    defaultRoot = .lr_root("dorado_bin", "Home"), defaultPath = .lr_rel("dorado_bin"))
+
+    # Helper: update a drop-zone display field and trigger has-path class update
+    .set_display <- function(id, path) {
+      # Escape single quotes in path for JS safety
+      safe_path <- gsub("'", "\\\\'", path)
+      shinyjs::runjs(sprintf("$('#%s').val('%s').trigger('change')", session$ns(id), safe_path))
+    }
 
     # Populate input_path from file browse
     observeEvent(input$input_file_browse, {
@@ -88,10 +177,8 @@ long_read_server <- function(id, shared) {
           if (length(full_paths) > 1) {
             dirs <- unique(dirname(full_paths))
             if (length(dirs) == 1) {
-              # All files in same directory - use directory path
               final_path <- dirs[1]
             } else {
-              # Files from different directories - use first file and show warning
               final_path <- full_paths[1]
               showNotification(
                 "Multiple files from different directories selected. Using first file only. To process multiple files, select files from the same directory or enter the directory path directly.",
@@ -100,12 +187,14 @@ long_read_server <- function(id, shared) {
               )
             }
           } else {
-            # Single file selected
             final_path <- full_paths[1]
           }
 
           updateTextInput(session, "input_path", value = final_path)
-          shinyjs::runjs(sprintf("$('#%s').val('%s')", session$ns("input_path_display"), final_path))
+          .set_display("input_path_display", final_path)
+          info <- vol_for_path(final_path, volumes)
+          save_ui_pref("lr_input_root", info$root)
+          save_ui_pref("lr_input_rel",  info$rel)
         }
       }
     })
@@ -117,7 +206,10 @@ long_read_server <- function(id, shared) {
         if (length(dp) > 0 && nchar(dp) > 0) {
           full_path <- as.character(dp)
           updateTextInput(session, "kraken_db", value = full_path)
-          shinyjs::runjs(sprintf("$('#%s').val('%s')", session$ns("kraken_db_display"), full_path))
+          .set_display("kraken_db_display", full_path)
+          info <- vol_for_path(full_path, volumes)
+          save_ui_pref("lr_kraken_root", info$root)
+          save_ui_pref("lr_kraken_rel",  info$rel)
         }
       }
     })
@@ -129,7 +221,10 @@ long_read_server <- function(id, shared) {
         if (length(dp) > 0 && nchar(dp) > 0) {
           full_path <- as.character(dp)
           updateTextInput(session, "external_db_dir", value = full_path)
-          shinyjs::runjs(sprintf("$('#%s').val('%s')", session$ns("external_db_dir_display"), full_path))
+          .set_display("external_db_dir_display", full_path)
+          info <- vol_for_path(full_path, volumes)
+          save_ui_pref("lr_extdb_root", info$root)
+          save_ui_pref("lr_extdb_rel",  info$rel)
         }
       }
     })
@@ -141,7 +236,10 @@ long_read_server <- function(id, shared) {
         if (nrow(fp) > 0) {
           full_path <- as.character(fp$datapath[1])
           updateTextInput(session, "dorado_bin", value = full_path)
-          shinyjs::runjs(sprintf("$('#%s').val('%s')", session$ns("dorado_bin_display"), full_path))
+          .set_display("dorado_bin_display", full_path)
+          info <- vol_for_path(full_path, volumes)
+          save_ui_pref("lr_dorado_bin_root", info$root)
+          save_ui_pref("lr_dorado_bin_rel",  info$rel)
         }
       }
     })
@@ -153,7 +251,10 @@ long_read_server <- function(id, shared) {
         if (length(dp) > 0 && nchar(dp) > 0) {
           full_path <- as.character(dp)
           updateTextInput(session, "dorado_models_dir", value = full_path)
-          shinyjs::runjs(sprintf("$('#%s').val('%s')", session$ns("dorado_models_dir_display"), full_path))
+          .set_display("dorado_models_dir_display", full_path)
+          info <- vol_for_path(full_path, volumes)
+          save_ui_pref("lr_dorado_models_root", info$root)
+          save_ui_pref("lr_dorado_models_rel",  info$rel)
         }
       }
     })
@@ -168,11 +269,11 @@ long_read_server <- function(id, shared) {
       for (candidate in dorado_candidates) {
         if (file.exists(candidate) && nchar(input$dorado_bin) == 0) {
           updateTextInput(session, "dorado_bin", value = candidate)
-          shinyjs::runjs(sprintf("$('#%s').val('%s')", session$ns("dorado_bin_display"), candidate))
+          .set_display("dorado_bin_display", candidate)
           models_dir <- file.path(dirname(dirname(candidate)), "models")
           if (dir.exists(models_dir) && nchar(input$dorado_models_dir) == 0) {
             updateTextInput(session, "dorado_models_dir", value = models_dir)
-            shinyjs::runjs(sprintf("$('#%s').val('%s')", session$ns("dorado_models_dir_display"), models_dir))
+            .set_display("dorado_models_dir_display", models_dir)
           }
           break
         }
@@ -383,10 +484,12 @@ long_read_server <- function(id, shared) {
         barcode_sequences = input$barcode_sequences,
         barcoding_kit     = get_effective_barcoding_kit(),
         ligation_kit      = get_effective_ligation_kit(),
-        kraken_db         = input$kraken_db,
-        external_db_dir   = input$external_db_dir,
-        database_type     = input$database_type,
-        human_depletion   = input$human_depletion,
+        kraken_db              = input$kraken_db,
+        kraken_confidence      = input$kraken_confidence,
+        kraken_min_hit_groups  = input$kraken_min_hit_groups,
+        external_db_dir        = input$external_db_dir,
+        database_type          = input$database_type,
+        human_depletion        = input$human_depletion,
         valencia          = input$valencia,
         dorado_bin        = input$dorado_bin,
         dorado_models_dir = input$dorado_models_dir,
@@ -394,7 +497,8 @@ long_read_server <- function(id, shared) {
         output_selected   = get_output_selected(),
         enable_postprocess = any(c(isTRUE(input$output_raw_csv), isTRUE(input$output_pie_chart),
                                    isTRUE(input$output_heatmap), isTRUE(input$output_stacked_bar),
-                                   isTRUE(input$output_quality_reports)))
+                                   isTRUE(input$output_quality_reports))),
+        sample_map        = get_sample_map()
       )
 
       config <- if (input$pipeline == "lr_amp") {

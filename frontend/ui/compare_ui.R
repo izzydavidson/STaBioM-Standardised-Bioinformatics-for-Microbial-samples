@@ -5,74 +5,165 @@ compare_ui <- function(id) {
     div(
       class = "container-fluid p-4",
 
-      # Page header
       div(
         class = "mb-4",
-        h1("Compare Pipeline Runs"),
-        p(class = "text-muted", "Compare taxonomic profiles from multiple runs")
+        h1("Compare Pipeline Outputs"),
+        p(class = "text-muted", "Compare taxonomic profiles from two runs side by side — relative abundance, alpha diversity, beta diversity, and shared taxa.")
       ),
 
-      # Selection panel
+      # ── Input card ──────────────────────────────────────────────────────────
       div(
         class = "card mb-4",
         div(
           class = "card-body",
-          h2("Select Runs to Compare"),
+          h2("Input"),
+
+          # Mode selector
           div(
-            class = "row",
+            class = "mb-3",
+            radioButtons(ns("input_mode"), NULL,
+              choices  = c("Upload CSV files" = "csv", "Select completed runs" = "runs"),
+              selected = "csv",
+              inline   = TRUE
+            )
+          ),
+
+          # ── CSV upload mode ────────────────────────────────────────────────
+          conditionalPanel(
+            condition = sprintf("input['%s'] == 'csv'", ns("input_mode")),
             div(
-              class = "col-md-6 mb-3",
-              tags$label(class = "form-label", "Run 1"),
-              selectInput(ns("run1"), NULL, choices = NULL)
+              class = "alert alert-info mb-3",
+              style = "font-size: 0.875rem;",
+              icon("info-circle"),
+              " Upload any ",
+              tags$code("*_species_tidy.csv"),
+              " or ",
+              tags$code("*_genus_tidy.csv"),
+              " file from your pipeline outputs folder. Expected columns: ",
+              tags$code("sample_id"), ", ", tags$code("species"), " (or ", tags$code("genus"), "), ",
+              tags$code("abundance"), " (or ", tags$code("fraction"), ")."
             ),
             div(
-              class = "col-md-6 mb-3",
-              tags$label(class = "form-label", "Run 2"),
-              selectInput(ns("run2"), NULL, choices = NULL)
-            ),
-            div(
-              class = "col-md-6 mb-3",
-              tags$label(class = "form-label", "Taxonomic Rank"),
-              selectInput(ns("rank"), NULL,
-                choices = c("Species" = "species", "Genus" = "genus", "Family" = "family", "Order" = "order", "Class" = "class", "Phylum" = "phylum"),
-                selected = "species"
-              )
-            ),
-            div(
-              class = "col-md-6 mb-3",
-              tags$label(class = "form-label", "Normalization"),
-              selectInput(ns("normalization"), NULL,
-                choices = c("CLR" = "clr", "Relative Abundance" = "relative", "Raw Counts" = "raw"),
-                selected = "clr"
+              class = "row",
+              div(
+                class = "col-md-5 mb-3",
+                tags$label(class = "form-label", "File A"),
+                fileInput(ns("file_a"), NULL, accept = ".csv", placeholder = "Choose CSV..."),
+                textInput(ns("label_a"), "Label", placeholder = "e.g. Run A, Patient group")
+              ),
+              div(
+                class = "col-md-5 mb-3",
+                tags$label(class = "form-label", "File B"),
+                fileInput(ns("file_b"), NULL, accept = ".csv", placeholder = "Choose CSV..."),
+                textInput(ns("label_b"), "Label", placeholder = "e.g. Run B, Control group")
               )
             )
           ),
-          div(
-            class = "mt-3",
-            actionButton(ns("compare_runs"), "Compare Runs",
-              icon = icon("code-compare"),
-              class = "btn btn-primary"
+
+          # ── Run selection mode ─────────────────────────────────────────────
+          conditionalPanel(
+            condition = sprintf("input['%s'] == 'runs'", ns("input_mode")),
+            div(
+              class = "row",
+              div(
+                class = "col-md-5 mb-3",
+                tags$label(class = "form-label", "Run 1"),
+                selectInput(ns("run1"), NULL, choices = NULL)
+              ),
+              div(
+                class = "col-md-5 mb-3",
+                tags$label(class = "form-label", "Run 2"),
+                selectInput(ns("run2"), NULL, choices = NULL)
+              )
             )
+          ),
+
+          # ── Shared options ─────────────────────────────────────────────────
+          div(
+            class = "row mt-1",
+            div(
+              class = "col-md-4 mb-3",
+              tags$label(class = "form-label", "Taxonomic rank"),
+              selectInput(ns("rank"), NULL,
+                choices  = c("Species" = "species", "Genus" = "genus"),
+                selected = "species"
+              )
+            )
+          ),
+
+          actionButton(ns("compare_btn"), "Compare",
+            icon  = icon("code-compare"),
+            class = "btn btn-primary"
           )
         )
       ),
 
-      # Results panel
+      # ── Results ─────────────────────────────────────────────────────────────
       conditionalPanel(
         condition = sprintf("output['%s']", ns("has_results")),
+
         div(
           class = "card",
           div(
             class = "card-body",
-            h2("Comparison Results"),
-            div(
-              class = "alert alert-info",
-              role = "alert",
-              icon("info-circle"), " Comparison analysis is performed using the `stabiom compare` command with real pipeline outputs."
-            ),
-            div(
-              class = "mt-3",
-              uiOutput(ns("comparison_output"))
+            h2("Results"),
+            uiOutput(ns("result_header")),
+            hr(),
+            tabsetPanel(
+              id = ns("result_tabs"),
+
+              # Tab 1: Relative abundance
+              tabPanel(
+                "Relative Abundance",
+                div(
+                  class = "mt-3",
+                  plotOutput(ns("abundance_plot"), height = "480px"),
+                  hr(),
+                  h5("Top 30 taxa — mean relative abundance per run"),
+                  tableOutput(ns("abundance_table"))
+                )
+              ),
+
+              # Tab 2: Alpha diversity
+              tabPanel(
+                "Alpha Diversity",
+                div(
+                  class = "mt-3",
+                  div(
+                    class = "alert alert-info",
+                    style = "font-size: 0.875rem;",
+                    icon("info-circle"),
+                    " Per-sample diversity metrics. Shannon entropy accounts for both richness and evenness. Pielou evenness = 1 means all taxa equally abundant."
+                  ),
+                  tableOutput(ns("alpha_table"))
+                )
+              ),
+
+              # Tab 3: Beta diversity
+              tabPanel(
+                "Beta Diversity",
+                div(
+                  class = "mt-3",
+                  div(
+                    class = "alert alert-info",
+                    style = "font-size: 0.875rem;",
+                    icon("info-circle"),
+                    " Bray-Curtis dissimilarity (0 = identical, 1 = no shared taxa). Rows and columns are labelled as ", tags$code("Run :: sample_id"), "."
+                  ),
+                  tableOutput(ns("beta_table"))
+                )
+              ),
+
+              # Tab 4: Shared / unique taxa
+              tabPanel(
+                "Shared / Unique Taxa",
+                div(
+                  class = "mt-3",
+                  verbatimTextOutput(ns("shared_summary")),
+                  hr(),
+                  tableOutput(ns("shared_table"))
+                )
+              )
             )
           )
         )

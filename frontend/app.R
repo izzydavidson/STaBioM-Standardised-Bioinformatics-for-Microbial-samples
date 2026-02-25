@@ -36,6 +36,7 @@ source("utils/config_generator.R")
 source("utils/log_streamer.R")
 source("utils/log_discovery.R")
 source("utils/wizard_defs.R")
+source("utils/ui_prefs.R")
 
 # Determine whether wizard overlay should start hidden
 # (file.exists evaluated at UI-build time — before server starts)
@@ -323,6 +324,130 @@ ui <- page_navbar(
         border-color: #e2e8f0;
         opacity: 1;
       }
+
+      /* ── File Drop Zone ────────────────────────────────────────────────── */
+      .file-drop-zone {
+        border: 2px dashed #cbd5e1;
+        border-radius: 0.75rem;
+        padding: 0.875rem 1rem;
+        background: #f8fafc;
+        transition: border-color 0.2s, background 0.2s;
+      }
+      .file-drop-zone.drag-over {
+        border-color: #3b82f6 !important;
+        background: #eff6ff !important;
+      }
+      .file-drop-zone.has-path {
+        border-color: #10b981;
+        background: #f0fdf4;
+      }
+      .drop-zone-hint {
+        display: flex;
+        align-items: center;
+        gap: 0.625rem;
+        margin-bottom: 0.625rem;
+        pointer-events: none;
+      }
+      .drop-zone-hint-icon {
+        color: #94a3b8;
+        font-size: 1.25rem;
+        flex-shrink: 0;
+        transition: color 0.2s;
+      }
+      .file-drop-zone.drag-over .drop-zone-hint-icon,
+      .file-drop-zone:hover .drop-zone-hint-icon {
+        color: #3b82f6;
+      }
+      .file-drop-zone.has-path .drop-zone-hint-icon {
+        color: #10b981;
+      }
+      .drop-zone-hint-text {
+        font-size: 0.8125rem;
+        color: #64748b;
+        line-height: 1.35;
+      }
+      .drop-zone-hint-text strong {
+        color: #334155;
+        font-weight: 600;
+      }
+      .drop-zone-controls {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+      }
+      .drop-zone-path-input {
+        font-size: 0.8125rem !important;
+        font-family: 'SF Mono', 'Monaco', 'Consolas', monospace !important;
+        color: #475569 !important;
+        background: white !important;
+        flex: 1;
+      }
+      .drop-zone-path-input::placeholder {
+        color: #94a3b8;
+        font-family: inherit;
+      }
+    ")),
+    tags$script(HTML("
+      (function() {
+        /* ── File drop-zone drag & drop ──────────────────────────────── */
+        $(document).on('dragenter', '.file-drop-zone', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          var n = (parseInt($(this).data('dc'), 10) || 0) + 1;
+          $(this).data('dc', n).addClass('drag-over');
+        });
+        $(document).on('dragover', '.file-drop-zone', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (e.originalEvent && e.originalEvent.dataTransfer)
+            e.originalEvent.dataTransfer.dropEffect = 'copy';
+        });
+        $(document).on('dragleave', '.file-drop-zone', function(e) {
+          var n = (parseInt($(this).data('dc'), 10) || 0) - 1;
+          $(this).data('dc', n);
+          if (n <= 0) $(this).data('dc', 0).removeClass('drag-over');
+        });
+        $(document).on('drop', '.file-drop-zone', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          $(this).data('dc', 0).removeClass('drag-over');
+          var dt = e.originalEvent && e.originalEvent.dataTransfer;
+          var uriList = dt && dt.getData('text/uri-list');
+          if (uriList) {
+            var uris = uriList.split(/\\r?\\n/).filter(function(u) {
+              return u && !u.startsWith('#') && u.startsWith('file://');
+            });
+            if (uris.length > 0) {
+              var paths = uris.map(function(u) {
+                return decodeURIComponent(
+                  u.replace(/^file:\\/\\//, '').replace(/\\/$/, '').trim()
+                );
+              });
+              var finalPath;
+              if (paths.length === 1) {
+                finalPath = paths[0];
+              } else {
+                var dirs = paths.map(function(p) {
+                  return p.substring(0, p.lastIndexOf('/'));
+                });
+                var uniq = dirs.filter(function(v, i, a) { return a.indexOf(v) === i; });
+                finalPath = uniq.length === 1 ? uniq[0] : paths[0];
+              }
+              var inp = $(this).find('.drop-zone-path-input');
+              inp.val(finalPath).trigger('change');
+              $(this).addClass('has-path');
+              return;
+            }
+          }
+          /* Fallback: open the browse modal */
+          $(this).find('.btn').first().trigger('click');
+        });
+        /* Update has-path class when user types in the path input */
+        $(document).on('change input', '.drop-zone-path-input', function() {
+          $(this).closest('.file-drop-zone')
+            .toggleClass('has-path', $(this).val().trim().length > 0);
+        });
+      })();
     "))
   )  # end tagList for header
   ),

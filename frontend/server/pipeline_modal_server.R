@@ -42,11 +42,19 @@ run_frontend_postprocess <- function(run_dir, pipeline_key, config_file) {
       cat("[POSTPROCESS] Re-running fixed piechart script\n")
       piechart_log <- file.path(run_dir, pipeline_key, "logs", "r_postprocess", "piechart_fixed.log")
       dir.create(dirname(piechart_log), recursive = TRUE, showWarnings = FALSE)
+      piechart_params_json <- tryCatch({
+        cfg  <- jsonlite::fromJSON(config_file)
+        step <- cfg$postprocess$steps$piechart
+        if (is.list(step) && !is.null(step$params)) {
+          jsonlite::toJSON(step$params, auto_unbox = TRUE)
+        } else "{}"
+      }, error = function(e) "{}")
       rc <- system2(
         "Rscript",
         args   = c(frontend_piechart,
                    "--outputs_json", outputs_json,
                    "--out_dir",      plots_dir,
+                   "--params_json",  piechart_params_json,
                    "--module",       pipeline_key),
         stdout = piechart_log,
         stderr = piechart_log,
@@ -257,15 +265,27 @@ pipeline_modal_server <- function(id, shared) {
         cat("[DEBUG] Run directory:", expected_run_dir_abs, "\n")
         cat("[DEBUG] Pipeline key:", shared$current_run$pipeline, "\n")
 
-        # CRITICAL: Do NOT use stdout = "|" or stderr = "|".
-        # processx pipes are never drained by the observe loop (it reads log
-        # files only).  After a long Docker/QIIME2 run the 64 KB pipe buffer
-        # fills up; any further write (even echo in the wrapper) blocks, so the
-        # wrapper hangs before Layer 1 or Layer 2 ever executes.
-        # stdout = NULL / stderr = NULL = inherit the parent R process's
-        # terminal — no pipe, no buffer, no blocking.
-        # proc$is_alive() and proc$get_exit_status() work via PID, not pipe.
+        # Pre-create the run's logs/ directory and open wrapper.log BEFORE
+        # starting the process. This guarantees wrapper output is captured
+        # even when the pipeline fails immediately (e.g. exit 125, Docker
+        # error) before the pipeline itself creates any files.
         #
+        # NOTE: stdout = "file_path" is a FILE redirect — completely different
+        # from stdout = "|" (pipe). File writes never block regardless of how
+        # much output the process produces, so the original pipe-buffer concern
+        # does NOT apply here. proc$is_alive() / proc$get_exit_status() still
+        # work via PID, not pipe.
+        wrapper_logs_dir <- file.path(expected_run_dir_abs, "logs")
+        dir.create(wrapper_logs_dir, recursive = TRUE, showWarnings = FALSE)
+        wrapper_log_path <- file.path(wrapper_logs_dir, "wrapper.log")
+        writeLines(
+          paste0("[WRAPPER] Pipeline starting at ", format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
+                 "\n[WRAPPER] Run ID: ", shared$current_run$run_id,
+                 "\n[WRAPPER] Pipeline: ", shared$current_run$pipeline,
+                 "\n[WRAPPER] Config: ", config_file),
+          wrapper_log_path
+        )
+
         # DORADO_MODEL_DIR tells the pipeline where to find Dorado models.
         # tools/ is at the repo root, OUTSIDE main/. Docker mounts main/ at /work,
         # so /work/tools/ does NOT exist. However run_in_container.sh mounts
@@ -279,8 +299,8 @@ pipeline_modal_server <- function(id, shared) {
           command = run_script,
           args = c("--config", config_file),
           wd = repo_root,
-          stdout = NULL,
-          stderr = NULL,
+          stdout = wrapper_log_path,
+          stderr = "2>&1",   # merge stderr into stdout → both go to wrapper.log
           env = proc_env,
           supervise = FALSE   # FALSE = wrapper outlives Shiny restarts;
                               # supervise=TRUE was killing the wrapper on restart,
@@ -635,6 +655,14 @@ pipeline_modal_server <- function(id, shared) {
       }, USE.NAMES = FALSE)
 
       HTML(paste(colored_lines, collapse = "<br>"))
+    })
+
+    output$cancel_run_btn <- renderUI({
+      if (shared$run_status == "running") {
+        actionButton(session$ns("cancel_run"), "Cancel Run",
+                     icon  = icon("stop"),
+                     class = "btn btn-danger")
+      }
     })
 
     observeEvent(input$cancel_run, {

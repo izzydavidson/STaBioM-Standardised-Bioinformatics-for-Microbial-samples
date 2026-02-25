@@ -58,23 +58,31 @@ short_read_ui <- function(id) {
                   class = "mb-3",
                   tags$label(class = "form-label", "FASTQ File or Directory"),
                   div(
-                    class = "input-group mb-2",
-                    tags$input(
-                      type = "text",
-                      class = "form-control",
-                      id = ns("input_path_display"),
-                      placeholder = "Browse for file or enter directory path",
-                      onchange = sprintf("Shiny.setInputValue('%s', this.value)", ns("input_path"))
+                    class = "file-drop-zone mb-2",
+                    div(
+                      class = "drop-zone-hint",
+                      tags$i(class = "fa fa-folder-open drop-zone-hint-icon"),
+                      div(
+                        class = "drop-zone-hint-text",
+                        tags$strong("Drop file(s) here, or click Browse"),
+                        tags$span(" — FASTQ, FQ, .gz. Multiple files or a directory.")
+                      )
                     ),
                     div(
-                      class = "input-group-append",
+                      class = "drop-zone-controls",
+                      tags$input(
+                        type = "text",
+                        class = "form-control drop-zone-path-input",
+                        id = ns("input_path_display"),
+                        placeholder = "No file selected",
+                        onchange = sprintf("Shiny.setInputValue('%s', this.value)", ns("input_path"))
+                      ),
                       shinyFilesButton(ns("input_file_browse"), "Browse",
                                        "Select FASTQ file(s)",
                                        multiple = TRUE,
-                                       class = "btn btn-outline-secondary")
+                                       class = "btn btn-primary btn-sm")
                     )
                   ),
-                  tags$small(class = "text-muted", "FASTQ, FQ, .gz files supported. Can select multiple files or enter directory path."),
                   div(style = "display: none;",
                     textInput(ns("input_path"), NULL, value = "")
                   )
@@ -88,20 +96,29 @@ short_read_ui <- function(id) {
                     class = "col-md-6 mb-3",
                     tags$label(class = "form-label", "Forward Reads (R1)"),
                     div(
-                      class = "input-group mb-2",
-                      tags$input(
-                        type = "text",
-                        class = "form-control",
-                        id = ns("input_r1_display"),
-                        placeholder = "Click Browse to select R1 file",
-                        readonly = "readonly"
+                      class = "file-drop-zone mb-2",
+                      div(
+                        class = "drop-zone-hint",
+                        tags$i(class = "fa fa-dna drop-zone-hint-icon"),
+                        div(
+                          class = "drop-zone-hint-text",
+                          tags$strong("Drop R1 file here, or click Browse"),
+                          tags$span(" — forward reads (FASTQ/GZ)")
+                        )
                       ),
                       div(
-                        class = "input-group-append",
+                        class = "drop-zone-controls",
+                        tags$input(
+                          type = "text",
+                          class = "form-control drop-zone-path-input",
+                          id = ns("input_r1_display"),
+                          placeholder = "No file selected",
+                          onchange = sprintf("Shiny.setInputValue('%s', this.value)", ns("input_r1"))
+                        ),
                         shinyFilesButton(ns("input_r1_browse"), "Browse",
                                          "Select forward reads file",
                                          multiple = FALSE,
-                                         class = "btn btn-primary")
+                                         class = "btn btn-primary btn-sm")
                       )
                     ),
                     div(style = "display: none;",
@@ -112,20 +129,29 @@ short_read_ui <- function(id) {
                     class = "col-md-6 mb-3",
                     tags$label(class = "form-label", "Reverse Reads (R2)"),
                     div(
-                      class = "input-group mb-2",
-                      tags$input(
-                        type = "text",
-                        class = "form-control",
-                        id = ns("input_r2_display"),
-                        placeholder = "Click Browse to select R2 file",
-                        readonly = "readonly"
+                      class = "file-drop-zone mb-2",
+                      div(
+                        class = "drop-zone-hint",
+                        tags$i(class = "fa fa-dna drop-zone-hint-icon"),
+                        div(
+                          class = "drop-zone-hint-text",
+                          tags$strong("Drop R2 file here, or click Browse"),
+                          tags$span(" — reverse reads (FASTQ/GZ)")
+                        )
                       ),
                       div(
-                        class = "input-group-append",
+                        class = "drop-zone-controls",
+                        tags$input(
+                          type = "text",
+                          class = "form-control drop-zone-path-input",
+                          id = ns("input_r2_display"),
+                          placeholder = "No file selected",
+                          onchange = sprintf("Shiny.setInputValue('%s', this.value)", ns("input_r2"))
+                        ),
                         shinyFilesButton(ns("input_r2_browse"), "Browse",
                                          "Select reverse reads file",
                                          multiple = FALSE,
-                                         class = "btn btn-primary")
+                                         class = "btn btn-primary btn-sm")
                       )
                     ),
                     div(style = "display: none;",
@@ -311,6 +337,11 @@ short_read_ui <- function(id) {
                   div(
                     class = "col-md-6 mb-3",
                     checkboxInput(ns("human_depletion"), "Human Read Depletion", value = FALSE)
+                  ),
+                  div(
+                    class = "col-md-12 mb-3",
+                    checkboxInput(ns("kraken_memory_mapping"), "Kraken2 Memory Mapping (low-RAM mode)", value = FALSE),
+                    tags$small(class = "text-muted", "Use disk I/O instead of loading the full database into RAM. Slower but reduces memory usage.")
                   )
                 ),
                 div(
@@ -339,6 +370,31 @@ short_read_ui <- function(id) {
                       checkboxInput(ns("output_quality_reports"), "Quality Reports", value = TRUE)
                     )
                   )
+                )
+              )
+            )
+          ),
+
+          # ── Sample Barcode Mapping (Optional) ─────────────────────
+          conditionalPanel(
+            condition = sprintf("input['%s'] == true", ns("demultiplex")),
+            div(
+              class = "card mb-4",
+              div(
+                class = "card-body",
+                h4("Sample Barcode Mapping (Optional)"),
+                tags$p(
+                  class = "text-muted",
+                  style = "font-size: 0.875rem;",
+                  "Map barcode numbers to meaningful sample names. Leave the name empty to keep the raw barcode ID."
+                ),
+                uiOutput(ns("barcode_map_rows")),
+                div(
+                  class = "d-flex gap-2 mt-2",
+                  actionButton(ns("add_barcode_row"), "+ Add barcode",
+                    class = "btn btn-sm btn-outline-primary"),
+                  actionButton(ns("remove_barcode_row"), "Remove last",
+                    class = "btn btn-sm btn-outline-secondary")
                 )
               )
             )

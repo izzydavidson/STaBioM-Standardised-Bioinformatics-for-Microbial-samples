@@ -45,14 +45,35 @@ pipeline_modal_ui <- function(run_id, pipeline, config_json, session) {
 
     tags$script(HTML("
       (function() {
-        // Target the outer container — it is a stable DOM node that is never
-        // replaced by Shiny. The inner uiOutput div grows in height as
-        // renderUI injects new content, pushing the outer container's
-        // scrollHeight up. We read scrollHeight inside requestAnimationFrame
-        // so the browser has finished layout before we set scrollTop.
-        setInterval(function() {
+        // Auto-scroll the log container to the bottom while the pipeline is running.
+        // Stops permanently once the pipeline completes/fails (badge loses bg-warning).
+        // Pauses temporarily if the user manually scrolls up; resumes when they
+        // scroll back to within 40px of the bottom.
+        var userScrolledUp = false;
+
+        // Detect manual upward scroll on the log container (capture phase so we
+        // catch the event before it bubbles).
+        document.addEventListener('scroll', function(e) {
           var el = document.getElementById('pipeline_modal-log_container');
-          if (el) {
+          if (e.target === el) {
+            var atBottom = el.scrollTop >= el.scrollHeight - el.clientHeight - 40;
+            userScrolledUp = !atBottom;
+          }
+        }, true);
+
+        var interval = setInterval(function() {
+          var el = document.getElementById('pipeline_modal-log_container');
+          if (!el) return;
+
+          // Stop once the pipeline is no longer running (badge loses bg-warning).
+          var badge = document.querySelector('#pipeline_modal-modal_status_badge .badge');
+          if (badge && !badge.classList.contains('bg-warning')) {
+            clearInterval(interval);
+            return;
+          }
+
+          // Scroll to bottom only when the user has not scrolled up.
+          if (!userScrolledUp) {
             requestAnimationFrame(function() {
               el.scrollTop = el.scrollHeight;
             });
@@ -132,9 +153,7 @@ pipeline_modal_ui <- function(run_id, pipeline, config_json, session) {
           actionButton(ns("return_dashboard"), "Return to Dashboard",
                       icon = icon("home"),
                       class = "btn btn-outline-secondary"),
-          actionButton(ns("cancel_run"), "Cancel Run",
-                      icon = icon("stop"),
-                      class = "btn btn-danger")
+          uiOutput(ns("cancel_run_btn"))
         )
       )
     )
