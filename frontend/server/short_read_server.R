@@ -3,24 +3,6 @@ short_read_server <- function(id, shared) {
 
     ns <- session$ns
 
-    volumes <- c(
-      Desktop   = fs::path_home("Desktop"),
-      Project   = dirname(getwd()),
-      Home      = fs::path_home(),
-      Documents = fs::path_home("Documents"),
-      Root      = "/"
-    )
-
-    # Helper: load saved default root for this input (falls back to "Desktop")
-    .sr_root <- function(key, default = "Desktop") get_ui_pref(paste0("sr_", key, "_root"), default)
-    .sr_rel  <- function(key) get_ui_pref(paste0("sr_", key, "_rel"), "")
-
-    # Helper: update drop-zone display field and trigger has-path class update
-    .set_display <- function(id, path) {
-      safe_path <- gsub("'", "\\\\'", path)
-      shinyjs::runjs(sprintf("$('#%s').val('%s').trigger('change')", session$ns(id), safe_path))
-    }
-
     # --- Barcode mapping state ---
     n_barcodes <- reactiveVal(0L)
 
@@ -74,77 +56,31 @@ short_read_server <- function(id, shared) {
       if (length(m) == 0L) NULL else m
     })
 
-    shinyFileChoose(input, "input_file_browse", roots = volumes, session = session,
-                    filetypes = c("fastq", "fq", "gz", "fast5", "pod5", ""),
-                    defaultRoot = .sr_root("input"), defaultPath = .sr_rel("input"))
-
-    shinyFileChoose(input, "input_r1_browse", roots = volumes, session = session,
-                    filetypes = c("fastq", "fq", "gz", "fast5", "pod5", ""),
-                    defaultRoot = .sr_root("r1"), defaultPath = .sr_rel("r1"))
-    shinyFileChoose(input, "input_r2_browse", roots = volumes, session = session,
-                    filetypes = c("fastq", "fq", "gz", "fast5", "pod5", ""),
-                    defaultRoot = .sr_root("r2"), defaultPath = .sr_rel("r2"))
-
-    observeEvent(input$input_file_browse, {
-      if (!is.integer(input$input_file_browse)) {
-        file_path <- parseFilePaths(volumes, input$input_file_browse)
-        if (nrow(file_path) > 0) {
-          full_paths <- as.character(file_path$datapath)
-
-          # If multiple files selected from same directory, pass the directory instead
-          # (pipeline expects directory path for batch processing, not comma-separated files)
-          if (length(full_paths) > 1) {
-            dirs <- unique(dirname(full_paths))
-            if (length(dirs) == 1) {
-              final_path <- dirs[1]
-            } else {
-              final_path <- full_paths[1]
-              showNotification(
-                "Multiple files from different directories selected. Using first file only. To process multiple files, select files from the same directory or enter the directory path directly.",
-                type = "warning",
-                duration = 10
-              )
-            }
-          } else {
-            final_path <- full_paths[1]
-          }
-
-          updateTextInput(session, "input_path", value = final_path)
-          .set_display("input_path_display", final_path)
-          info <- vol_for_path(final_path, volumes)
-          save_ui_pref("sr_input_root", info$root)
-          save_ui_pref("sr_input_rel",  info$rel)
-        }
+    # --- Additional output directory ---
+    # Browse button: open native macOS folder picker via osascript.
+    # Write the script to a temp file to avoid all shell-quoting issues.
+    observeEvent(input$choose_extra_dir, {
+      dir <- tryCatch({
+        scpt <- tempfile(fileext = ".scpt")
+        writeLines('POSIX path of (choose folder with prompt "Select Output Directory")', scpt)
+        result <- system2("osascript", args = scpt, stdout = TRUE, stderr = FALSE)
+        unlink(scpt)
+        if (length(result) > 0 && nchar(trimws(result[1])) > 0)
+          sub("/$", "", trimws(result[1]))   # strip trailing slash osascript adds
+        else
+          NULL
+      }, error = function(e) NULL)
+      if (!is.null(dir) && nchar(dir) > 0) {
+        updateTextInput(session, "extra_output_dir", value = dir)
+        shared$additional_output_dir <- dir
       }
     })
 
-    observeEvent(input$input_r1_browse, {
-      if (!is.integer(input$input_r1_browse)) {
-        file_path <- parseFilePaths(volumes, input$input_r1_browse)
-        if (nrow(file_path) > 0) {
-          full_path <- as.character(file_path$datapath[1])
-          updateTextInput(session, "input_r1", value = full_path)
-          .set_display("input_r1_display", full_path)
-          info <- vol_for_path(full_path, volumes)
-          save_ui_pref("sr_r1_root", info$root)
-          save_ui_pref("sr_r1_rel",  info$rel)
-        }
-      }
-    })
-
-    observeEvent(input$input_r2_browse, {
-      if (!is.integer(input$input_r2_browse)) {
-        file_path <- parseFilePaths(volumes, input$input_r2_browse)
-        if (nrow(file_path) > 0) {
-          full_path <- as.character(file_path$datapath[1])
-          updateTextInput(session, "input_r2", value = full_path)
-          .set_display("input_r2_display", full_path)
-          info <- vol_for_path(full_path, volumes)
-          save_ui_pref("sr_r2_root", info$root)
-          save_ui_pref("sr_r2_rel",  info$rel)
-        }
-      }
-    })
+    # Text field: sync to shared whenever the user types or drag-drops a path
+    observeEvent(input$extra_output_dir, {
+      val <- trimws(input$extra_output_dir %||% "")
+      shared$additional_output_dir <- if (nchar(val) > 0) val else NULL
+    }, ignoreInit = TRUE)
 
     output$quality_threshold_display <- renderText({ as.character(input$quality_threshold) })
     output$min_read_length_display <- renderText({ as.character(input$min_read_length) })
@@ -179,54 +115,8 @@ short_read_server <- function(id, shared) {
       )
     })
 
-    get_repo_root <- reactive({
-      dirname(getwd())
-    })
-
-    validate_output_dir <- reactive({
-      output_dir <- input$output_dir
-      repo_root <- get_repo_root()
-
-      if (is.null(output_dir) || nchar(trimws(output_dir)) == 0) {
-        return(list(valid = FALSE, message = "Output directory cannot be empty"))
-      }
-
-      output_dir_normalized <- normalizePath(output_dir, mustWork = FALSE)
-      repo_root_normalized <- normalizePath(repo_root, mustWork = FALSE)
-
-      is_inside <- startsWith(output_dir_normalized, repo_root_normalized)
-
-      if (!is_inside) {
-        return(list(
-          valid = FALSE,
-          message = "Output directory must be inside the STaBioM repository"
-        ))
-      }
-
-      list(valid = TRUE, message = "")
-    })
-
-    output$output_dir_validation <- renderUI({
-      val <- validate_output_dir()
-
-      if (!val$valid) {
-        tags$small(
-          class = "text-danger",
-          style = "display: block; margin-top: 0.25rem;",
-          icon("triangle-exclamation"), " ", val$message
-        )
-      } else {
-        NULL
-      }
-    })
-
     validate_inputs <- reactive({
       errors <- character(0)
-
-      output_dir_val <- validate_output_dir()
-      if (!output_dir_val$valid) {
-        errors <- c(errors, output_dir_val$message)
-      }
 
       if (input$paired_end) {
         if (nchar(input$input_r1) == 0) errors <- c(errors, "Forward reads (R1) path is required")
@@ -288,9 +178,7 @@ short_read_server <- function(id, shared) {
         cmd <- c(cmd, "-i", input$input_path)
       }
 
-      if (nchar(input$output_dir) > 0) {
-        cmd <- c(cmd, "-o", input$output_dir)
-      }
+      cmd <- c(cmd, "-o", file.path(dirname(getwd()), "outputs"))
 
       if (nchar(input$run_name) > 0) {
         cmd <- c(cmd, "--run-name", input$run_name)
@@ -384,7 +272,7 @@ short_read_server <- function(id, shared) {
         input_path = input$input_path,
         input_r1 = input$input_r1,
         input_r2 = input$input_r2,
-        output_dir = input$output_dir,
+        output_dir = file.path(dirname(getwd()), "outputs"),
         quality_threshold = input$quality_threshold,
         min_read_length = input$min_read_length,
         threads = threads_value,

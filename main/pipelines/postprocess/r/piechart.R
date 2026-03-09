@@ -44,6 +44,24 @@ if (is.null(outputs_json) || is.null(out_dir)) {
 outputs <- fromJSON(outputs_json)
 params <- tryCatch(fromJSON(params_json), error = function(e) list())
 
+`%||%` <- function(x, y) if (is.null(x)) y else x
+
+# Apply barcode → sample name mapping from sample sheet (if provided)
+apply_sample_map <- function(df, sample_col, params) {
+  tsv <- params$sample_sheet %||% NULL
+  if (is.null(tsv) || !nzchar(tsv) || !file.exists(tsv)) return(df)
+  sheet <- tryCatch(
+    read.delim(tsv, stringsAsFactors = FALSE, na.strings = ""),
+    error = function(e) NULL
+  )
+  if (is.null(sheet) || !all(c("barcode", "sample_name") %in% colnames(sheet))) return(df)
+  name_map <- setNames(sheet$sample_name, sheet$barcode)
+  bc_key   <- sub(".*_(barcode[0-9]+)$", "\\1", df[[sample_col]])
+  mapped   <- name_map[bc_key]
+  df[[sample_col]] <- ifelse(!is.na(mapped) & nzchar(mapped), mapped, df[[sample_col]])
+  df
+}
+
 cat("[piechart] Module:", module_name, "\n")
 cat("[piechart] Output dir:", out_dir, "\n")
 
@@ -102,28 +120,21 @@ generate_piechart_grid <- function(data, sample_col, taxon_col, count_col, rank_
 
   cat("[piechart]", rank_label, ": Found", n_samples, "sample(s)\n")
 
-  # Calculate grid dimensions
-  if (n_samples == 1) {
-    n_cols <- 1
-    n_rows <- 1
-  } else if (n_samples == 2) {
-    n_cols <- 2
-    n_rows <- 1
-  } else if (n_samples <= 4) {
-    n_cols <- 2
-    n_rows <- 2
-  } else if (n_samples <= 6) {
-    n_cols <- 3
-    n_rows <- 2
-  } else if (n_samples <= 9) {
-    n_cols <- 3
-    n_rows <- 3
+  # Calculate grid dimensions — always reserve 1 extra slot for the legend
+  total_panels <- n_samples + 1
+  if (total_panels <= 2) {
+    n_cols <- 2; n_rows <- 1
+  } else if (total_panels <= 4) {
+    n_cols <- 2; n_rows <- 2
+  } else if (total_panels <= 6) {
+    n_cols <- 3; n_rows <- 2
+  } else if (total_panels <= 9) {
+    n_cols <- 3; n_rows <- 3
   } else {
-    n_cols <- 4
-    n_rows <- ceiling(n_samples / 4)
+    n_cols <- 4; n_rows <- ceiling(total_panels / 4)
   }
 
-  # Calculate figure dimensions based on number of samples
+  # Calculate figure dimensions based on grid size
   fig_width <- 400 * n_cols
   fig_height <- 450 * n_rows
 
@@ -272,6 +283,7 @@ if (module_name %in% c("sr_meta", "lr_meta", "lr_amp") || is.null(module_name)) 
     # Load genus data
     if (file.exists(genus_tidy)) {
       genus_data <- read.csv(genus_tidy, stringsAsFactors = FALSE)
+      genus_data <- apply_sample_map(genus_data, "sample_id", params)
       cat("[piechart] Loaded genus data:", nrow(genus_data), "rows,",
           length(unique(genus_data$genus)), "taxa,",
           length(unique(genus_data$sample_id)), "samples\n")
@@ -283,6 +295,7 @@ if (module_name %in% c("sr_meta", "lr_meta", "lr_amp") || is.null(module_name)) 
     # Load species data
     if (file.exists(species_tidy)) {
       species_data <- read.csv(species_tidy, stringsAsFactors = FALSE)
+      species_data <- apply_sample_map(species_data, "sample_id", params)
       cat("[piechart] Loaded species data:", nrow(species_data), "rows,",
           length(unique(species_data$species)), "taxa,",
           length(unique(species_data$sample_id)), "samples\n")
@@ -367,6 +380,7 @@ if (!generated_any && (module_name == "sr_amp" || is.null(module_name))) {
         # Generate genus pie chart grid
         if (length(genus_rows) > 0) {
           genus_data <- do.call(rbind, genus_rows)
+          genus_data <- apply_sample_map(genus_data, "sample_id", params)
           cat("[piechart] QIIME2 genus data:", nrow(genus_data), "rows,",
               length(unique(genus_data$sample_id)), "samples\n")
           if (generate_piechart_grid(genus_data, "sample_id", "genus", "reads", "Genus", top_n, out_dir)) {
@@ -377,6 +391,7 @@ if (!generated_any && (module_name == "sr_amp" || is.null(module_name))) {
         # Generate species pie chart grid
         if (length(species_rows) > 0) {
           species_data <- do.call(rbind, species_rows)
+          species_data <- apply_sample_map(species_data, "sample_id", params)
           cat("[piechart] QIIME2 species data:", nrow(species_data), "rows,",
               length(unique(species_data$sample_id)), "samples\n")
           if (generate_piechart_grid(species_data, "sample_id", "species", "reads", "Species", top_n, out_dir)) {
@@ -454,6 +469,7 @@ if (!generated_any && module_name == "lr_amp") {
       # Generate genus pie chart grid from Emu data
       if (length(genus_rows) > 0) {
         genus_data <- do.call(rbind, genus_rows)
+        genus_data <- apply_sample_map(genus_data, "sample_id", params)
         cat("[piechart] Emu genus data:", nrow(genus_data), "rows,",
             length(unique(genus_data$sample_id)), "samples\n")
         if (generate_piechart_grid(genus_data, "sample_id", "genus", "reads", "Genus", top_n, out_dir)) {
@@ -464,6 +480,7 @@ if (!generated_any && module_name == "lr_amp") {
       # Generate species pie chart grid from Emu data
       if (length(species_rows) > 0) {
         species_data <- do.call(rbind, species_rows)
+        species_data <- apply_sample_map(species_data, "sample_id", params)
         cat("[piechart] Emu species data:", nrow(species_data), "rows,",
             length(unique(species_data$sample_id)), "samples\n")
         if (generate_piechart_grid(species_data, "sample_id", "species", "reads", "Species", top_n, out_dir)) {

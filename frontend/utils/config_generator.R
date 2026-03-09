@@ -41,13 +41,13 @@ generate_sr_amp_config <- function(params) {
 
   input_obj <- list(style = input_style)
   if (isTRUE(params$paired_end)) {
-    input_obj$fastq_r1 <- params$input_r1
-    input_obj$fastq_r2 <- params$input_r2
-    cat("[WIRE] input.fastq_r1:", params$input_r1, "\n")
-    cat("[WIRE] input.fastq_r2:", params$input_r2, "\n")
+    input_obj$fastq_r1 <- trimws(params$input_r1)
+    input_obj$fastq_r2 <- trimws(params$input_r2)
+    cat("[WIRE] input.fastq_r1:", trimws(params$input_r1), "\n")
+    cat("[WIRE] input.fastq_r2:", trimws(params$input_r2), "\n")
   } else {
-    input_obj$fastq_r1 <- params$input_path
-    cat("[WIRE] input.fastq_r1:", params$input_path, "\n")
+    input_obj$fastq_r1 <- trimws(params$input_path)
+    cat("[WIRE] input.fastq_r1:", trimws(params$input_path), "\n")
   }
 
   # --- primers ---
@@ -408,13 +408,13 @@ generate_sr_meta_config <- function(params) {
 
   input_obj <- list(style = input_style)
   if (isTRUE(params$paired_end)) {
-    input_obj$fastq_r1 <- params$input_r1
-    input_obj$fastq_r2 <- params$input_r2
-    cat("[WIRE] input.fastq_r1:", params$input_r1, "\n")
-    cat("[WIRE] input.fastq_r2:", params$input_r2, "\n")
+    input_obj$fastq_r1 <- trimws(params$input_r1)
+    input_obj$fastq_r2 <- trimws(params$input_r2)
+    cat("[WIRE] input.fastq_r1:", trimws(params$input_r1), "\n")
+    cat("[WIRE] input.fastq_r2:", trimws(params$input_r2), "\n")
   } else {
-    input_obj$fastq_r1 <- params$input_path
-    cat("[WIRE] input.fastq_r1:", params$input_path, "\n")
+    input_obj$fastq_r1 <- trimws(params$input_path)
+    cat("[WIRE] input.fastq_r1:", trimws(params$input_path), "\n")
   }
 
   # --- output selected ---
@@ -731,11 +731,11 @@ generate_lr_amp_config <- function(params) {
 
   input_obj <- list(style = input_style)
   if (input_style == "FASTQ_SINGLE") {
-    input_obj$fastq <- params$input_path
-    cat("[WIRE] input.fastq:", params$input_path, "\n")
+    input_obj$fastq <- trimws(params$input_path)
+    cat("[WIRE] input.fastq:", trimws(params$input_path), "\n")
   } else {
     # FAST5_DIR or POD5_DIR - ensure we have a directory, not a file
-    fast5_path <- params$input_path
+    fast5_path <- trimws(params$input_path)
     if (file.exists(fast5_path) && !dir.exists(fast5_path)) {
       # User selected a file instead of directory - use parent directory
       fast5_path <- dirname(fast5_path)
@@ -1117,11 +1117,11 @@ generate_lr_meta_config <- function(params) {
 
   input_obj <- list(style = input_style)
   if (input_style == "FASTQ_SINGLE") {
-    input_obj$fastq <- params$input_path
-    cat("[WIRE] input.fastq:", params$input_path, "\n")
+    input_obj$fastq <- trimws(params$input_path)
+    cat("[WIRE] input.fastq:", trimws(params$input_path), "\n")
   } else {
     # FAST5_DIR or POD5_DIR - ensure we have a directory, not a file
-    fast5_path <- params$input_path
+    fast5_path <- trimws(params$input_path)
     if (file.exists(fast5_path) && !dir.exists(fast5_path)) {
       # User selected a file instead of directory - use parent directory
       fast5_path <- dirname(fast5_path)
@@ -1311,6 +1311,13 @@ generate_lr_meta_config <- function(params) {
   if (!is.null(min_read_length)) {
     tools_obj$qfilter$min_len <- min_read_length
   }
+
+  # Bracken: always enable with readlen=1200 (sweep confirms readlen doesn't matter for ONT).
+  # check_bracken_available() will warn and disable gracefully if kmer_distrib is missing.
+  tools_obj$bracken <- list(
+    vaginal    = list(enabled = 1L, readlen = 1200L),
+    nonvaginal = list(enabled = 1L, readlen = 1200L)
+  )
 
   # minimap2 index: always output when found (pipeline ignores if remove_host=0)
   # Pipeline reads: .tools.minimap2.human_mmi + .tools.minimap2.split_prefix (lr_meta.sh)

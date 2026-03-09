@@ -46,6 +46,24 @@ if (is.null(outputs_json) || is.null(out_dir)) {
 outputs <- fromJSON(outputs_json)
 params <- tryCatch(fromJSON(params_json), error = function(e) list())
 
+`%||%` <- function(x, y) if (is.null(x)) y else x
+
+# Apply barcode → sample name mapping from sample sheet (if provided)
+apply_sample_map <- function(df, sample_col, params) {
+  tsv <- params$sample_sheet %||% NULL
+  if (is.null(tsv) || !nzchar(tsv) || !file.exists(tsv)) return(df)
+  sheet <- tryCatch(
+    read.delim(tsv, stringsAsFactors = FALSE, na.strings = ""),
+    error = function(e) NULL
+  )
+  if (is.null(sheet) || !all(c("barcode", "sample_name") %in% colnames(sheet))) return(df)
+  name_map <- setNames(sheet$sample_name, sheet$barcode)
+  bc_key   <- sub(".*_(barcode[0-9]+)$", "\\1", df[[sample_col]])
+  mapped   <- name_map[bc_key]
+  df[[sample_col]] <- ifelse(!is.na(mapped) & nzchar(mapped), mapped, df[[sample_col]])
+  df
+}
+
 cat("[results_csv] Module:", module_name, "\n")
 cat("[results_csv] Output dir:", out_dir, "\n")
 
@@ -200,6 +218,11 @@ if (is.null(taxa_data) && (module_name == "sr_amp" || is.null(module_name))) {
       }
     }
   }
+}
+
+# Apply barcode → sample name mapping
+if (!is.null(taxa_data) && nrow(taxa_data) > 0) {
+  taxa_data <- apply_sample_map(taxa_data, "sample_id", params)
 }
 
 # Write taxonomy results

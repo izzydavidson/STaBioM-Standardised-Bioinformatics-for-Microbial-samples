@@ -536,6 +536,25 @@ pipeline_modal_server <- function(id, shared) {
           }, error = function(e) {
             cat("[WARNING] In-process final/ copy failed:", e$message, "\n")
           })
+
+          # ── Additional output directory copy ──────────────────────────────
+          # If the user chose an extra output dir (SR or LR module), copy the
+          # entire run folder there.  Original in STaBioM/outputs/ is untouched.
+          if (!is.null(shared$additional_output_dir) &&
+              nchar(trimws(shared$additional_output_dir)) > 0) {
+            tryCatch({
+              rd_val  <- run_dir()
+              extra   <- trimws(shared$additional_output_dir)
+              dest    <- file.path(extra, basename(rd_val))
+              # Remove stale destination so file.copy gets a clean slate
+              if (dir.exists(dest)) unlink(dest, recursive = TRUE)
+              file.copy(rd_val, extra, recursive = TRUE, overwrite = TRUE)
+              cat("[INFO] Copied run folder to additional output:", dest, "\n")
+            }, error = function(e) {
+              cat("[WARNING] Additional output dir copy failed:", e$message, "\n")
+            })
+          }
+
           shared$run_status <- "completed"
           cat("[INFO] Pipeline complete\n")
         } else {

@@ -44,6 +44,24 @@ if (is.null(outputs_json) || is.null(out_dir)) {
 outputs <- fromJSON(outputs_json)
 params <- tryCatch(fromJSON(params_json), error = function(e) list())
 
+`%||%` <- function(x, y) if (is.null(x)) y else x
+
+# Apply barcode → sample name mapping from sample sheet (if provided)
+apply_sample_map <- function(df, sample_col, params) {
+  tsv <- params$sample_sheet %||% NULL
+  if (is.null(tsv) || !nzchar(tsv) || !file.exists(tsv)) return(df)
+  sheet <- tryCatch(
+    read.delim(tsv, stringsAsFactors = FALSE, na.strings = ""),
+    error = function(e) NULL
+  )
+  if (is.null(sheet) || !all(c("barcode", "sample_name") %in% colnames(sheet))) return(df)
+  name_map <- setNames(sheet$sample_name, sheet$barcode)
+  bc_key   <- sub(".*_(barcode[0-9]+)$", "\\1", df[[sample_col]])
+  mapped   <- name_map[bc_key]
+  df[[sample_col]] <- ifelse(!is.na(mapped) & nzchar(mapped), mapped, df[[sample_col]])
+  df
+}
+
 cat("[heatmap] Module:", module_name, "\n")
 cat("[heatmap] Output dir:", out_dir, "\n")
 
@@ -105,7 +123,7 @@ generate_heatmap <- function(data, taxon_col, abundance_col, rank_label, top_n, 
   # Generate heatmap
   out_png <- file.path(out_dir, paste0("heatmap_", tolower(rank_label), ".png"))
 
-  plot_width <- max(800, n_samples * 100 + 250)
+  plot_width <- max(1100, n_samples * 120 + 350)
   plot_height <- max(800, n_taxa * 30 + 200)
 
   png(out_png, width = plot_width, height = plot_height, res = 150, bg = "white")
@@ -114,24 +132,36 @@ generate_heatmap <- function(data, taxon_col, abundance_col, rank_label, top_n, 
 
   par(mar = c(8, 12, 3, 1))
 
+  # Log1p-transform for display: log1p(x*100)/log1p(100) maps [0,1] -> [0,1]
+  # with strong expansion at low values so tiny abundances are still visually distinct.
+  # e.g. 1% -> 15% of color scale, 5% -> 39%, 10% -> 52%, 50% -> 85%
+  # Colorbar labels show original (untransformed) values.
+  mat_display <- log1p(mat * 100) / log1p(100)
+
+  # Viridis approximation — perceptually uniform, strong contrast across full 0-1 range
   n_colors <- 100
-  colors <- colorRampPalette(c("white", "lightyellow", "orange", "red", "darkred"))(n_colors)
+  colors <- colorRampPalette(c(
+    "#440154", "#482878", "#3e4989", "#31688e",
+    "#26828e", "#1f9e89", "#35b779", "#6dcd59",
+    "#b4de2c", "#fde725"
+  ))(n_colors)
 
   image(
-    1:n_samples, 1:n_taxa, t(mat),
+    1:n_samples, 1:n_taxa, t(mat_display),
     col = colors,
     xlab = "", ylab = "",
     axes = FALSE,
+    zlim = c(0, 1),
     main = paste(rank_label, "Heatmap (Top", top_n, ")")
   )
 
   axis(1, at = 1:n_samples, labels = colnames(mat), las = 2, cex.axis = 0.7)
   axis(2, at = 1:n_taxa, labels = rownames(mat), las = 1, cex.axis = 0.6)
 
-  abline(h = 0.5:(n_taxa + 0.5), col = "gray90", lwd = 0.5)
-  abline(v = 0.5:(n_samples + 0.5), col = "gray90", lwd = 0.5)
+  abline(h = 0.5:(n_taxa + 0.5), col = "gray80", lwd = 0.5)
+  abline(v = 0.5:(n_samples + 0.5), col = "gray80", lwd = 0.5)
 
-  # Colorbar
+  # Colorbar: ticks at log1p-transformed positions, labels show original values
   par(mar = c(8, 1, 3, 3))
   image(
     1, seq(0, 1, length.out = n_colors), t(matrix(1:n_colors)),
@@ -139,10 +169,13 @@ generate_heatmap <- function(data, taxon_col, abundance_col, rank_label, top_n, 
     xlab = "", ylab = "",
     axes = FALSE
   )
+  colorbar_orig   <- c(0, 0.01, 0.05, 0.10, 0.25, 0.50, 1.00)
+  colorbar_at     <- log1p(colorbar_orig * 100) / log1p(100)
+  colorbar_labels <- format(colorbar_orig, nsmall = 2)
   axis(
     4,
-    at = c(0, 0.25, 0.5, 0.75, 1),
-    labels = format(c(0, 0.25, 0.5, 0.75, 1), digits = 2),
+    at = colorbar_at,
+    labels = colorbar_labels,
     las = 1,
     cex.axis = legend_axis_cex
   )
@@ -159,8 +192,8 @@ generate_heatmap <- function(data, taxon_col, abundance_col, rank_label, top_n, 
   return(TRUE)
 }
 
-# Get top_n parameter
-top_n <- if (!is.null(params$top_n)) params$top_n else 25
+# Get top_n parameter — minimum 5 to prevent n_samples being mistaken for top_n
+top_n <- if (!is.null(params$top_n) && is.numeric(params$top_n) && params$top_n >= 5) params$top_n else 25
 
 # Track what we generated
 generated_any <- FALSE
@@ -175,6 +208,7 @@ if (module_name %in% c("sr_meta", "lr_meta", "lr_amp") || is.null(module_name)) 
     # Load genus data
     if (file.exists(genus_tidy)) {
       genus_data <- read.csv(genus_tidy, stringsAsFactors = FALSE)
+      genus_data <- apply_sample_map(genus_data, "sample_id", params)
       cat("[heatmap] Loaded genus data:", nrow(genus_data), "rows,", length(unique(genus_data$genus)), "taxa\n")
       if (generate_heatmap(genus_data, "genus", "fraction", "Genus", top_n, out_dir)) {
         generated_any <- TRUE
@@ -184,6 +218,7 @@ if (module_name %in% c("sr_meta", "lr_meta", "lr_amp") || is.null(module_name)) 
     # Load species data
     if (file.exists(species_tidy)) {
       species_data <- read.csv(species_tidy, stringsAsFactors = FALSE)
+      species_data <- apply_sample_map(species_data, "sample_id", params)
       cat("[heatmap] Loaded species data:", nrow(species_data), "rows,", length(unique(species_data$species)), "taxa\n")
       if (generate_heatmap(species_data, "species", "fraction", "Species", top_n, out_dir)) {
         generated_any <- TRUE
@@ -269,6 +304,7 @@ if (!generated_any && (module_name == "sr_amp" || is.null(module_name))) {
           colnames(totals)[2] <- "total"
           genus_data <- merge(genus_data, totals, by = "sample_id")
           genus_data$fraction <- genus_data$count / genus_data$total
+          genus_data <- apply_sample_map(genus_data, "sample_id", params)
           if (generate_heatmap(genus_data, "genus", "fraction", "Genus", top_n, out_dir)) {
             generated_any <- TRUE
           }
@@ -282,6 +318,7 @@ if (!generated_any && (module_name == "sr_amp" || is.null(module_name))) {
           colnames(totals)[2] <- "total"
           species_data <- merge(species_data, totals, by = "sample_id")
           species_data$fraction <- species_data$count / species_data$total
+          species_data <- apply_sample_map(species_data, "sample_id", params)
           if (generate_heatmap(species_data, "species", "fraction", "Species", top_n, out_dir)) {
             generated_any <- TRUE
           }
@@ -374,6 +411,7 @@ if (!generated_any && module_name == "lr_amp") {
 
       if (length(genus_rows) > 0) {
         genus_data <- do.call(rbind, genus_rows)
+        genus_data <- apply_sample_map(genus_data, "sample_id", params)
         cat("[heatmap] Emu genus data:", nrow(genus_data), "rows,",
             length(unique(genus_data$sample_id)), "samples\n")
         if (generate_heatmap(genus_data, "genus", "fraction", "Genus", top_n, out_dir)) {
@@ -383,6 +421,7 @@ if (!generated_any && module_name == "lr_amp") {
 
       if (length(species_rows) > 0) {
         species_data <- do.call(rbind, species_rows)
+        species_data <- apply_sample_map(species_data, "sample_id", params)
         cat("[heatmap] Emu species data:", nrow(species_data), "rows,",
             length(unique(species_data$sample_id)), "samples\n")
         if (generate_heatmap(species_data, "species", "fraction", "Species", top_n, out_dir)) {

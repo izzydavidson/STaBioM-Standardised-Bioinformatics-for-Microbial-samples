@@ -39,10 +39,25 @@ short_read_ui <- function(id) {
                 ),
                 div(
                   class = "col-md-12 mb-3",
-                  tags$label(class = "form-label", "Output Directory"),
-                  textInput(ns("output_dir"), NULL, value = file.path(dirname(getwd()), "outputs")),
-                  tags$small(class = "text-muted", "Must be inside the STaBioM repository"),
-                  uiOutput(ns("output_dir_validation"))
+                  tags$label(class = "form-label",
+                    "Output Directory",
+                    tags$span(class = "text-muted",
+                      style = "font-size: 0.8rem; font-weight: 400;", " (Optional)")
+                  ),
+                  div(
+                    class = "d-flex align-items-center gap-2",
+                    textInput(ns("extra_output_dir"), NULL,
+                      placeholder = "/path/to/output  (e.g. /Users/you/Desktop)",
+                      width = "100%"
+                    ),
+                    actionButton(ns("choose_extra_dir"), "Browse\u2026",
+                      class = "btn btn-outline-secondary btn-sm",
+                      style = "white-space: nowrap; flex-shrink: 0;"
+                    )
+                  ),
+                  tags$small(class = "text-muted",
+                    "A copy of the run folder will be saved here after a successful run."
+                  )
                 )
               ),
 
@@ -58,33 +73,22 @@ short_read_ui <- function(id) {
                   class = "mb-3",
                   tags$label(class = "form-label", "FASTQ File or Directory"),
                   div(
-                    class = "file-drop-zone mb-2",
-                    div(
-                      class = "drop-zone-hint",
-                      tags$i(class = "fa fa-folder-open drop-zone-hint-icon"),
-                      div(
-                        class = "drop-zone-hint-text",
-                        tags$strong("Drop file(s) here, or click Browse"),
-                        tags$span(" — FASTQ, FQ, .gz. Multiple files or a directory.")
-                      )
+                    class = "file-input-zone",
+                    tags$p(class = "fiz-hint", "\u2b06 Drag & drop a file or folder here"),
+                    textInput(ns("input_path"), NULL,
+                      placeholder = "/path/to/file.fastq.gz  or  /path/to/directory",
+                      width = "100%"
                     ),
                     div(
-                      class = "drop-zone-controls",
-                      tags$input(
-                        type = "text",
-                        class = "form-control drop-zone-path-input",
-                        id = ns("input_path_display"),
-                        placeholder = "No file selected",
-                        onchange = sprintf("Shiny.setInputValue('%s', this.value)", ns("input_path"))
+                      class = "d-flex align-items-center gap-2 mt-2",
+                      tags$label(
+                        class = "btn btn-outline-secondary btn-sm mb-0",
+                        style = "cursor: pointer;",
+                        icon("folder-open"), " Choose File",
+                        tags$input(type = "file", class = "fiz-native", style = "display: none;")
                       ),
-                      shinyFilesButton(ns("input_file_browse"), "Browse",
-                                       "Select FASTQ file(s)",
-                                       multiple = TRUE,
-                                       class = "btn btn-primary btn-sm")
+                      tags$span(class = "fiz-chosen", "No file chosen")
                     )
-                  ),
-                  div(style = "display: none;",
-                    textInput(ns("input_path"), NULL, value = "")
                   )
                 )
               ),
@@ -96,66 +100,44 @@ short_read_ui <- function(id) {
                     class = "col-md-6 mb-3",
                     tags$label(class = "form-label", "Forward Reads (R1)"),
                     div(
-                      class = "file-drop-zone mb-2",
-                      div(
-                        class = "drop-zone-hint",
-                        tags$i(class = "fa fa-dna drop-zone-hint-icon"),
-                        div(
-                          class = "drop-zone-hint-text",
-                          tags$strong("Drop R1 file here, or click Browse"),
-                          tags$span(" — forward reads (FASTQ/GZ)")
-                        )
+                      class = "file-input-zone",
+                      tags$p(class = "fiz-hint", "\u2b06 Drag & drop here"),
+                      textInput(ns("input_r1"), NULL,
+                        placeholder = "/path/to/sample_R1.fastq.gz",
+                        width = "100%"
                       ),
                       div(
-                        class = "drop-zone-controls",
-                        tags$input(
-                          type = "text",
-                          class = "form-control drop-zone-path-input",
-                          id = ns("input_r1_display"),
-                          placeholder = "No file selected",
-                          onchange = sprintf("Shiny.setInputValue('%s', this.value)", ns("input_r1"))
+                        class = "d-flex align-items-center gap-2 mt-2",
+                        tags$label(
+                          class = "btn btn-outline-secondary btn-sm mb-0",
+                          style = "cursor: pointer;",
+                          icon("folder-open"), " Choose File",
+                          tags$input(type = "file", class = "fiz-native", style = "display: none;")
                         ),
-                        shinyFilesButton(ns("input_r1_browse"), "Browse",
-                                         "Select forward reads file",
-                                         multiple = FALSE,
-                                         class = "btn btn-primary btn-sm")
+                        tags$span(class = "fiz-chosen", "No file chosen")
                       )
-                    ),
-                    div(style = "display: none;",
-                      textInput(ns("input_r1"), NULL, value = "")
                     )
                   ),
                   div(
                     class = "col-md-6 mb-3",
                     tags$label(class = "form-label", "Reverse Reads (R2)"),
                     div(
-                      class = "file-drop-zone mb-2",
-                      div(
-                        class = "drop-zone-hint",
-                        tags$i(class = "fa fa-dna drop-zone-hint-icon"),
-                        div(
-                          class = "drop-zone-hint-text",
-                          tags$strong("Drop R2 file here, or click Browse"),
-                          tags$span(" — reverse reads (FASTQ/GZ)")
-                        )
+                      class = "file-input-zone",
+                      tags$p(class = "fiz-hint", "\u2b06 Drag & drop here"),
+                      textInput(ns("input_r2"), NULL,
+                        placeholder = "/path/to/sample_R2.fastq.gz",
+                        width = "100%"
                       ),
                       div(
-                        class = "drop-zone-controls",
-                        tags$input(
-                          type = "text",
-                          class = "form-control drop-zone-path-input",
-                          id = ns("input_r2_display"),
-                          placeholder = "No file selected",
-                          onchange = sprintf("Shiny.setInputValue('%s', this.value)", ns("input_r2"))
+                        class = "d-flex align-items-center gap-2 mt-2",
+                        tags$label(
+                          class = "btn btn-outline-secondary btn-sm mb-0",
+                          style = "cursor: pointer;",
+                          icon("folder-open"), " Choose File",
+                          tags$input(type = "file", class = "fiz-native", style = "display: none;")
                         ),
-                        shinyFilesButton(ns("input_r2_browse"), "Browse",
-                                         "Select reverse reads file",
-                                         multiple = FALSE,
-                                         class = "btn btn-primary btn-sm")
+                        tags$span(class = "fiz-chosen", "No file chosen")
                       )
-                    ),
-                    div(style = "display: none;",
-                      textInput(ns("input_r2"), NULL, value = "")
                     )
                   )
                 )

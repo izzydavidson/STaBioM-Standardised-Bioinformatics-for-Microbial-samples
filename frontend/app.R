@@ -50,16 +50,14 @@ ui <- page_navbar(
   id = "main_nav",
   theme = bs_theme(
     version = 5,
-    bg = "#f8fafc",
-    fg = "#0f172a",
-    primary = "#3b82f6",
+    bg = "#f9fafb",
+    fg = "#111827",
+    primary = "#2563eb",
     secondary = "#64748b",
     success = "#10b981",
-    danger = "#ef4444",
+    danger = "#d4183d",
     warning = "#f59e0b",
-    info = "#3b82f6",
-    base_font = font_google("Inter"),
-    heading_font = font_google("Inter"),
+    info = "#2563eb",
     font_scale = 0.95
   ),
   # The wizard overlay lives here — always in DOM, shown/hidden via shinyjs.
@@ -74,50 +72,62 @@ ui <- page_navbar(
     tags$style(HTML("
       /* Global Styles */
       body {
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
-        background: #f8fafc;
-        color: #1e293b;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+        background: #f9fafb;
+        color: #111827;
+        font-size: 0.9375rem;
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+      /* Apply same system-font stack to headings so they match body */
+      h1, h2, h3, h4, h5, h6,
+      .navbar-brand, .form-label, label, button, .btn {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
       }
 
       /* Navigation */
       .navbar {
-        background: linear-gradient(135deg, #1e293b 0%, #334155 100%) !important;
-        border-bottom: 1px solid #475569;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        background: #ffffff !important;
+        border-bottom: 1px solid #e5e7eb;
+        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
       }
       .navbar-brand {
-        color: white !important;
+        color: #111827 !important;
         font-weight: 700;
         font-size: 1.5rem;
         letter-spacing: -0.025em;
       }
       .nav-link {
-        color: #cbd5e1 !important;
+        color: #4b5563 !important;
         font-weight: 500;
-        transition: all 0.2s;
-        padding: 0.5rem 1rem !important;
-        border-radius: 0.375rem;
-        margin: 0 0.25rem;
+        transition: color 0.2s, border-color 0.2s;
+        padding: 0.75rem 1rem !important;
+        border-bottom: 2px solid transparent;
+        border-radius: 0;
+        margin: 0;
       }
       .nav-link:hover {
-        color: white !important;
-        background: rgba(255, 255, 255, 0.1);
+        color: #111827 !important;
+        background: transparent;
+        border-bottom-color: #d1d5db;
       }
       .nav-link.active {
-        color: white !important;
-        background: rgba(255, 255, 255, 0.15);
+        color: #2563eb !important;
+        background: transparent;
+        border-bottom-color: #2563eb;
       }
 
       /* Cards */
       .card {
         background: white;
-        border: 1px solid #e2e8f0;
+        border: 1px solid #e5e7eb;
         border-radius: 0.75rem;
-        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
-        transition: all 0.2s;
+        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.07);
+        transition: box-shadow 0.2s;
       }
       .card:hover {
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
       }
       .card-body {
         padding: 1.5rem;
@@ -128,8 +138,8 @@ ui <- page_navbar(
         background: white;
         padding: 1.5rem;
         border-radius: 0.75rem;
-        border: 1px solid #e2e8f0;
-        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+        border: 1px solid #e5e7eb;
+        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.07);
         transition: all 0.2s;
       }
       .stat-card:hover {
@@ -161,42 +171,170 @@ ui <- page_navbar(
         position: sticky;
         top: 1.5rem;
         background: white;
-        border: 1px solid #e2e8f0;
+        border: 1px solid #e5e7eb;
         border-radius: 0.75rem;
         padding: 1.5rem;
-        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.07);
       }
       .summary-item {
-        padding: 1rem;
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
+        padding: 0.75rem;
+        background: #f9fafb;
+        border: 1px solid #e5e7eb;
         border-radius: 0.5rem;
         margin-bottom: 0.75rem;
-        transition: all 0.2s;
+        transition: background 0.2s;
       }
       .summary-item:hover {
-        background: #f1f5f9;
+        background: #f3f4f6;
       }
 
-      /* Forms */
+      /* Input container normalisation — remove Shiny default bottom margin so
+         col-md-6 pairs align evenly; spacing is handled by the mb-3 wrappers in R */
+      .shiny-input-container {
+        width: 100% !important;
+        margin-bottom: 0 !important;
+      }
+
+      /* conditionalPanel fix — Shiny wraps conditional content in a plain div
+         that becomes a full-width flex item inside Bootstrap .row, breaking the
+         grid. display:contents makes the wrapper invisible to layout so its
+         col-md-* children participate directly in the flex row.
+         When Shiny hides the panel it sets inline display:none which has
+         higher specificity than this rule and correctly takes over. */
+      .row > .shiny-panel-conditional {
+        display: contents;
+      }
+      /* CSS selectors are structural, not visual. After display:contents the
+         col-md-* grandchildren participate in the flex row visually but
+         Bootstrap's .row > * rule (which adds gutter padding) no longer matches
+         them because they are still structurally grandchildren, not direct
+         children. Restore those missing gutter styles so every column — including
+         VALENCIA — has identical padding to its siblings. */
+      .row > .shiny-panel-conditional > * {
+        flex-shrink: 0;
+        max-width: 100%;
+        padding-right: calc(var(--bs-gutter-x, 1.5rem) * 0.5);
+        padding-left: calc(var(--bs-gutter-x, 1.5rem) * 0.5);
+        margin-top: var(--bs-gutter-y, 0);
+      }
+      /* number inputs — hide browser spinners so height matches text inputs */
+      input[type='number']::-webkit-inner-spin-button,
+      input[type='number']::-webkit-outer-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+      }
+      input[type='number'] {
+        -moz-appearance: textfield;
+      }
+
+      /* Forms — demo: block text-gray-700 mb-2 / w-full px-3 py-2 border border-gray-300 rounded-md */
       .form-label {
-        color: #1e293b;
-        font-weight: 600;
-        margin-bottom: 0.5rem;
+        color: #374151;
+        font-weight: 500;
+        margin-bottom: 0.375rem;
         font-size: 0.875rem;
-        letter-spacing: 0.025em;
+        display: block;
       }
-      .form-control, .form-select {
-        border: 1px solid #cbd5e1;
-        border-radius: 0.5rem;
-        padding: 0.625rem 0.875rem;
-        transition: all 0.2s;
+
+      /* Single source of truth for every input/select/textarea box */
+      .form-control,
+      .form-select,
+      input[type='text'],
+      input[type='number'],
+      input[type='email'],
+      input[type='password'],
+      textarea.form-control {
+        display: block;
+        width: 100%;
+        box-sizing: border-box;
+        padding: 0.5rem 0.75rem;
+        border: 1px solid #d1d5db;
+        border-radius: 0.375rem;
         font-size: 0.9375rem;
+        line-height: 1.5;
+        color: #111827;
+        background: #ffffff;
+        font-family: inherit;
+        transition: border-color 0.15s, box-shadow 0.15s;
       }
-      .form-control:focus, .form-select:focus {
-        border-color: #3b82f6;
-        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+      .form-control:focus,
+      .form-select:focus,
+      input[type='text']:focus,
+      input[type='number']:focus,
+      input[type='email']:focus,
+      input[type='password']:focus,
+      textarea.form-control:focus {
+        border-color: #2563eb;
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
         outline: none;
+      }
+
+      /* Selectize — pixel-identical to form-control above */
+      .selectize-control {
+        width: 100%;
+      }
+      .selectize-input {
+        display: block !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+        padding: 0.5rem 0.75rem !important;
+        border: 1px solid #d1d5db !important;
+        border-radius: 0.375rem !important;
+        font-size: 0.9375rem !important;
+        line-height: 1.5 !important;
+        color: #111827 !important;
+        background: #ffffff !important;
+        box-shadow: none !important;
+        min-height: 0 !important;
+        cursor: default !important;
+        transition: border-color 0.15s, box-shadow 0.15s !important;
+      }
+      .selectize-input.focus {
+        border-color: #2563eb !important;
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12) !important;
+        outline: none !important;
+      }
+      /* Selected item text inside the box */
+      .selectize-input .item {
+        line-height: 1.5 !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        color: #111827 !important;
+        font-size: 0.9375rem !important;
+      }
+      /* Hidden search input — keep functional, zero size when collapsed */
+      .selectize-input > input {
+        font-size: 0.9375rem !important;
+        line-height: 1.5 !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        color: #111827 !important;
+        background: transparent !important;
+        border: none !important;
+      }
+      /* Open dropdown menu */
+      .selectize-dropdown {
+        border: 1px solid #d1d5db !important;
+        border-radius: 0.375rem !important;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -1px rgba(0, 0, 0, 0.04) !important;
+        font-size: 0.9375rem !important;
+        margin-top: 2px !important;
+        background: #ffffff !important;
+      }
+      .selectize-dropdown .option {
+        padding: 0.5rem 0.75rem !important;
+        color: #374151 !important;
+        line-height: 1.5 !important;
+        cursor: pointer !important;
+      }
+      .selectize-dropdown .option:hover,
+      .selectize-dropdown .option.active {
+        background: #eff6ff !important;
+        color: #1d4ed8 !important;
+      }
+      .selectize-dropdown .option.selected {
+        background: #dbeafe !important;
+        color: #1d4ed8 !important;
       }
 
       /* Buttons */
@@ -208,51 +346,60 @@ ui <- page_navbar(
         border: none;
       }
       .btn-primary {
-        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+        background: #2563eb;
         color: white;
-        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+        box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
       }
       .btn-primary:hover {
-        background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+        background: #1d4ed8;
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
         transform: translateY(-1px);
       }
       .btn-outline-secondary {
-        border: 1px solid #cbd5e1;
-        color: #475569;
+        border: 1px solid #d1d5db;
+        color: #374151;
         background: white;
       }
       .btn-outline-secondary:hover {
-        background: #f8fafc;
-        border-color: #94a3b8;
+        background: #f9fafb;
+        border-color: #9ca3af;
       }
       .btn-danger {
-        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        background: #d4183d;
         color: white;
       }
 
-      /* Typography */
+      /* Typography — sizes and weights from demo globals.css */
       h1 {
-        color: #0f172a;
-        font-size: 2rem;
-        font-weight: 700;
+        color: #111827;
+        font-size: 1.5rem;
+        font-weight: 500;
+        line-height: 1.5;
         margin-bottom: 0.5rem;
-        letter-spacing: -0.025em;
       }
       h2 {
-        color: #1e293b;
-        font-size: 1.5rem;
-        font-weight: 700;
-        margin-bottom: 1rem;
-        letter-spacing: -0.025em;
+        color: #111827;
+        font-size: 1.25rem;
+        font-weight: 500;
+        line-height: 1.5;
+        margin-bottom: 0.75rem;
       }
       h3 {
-        color: #334155;
+        color: #111827;
         font-size: 1.125rem;
-        font-weight: 600;
+        font-weight: 500;
+        line-height: 1.5;
+        margin-bottom: 0.5rem;
+      }
+      h4 {
+        color: #374151;
+        font-size: 1rem;
+        font-weight: 500;
+        line-height: 1.5;
+        margin-bottom: 0.5rem;
       }
       .text-muted {
-        color: #64748b;
+        color: #6b7280;
       }
 
       /* Tables */
@@ -260,11 +407,11 @@ ui <- page_navbar(
         background: white;
       }
       thead {
-        background: #f8fafc;
-        border-bottom: 2px solid #e2e8f0;
+        background: #f9fafb;
+        border-bottom: 1px solid #e5e7eb;
       }
       th {
-        color: #475569;
+        color: #374151;
         font-weight: 600;
         font-size: 0.875rem;
         text-transform: uppercase;
@@ -273,10 +420,11 @@ ui <- page_navbar(
       }
       td {
         padding: 0.75rem 1rem !important;
-        border-bottom: 1px solid #f1f5f9;
+        border-bottom: 1px solid #f3f4f6;
+        color: #374151;
       }
       tr:hover {
-        background: #f8fafc;
+        background: #f9fafb;
       }
 
       /* Badges */
@@ -321,134 +469,93 @@ ui <- page_navbar(
 
       /* Misc */
       hr {
-        border-color: #e2e8f0;
+        border-color: #e5e7eb;
         opacity: 1;
       }
 
-      /* ── File Drop Zone ────────────────────────────────────────────────── */
-      .file-drop-zone {
-        border: 2px dashed #cbd5e1;
-        border-radius: 0.75rem;
-        padding: 0.875rem 1rem;
-        background: #f8fafc;
+      /* Disable Shiny's built-in recalculating fade entirely.
+         Shiny exposes --shiny-fade-opacity as the intended override point.
+         Setting it to 1 at :root prevents any opacity change on recalculating
+         outputs. The transition is also killed so there is no animation
+         artefact even if the class briefly lingers. Polling is unaffected. */
+      :root {
+        --shiny-fade-opacity: 1;
+        --bs-font-sans-serif: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+      }
+      .recalculating {
+        transition: none !important;
+      }
+
+      /* ── File input zone: native picker + drag-drop + text path ─────── */
+      .file-input-zone {
+        border: 1.5px dashed #d1d5db;
+        border-radius: 0.5rem;
+        padding: 0.875rem 1rem 0.75rem;
+        background: #fafafa;
         transition: border-color 0.2s, background 0.2s;
       }
-      .file-drop-zone.drag-over {
-        border-color: #3b82f6 !important;
-        background: #eff6ff !important;
+      .file-input-zone.drag-over {
+        border-color: #2563eb;
+        background: #eff6ff;
       }
-      .file-drop-zone.has-path {
-        border-color: #10b981;
-        background: #f0fdf4;
+      .file-input-zone .shiny-input-container {
+        margin-bottom: 0 !important;
       }
-      .drop-zone-hint {
-        display: flex;
-        align-items: center;
-        gap: 0.625rem;
-        margin-bottom: 0.625rem;
-        pointer-events: none;
+      .fiz-hint {
+        font-size: 0.8rem;
+        color: #9ca3af;
+        margin: 0 0 0.45rem;
       }
-      .drop-zone-hint-icon {
-        color: #94a3b8;
-        font-size: 1.25rem;
-        flex-shrink: 0;
-        transition: color 0.2s;
+      .fiz-chosen {
+        font-size: 0.78rem;
+        color: #6b7280;
+        font-style: italic;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
-      .file-drop-zone.drag-over .drop-zone-hint-icon,
-      .file-drop-zone:hover .drop-zone-hint-icon {
-        color: #3b82f6;
-      }
-      .file-drop-zone.has-path .drop-zone-hint-icon {
-        color: #10b981;
-      }
-      .drop-zone-hint-text {
-        font-size: 0.8125rem;
-        color: #64748b;
-        line-height: 1.35;
-      }
-      .drop-zone-hint-text strong {
-        color: #334155;
-        font-weight: 600;
-      }
-      .drop-zone-controls {
-        display: flex;
-        gap: 0.5rem;
-        align-items: center;
-      }
-      .drop-zone-path-input {
-        font-size: 0.8125rem !important;
-        font-family: 'SF Mono', 'Monaco', 'Consolas', monospace !important;
-        color: #475569 !important;
-        background: white !important;
-        flex: 1;
-      }
-      .drop-zone-path-input::placeholder {
-        color: #94a3b8;
-        font-family: inherit;
+      .fiz-chosen.has-file {
+        color: #374151;
+        font-style: normal;
       }
     ")),
-    tags$script(HTML("
-      (function() {
-        /* ── File drop-zone drag & drop ──────────────────────────────── */
-        $(document).on('dragenter', '.file-drop-zone', function(e) {
-          e.preventDefault();
-          e.stopPropagation();
-          var n = (parseInt($(this).data('dc'), 10) || 0) + 1;
-          $(this).data('dc', n).addClass('drag-over');
-        });
-        $(document).on('dragover', '.file-drop-zone', function(e) {
-          e.preventDefault();
-          e.stopPropagation();
-          if (e.originalEvent && e.originalEvent.dataTransfer)
-            e.originalEvent.dataTransfer.dropEffect = 'copy';
-        });
-        $(document).on('dragleave', '.file-drop-zone', function(e) {
-          var n = (parseInt($(this).data('dc'), 10) || 0) - 1;
-          $(this).data('dc', n);
-          if (n <= 0) $(this).data('dc', 0).removeClass('drag-over');
-        });
-        $(document).on('drop', '.file-drop-zone', function(e) {
-          e.preventDefault();
-          e.stopPropagation();
-          $(this).data('dc', 0).removeClass('drag-over');
-          var dt = e.originalEvent && e.originalEvent.dataTransfer;
-          var uriList = dt && dt.getData('text/uri-list');
-          if (uriList) {
-            var uris = uriList.split(/\\r?\\n/).filter(function(u) {
-              return u && !u.startsWith('#') && u.startsWith('file://');
-            });
-            if (uris.length > 0) {
-              var paths = uris.map(function(u) {
-                return decodeURIComponent(
-                  u.replace(/^file:\\/\\//, '').replace(/\\/$/, '').trim()
-                );
-              });
-              var finalPath;
-              if (paths.length === 1) {
-                finalPath = paths[0];
-              } else {
-                var dirs = paths.map(function(p) {
-                  return p.substring(0, p.lastIndexOf('/'));
-                });
-                var uniq = dirs.filter(function(v, i, a) { return a.indexOf(v) === i; });
-                finalPath = uniq.length === 1 ? uniq[0] : paths[0];
-              }
-              var inp = $(this).find('.drop-zone-path-input');
-              inp.val(finalPath).trigger('change');
-              $(this).addClass('has-path');
-              return;
-            }
-          }
-          /* Fallback: open the browse modal */
-          $(this).find('.btn').first().trigger('click');
-        });
-        /* Update has-path class when user types in the path input */
-        $(document).on('change input', '.drop-zone-path-input', function() {
-          $(this).closest('.file-drop-zone')
-            .toggleClass('has-path', $(this).val().trim().length > 0);
-        });
-      })();
-    "))
+  tags$script(HTML("
+    $(function() {
+      /* drag-over highlight */
+      $(document).on('dragenter dragover', '.file-input-zone', function(e) {
+        e.preventDefault(); e.stopPropagation();
+        $(this).addClass('drag-over');
+      });
+      $(document).on('dragleave', '.file-input-zone', function(e) {
+        var rt = e.relatedTarget;
+        if (rt && (this === rt || $.contains(this, rt))) return;
+        $(this).removeClass('drag-over');
+      });
+      /* drop: extract file:// URI and populate the text input */
+      $(document).on('drop', '.file-input-zone', function(e) {
+        e.preventDefault(); e.stopPropagation();
+        $(this).removeClass('drag-over');
+        var $txt = $(this).find('input[type=\"text\"]').first();
+        if (!$txt.length) return;
+        var dt = e.originalEvent.dataTransfer;
+        var uri = (dt && dt.getData && (dt.getData('text/uri-list') || dt.getData('text/plain'))) || '';
+        if (!uri && dt && dt.files && dt.files.length > 0) { uri = dt.files[0].path || ''; }
+        uri = uri.split(/\\r?\\n/)[0].trim();
+        if (uri.indexOf('file://') === 0) { uri = decodeURIComponent(uri.substring(7)); }
+        if (uri) {
+          $txt.val(uri).trigger('input');
+          $(this).find('.fiz-chosen').text(uri.split('/').pop()).addClass('has-file');
+        }
+      });
+      /* native picker: show chosen filename as hint (path cannot be read from browser) */
+      $(document).on('change', '.fiz-native', function() {
+        var f = this.files && this.files[0];
+        var $chosen = $(this).closest('.file-input-zone').find('.fiz-chosen');
+        if (f) { $chosen.text(f.name).addClass('has-file'); }
+        else    { $chosen.text('').removeClass('has-file'); }
+      });
+    });
+  ")),
   )  # end tagList for header
   ),
   useShinyjs(),
@@ -481,11 +588,12 @@ server <- function(input, output, session) {
 
   # Shared reactive values
   shared <- reactiveValues(
-    current_run  = NULL,
-    run_status   = "idle",
-    setup_complete = file.exists(file.path(dirname(getwd()), ".setup_complete")),
-    goto_page    = NULL,
-    show_wizard  = FALSE   # set TRUE by dashboard "Return to Wizard" button
+    current_run           = NULL,
+    run_status            = "idle",
+    setup_complete        = file.exists(file.path(dirname(getwd()), ".setup_complete")),
+    goto_page             = NULL,
+    show_wizard           = FALSE,   # set TRUE by dashboard "Return to Wizard" button
+    additional_output_dir = NULL     # optional second copy destination set by SR/LR modules
   )
 
   # Module servers

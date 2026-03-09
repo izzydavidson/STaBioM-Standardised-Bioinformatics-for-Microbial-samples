@@ -73,9 +73,26 @@ long_read_ui <- function(id) {
                   textInput(ns("run_name"), NULL, placeholder = "e.g., LR_2026_001")
                 ),
                 div(
-                  class = "col-md-6 mb-3",
-                  tags$label(class = "form-label", "Output Directory"),
-                  textInput(ns("output_dir"), NULL, value = file.path(dirname(getwd()), "outputs"))
+                  class = "col-md-12 mb-3",
+                  tags$label(class = "form-label",
+                    "Output Directory",
+                    tags$span(class = "text-muted",
+                      style = "font-size: 0.8rem; font-weight: 400;", " (Optional)")
+                  ),
+                  div(
+                    class = "d-flex align-items-center gap-2",
+                    textInput(ns("extra_output_dir"), NULL,
+                      placeholder = "/path/to/output  (e.g. /Users/you/Desktop)",
+                      width = "100%"
+                    ),
+                    actionButton(ns("choose_extra_dir"), "Browse\u2026",
+                      class = "btn btn-outline-secondary btn-sm",
+                      style = "white-space: nowrap; flex-shrink: 0;"
+                    )
+                  ),
+                  tags$small(class = "text-muted",
+                    "A copy of the run folder will be saved here after a successful run."
+                  )
                 )
               ),
 
@@ -86,33 +103,22 @@ long_read_ui <- function(id) {
                 class = "mb-3",
                 tags$label(class = "form-label", "Input File or Directory"),
                 div(
-                  class = "file-drop-zone mb-2",
-                  div(
-                    class = "drop-zone-hint",
-                    tags$i(class = "fa fa-folder-open drop-zone-hint-icon"),
-                    div(
-                      class = "drop-zone-hint-text",
-                      tags$strong("Drop file(s) here, or click Browse"),
-                      tags$span(" — FASTQ, FQ, .gz, FAST5, POD5. Multiple files or a directory.")
-                    )
+                  class = "file-input-zone",
+                  tags$p(class = "fiz-hint", "\u2b06 Drag & drop a file or folder here"),
+                  textInput(ns("input_path"), NULL,
+                    placeholder = "/path/to/file.fastq.gz  or  /path/to/directory",
+                    width = "100%"
                   ),
                   div(
-                    class = "drop-zone-controls",
-                    tags$input(
-                      type = "text",
-                      class = "form-control drop-zone-path-input",
-                      id = ns("input_path_display"),
-                      placeholder = "No file selected",
-                      onchange = sprintf("Shiny.setInputValue('%s', this.value)", ns("input_path"))
+                    class = "d-flex align-items-center gap-2 mt-2",
+                    tags$label(
+                      class = "btn btn-outline-secondary btn-sm mb-0",
+                      style = "cursor: pointer;",
+                      icon("folder-open"), " Choose File",
+                      tags$input(type = "file", class = "fiz-native", style = "display: none;")
                     ),
-                    shinyFilesButton(ns("input_file_browse"), "Browse",
-                      "Select file(s)",
-                      multiple = TRUE,
-                      class = "btn btn-primary btn-sm")
+                    tags$span(class = "fiz-chosen", "No file chosen")
                   )
-                ),
-                div(style = "display: none;",
-                  textInput(ns("input_path"), NULL, value = "")
                 )
               ),
 
@@ -131,55 +137,46 @@ long_read_ui <- function(id) {
                     class = "col-md-6 mb-3",
                     tags$label(class = "form-label", "Dorado Binary Path (optional)"),
                     div(
-                      class = "file-drop-zone mb-2",
-                      div(
-                        class = "drop-zone-hint",
-                        tags$i(class = "fa fa-microchip drop-zone-hint-icon"),
-                        div(
-                          class = "drop-zone-hint-text",
-                          tags$strong("Drop binary here, or click Browse"),
-                          tags$span(" — auto-detected if installed via Setup Wizard")
-                        )
+                      class = "file-input-zone",
+                      tags$p(class = "fiz-hint", "\u2b06 Drag & drop here"),
+                      textInput(ns("dorado_bin"), NULL,
+                        placeholder = "Auto-detected if installed via Setup Wizard",
+                        width = "100%"
                       ),
                       div(
-                        class = "drop-zone-controls",
-                        tags$input(type = "text", class = "form-control drop-zone-path-input",
-                          id = ns("dorado_bin_display"),
-                          placeholder = "No binary selected",
-                          onchange = sprintf("Shiny.setInputValue('%s', this.value)", ns("dorado_bin"))),
-                        shinyFilesButton(ns("dorado_bin_browse"), "Browse",
-                          "Select Dorado binary", multiple = FALSE,
-                          class = "btn btn-primary btn-sm")
+                        class = "d-flex align-items-center gap-2 mt-2",
+                        tags$label(
+                          class = "btn btn-outline-secondary btn-sm mb-0",
+                          style = "cursor: pointer;",
+                          icon("folder-open"), " Choose File",
+                          tags$input(type = "file", class = "fiz-native", style = "display: none;")
+                        ),
+                        tags$span(class = "fiz-chosen", "No file chosen")
                       )
-                    ),
-                    div(style = "display: none;", textInput(ns("dorado_bin"), NULL, value = ""))
+                    )
                   ),
                   div(
                     class = "col-md-6 mb-3",
                     tags$label(class = "form-label", "Dorado Models Directory (optional)"),
                     div(
-                      class = "file-drop-zone mb-2",
-                      div(
-                        class = "drop-zone-hint",
-                        tags$i(class = "fa fa-folder drop-zone-hint-icon"),
-                        div(
-                          class = "drop-zone-hint-text",
-                          tags$strong("Drop folder here, or click Browse"),
-                          tags$span(" — auto-detected if installed via Setup Wizard")
-                        )
+                      class = "file-input-zone",
+                      tags$p(class = "fiz-hint", "\u2b06 Drag & drop folder here"),
+                      textInput(ns("dorado_models_dir"), NULL,
+                        placeholder = "Auto-detected if installed via Setup Wizard",
+                        width = "100%"
                       ),
                       div(
-                        class = "drop-zone-controls",
-                        tags$input(type = "text", class = "form-control drop-zone-path-input",
-                          id = ns("dorado_models_dir_display"),
-                          placeholder = "No directory selected",
-                          onchange = sprintf("Shiny.setInputValue('%s', this.value)", ns("dorado_models_dir"))),
-                        shinyDirButton(ns("dorado_models_dir_browse"), "Browse",
-                          "Select Dorado models directory",
-                          class = "btn btn-primary btn-sm")
+                        class = "d-flex align-items-center gap-2 mt-2",
+                        tags$label(
+                          class = "btn btn-outline-secondary btn-sm mb-0",
+                          style = "cursor: pointer;",
+                          icon("folder-open"), " Choose Folder",
+                          tags$input(type = "file", class = "fiz-native",
+                                     webkitdirectory = NA, style = "display: none;")
+                        ),
+                        tags$span(class = "fiz-chosen", "No folder chosen")
                       )
-                    ),
-                    div(style = "display: none;", textInput(ns("dorado_models_dir"), NULL, value = ""))
+                    )
                   ),
                   div(
                     class = "col-md-12 mb-3",
@@ -254,30 +251,8 @@ long_read_ui <- function(id) {
               div(
                 class = "mb-3",
                 tags$label(class = "form-label", "External Database Directory (Optional)"),
-                div(
-                  class = "file-drop-zone mb-2",
-                  div(
-                    class = "drop-zone-hint",
-                    tags$i(class = "fa fa-database drop-zone-hint-icon"),
-                    div(
-                      class = "drop-zone-hint-text",
-                      tags$strong("Drop folder here, or click Browse"),
-                      tags$span(" — optionally mount an external database directory")
-                    )
-                  ),
-                  div(
-                    class = "drop-zone-controls",
-                    tags$input(type = "text", class = "form-control drop-zone-path-input",
-                      id = ns("external_db_dir_display"),
-                      placeholder = "No directory selected",
-                      onchange = sprintf("Shiny.setInputValue('%s', this.value)", ns("external_db_dir"))
-                    ),
-                    shinyDirButton(ns("external_db_dir_browse"), "Browse",
-                      "Select external database directory",
-                      class = "btn btn-primary btn-sm")
-                  )
-                ),
-                div(style = "display: none;", textInput(ns("external_db_dir"), NULL, value = ""))
+                textInput(ns("external_db_dir"), NULL, placeholder = "/path/to/database"),
+                tags$small(class = "text-muted", "Optionally mount an external database directory")
               ),
 
               conditionalPanel(
@@ -342,27 +317,24 @@ long_read_ui <- function(id) {
                     class = "col-md-12 mb-3",
                     tags$label(class = "form-label", "Kraken2 Database Path"),
                     div(
-                      class = "file-drop-zone mb-2",
-                      div(
-                        class = "drop-zone-hint",
-                        tags$i(class = "fa fa-database drop-zone-hint-icon"),
-                        div(
-                          class = "drop-zone-hint-text",
-                          tags$strong("Drop Kraken2 database folder here, or click Browse")
-                        )
+                      class = "file-input-zone",
+                      tags$p(class = "fiz-hint", "\u2b06 Drag & drop database folder here"),
+                      textInput(ns("kraken_db"), NULL,
+                        placeholder = "/path/to/kraken2/db",
+                        width = "100%"
                       ),
                       div(
-                        class = "drop-zone-controls",
-                        tags$input(type = "text", class = "form-control drop-zone-path-input",
-                          id = ns("kraken_db_display"),
-                          placeholder = "No directory selected",
-                          onchange = sprintf("Shiny.setInputValue('%s', this.value)", ns("kraken_db"))),
-                        shinyDirButton(ns("kraken_db_browse"), "Browse",
-                          "Select Kraken2 database directory",
-                          class = "btn btn-primary btn-sm")
+                        class = "d-flex align-items-center gap-2 mt-2",
+                        tags$label(
+                          class = "btn btn-outline-secondary btn-sm mb-0",
+                          style = "cursor: pointer;",
+                          icon("folder-open"), " Choose Folder",
+                          tags$input(type = "file", class = "fiz-native",
+                                     webkitdirectory = NA, style = "display: none;")
+                        ),
+                        tags$span(class = "fiz-chosen", "No folder chosen")
                       )
-                    ),
-                    div(style = "display: none;", textInput(ns("kraken_db"), NULL, value = ""))
+                    )
                   ),
                   div(
                     class = "col-md-12 mb-3",

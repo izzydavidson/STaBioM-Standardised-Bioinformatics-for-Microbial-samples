@@ -19,18 +19,6 @@ long_read_server <- function(id, shared) {
 
     ns <- session$ns
 
-    volumes <- c(
-      Desktop   = fs::path_home("Desktop"),
-      Project   = dirname(getwd()),
-      Home      = fs::path_home(),
-      Documents = fs::path_home("Documents"),
-      Root      = "/"
-    )
-
-    # Helper: load saved default root for this input (falls back to "Desktop")
-    .lr_root <- function(key, default = "Desktop") get_ui_pref(paste0("lr_", key, "_root"), default)
-    .lr_rel  <- function(key) get_ui_pref(paste0("lr_", key, "_rel"), "")
-
     # --- Detect installed Dorado models (uses same logic as wizard) ---
     detect_installed_models <- function() {
       repo_root <- dirname(getwd())
@@ -143,122 +131,6 @@ long_read_server <- function(id, shared) {
       if (length(m) == 0L) NULL else m
     })
 
-    # --- File / directory choosers (defaultRoot from saved prefs) ---
-    shinyFileChoose(input, "input_file_browse", roots = volumes, session = session,
-                    filetypes = c("fastq", "fq", "gz", "fast5", "pod5", ""),
-                    defaultRoot = .lr_root("input"), defaultPath = .lr_rel("input"))
-
-    shinyDirChoose(input, "kraken_db_browse", roots = volumes, session = session,
-                   defaultRoot = .lr_root("kraken", "Home"), defaultPath = .lr_rel("kraken"))
-    shinyDirChoose(input, "external_db_dir_browse", roots = volumes, session = session,
-                   defaultRoot = .lr_root("extdb", "Home"), defaultPath = .lr_rel("extdb"))
-    shinyDirChoose(input, "dorado_models_dir_browse", roots = volumes, session = session,
-                   defaultRoot = .lr_root("dorado_models", "Home"), defaultPath = .lr_rel("dorado_models"))
-    shinyFileChoose(input, "dorado_bin_browse", roots = volumes, session = session,
-                    filetypes = c(""),
-                    defaultRoot = .lr_root("dorado_bin", "Home"), defaultPath = .lr_rel("dorado_bin"))
-
-    # Helper: update a drop-zone display field and trigger has-path class update
-    .set_display <- function(id, path) {
-      # Escape single quotes in path for JS safety
-      safe_path <- gsub("'", "\\\\'", path)
-      shinyjs::runjs(sprintf("$('#%s').val('%s').trigger('change')", session$ns(id), safe_path))
-    }
-
-    # Populate input_path from file browse
-    observeEvent(input$input_file_browse, {
-      if (!is.integer(input$input_file_browse)) {
-        fp <- parseFilePaths(volumes, input$input_file_browse)
-        if (nrow(fp) > 0) {
-          full_paths <- as.character(fp$datapath)
-
-          # If multiple files selected from same directory, pass the directory instead
-          # (pipeline expects directory path for batch processing, not comma-separated files)
-          if (length(full_paths) > 1) {
-            dirs <- unique(dirname(full_paths))
-            if (length(dirs) == 1) {
-              final_path <- dirs[1]
-            } else {
-              final_path <- full_paths[1]
-              showNotification(
-                "Multiple files from different directories selected. Using first file only. To process multiple files, select files from the same directory or enter the directory path directly.",
-                type = "warning",
-                duration = 10
-              )
-            }
-          } else {
-            final_path <- full_paths[1]
-          }
-
-          updateTextInput(session, "input_path", value = final_path)
-          .set_display("input_path_display", final_path)
-          info <- vol_for_path(final_path, volumes)
-          save_ui_pref("lr_input_root", info$root)
-          save_ui_pref("lr_input_rel",  info$rel)
-        }
-      }
-    })
-
-    # Populate kraken_db from directory browse
-    observeEvent(input$kraken_db_browse, {
-      if (!is.integer(input$kraken_db_browse)) {
-        dp <- parseDirPath(volumes, input$kraken_db_browse)
-        if (length(dp) > 0 && nchar(dp) > 0) {
-          full_path <- as.character(dp)
-          updateTextInput(session, "kraken_db", value = full_path)
-          .set_display("kraken_db_display", full_path)
-          info <- vol_for_path(full_path, volumes)
-          save_ui_pref("lr_kraken_root", info$root)
-          save_ui_pref("lr_kraken_rel",  info$rel)
-        }
-      }
-    })
-
-    # Populate external_db_dir from directory browse
-    observeEvent(input$external_db_dir_browse, {
-      if (!is.integer(input$external_db_dir_browse)) {
-        dp <- parseDirPath(volumes, input$external_db_dir_browse)
-        if (length(dp) > 0 && nchar(dp) > 0) {
-          full_path <- as.character(dp)
-          updateTextInput(session, "external_db_dir", value = full_path)
-          .set_display("external_db_dir_display", full_path)
-          info <- vol_for_path(full_path, volumes)
-          save_ui_pref("lr_extdb_root", info$root)
-          save_ui_pref("lr_extdb_rel",  info$rel)
-        }
-      }
-    })
-
-    # Populate dorado_bin from file browse
-    observeEvent(input$dorado_bin_browse, {
-      if (!is.integer(input$dorado_bin_browse)) {
-        fp <- parseFilePaths(volumes, input$dorado_bin_browse)
-        if (nrow(fp) > 0) {
-          full_path <- as.character(fp$datapath[1])
-          updateTextInput(session, "dorado_bin", value = full_path)
-          .set_display("dorado_bin_display", full_path)
-          info <- vol_for_path(full_path, volumes)
-          save_ui_pref("lr_dorado_bin_root", info$root)
-          save_ui_pref("lr_dorado_bin_rel",  info$rel)
-        }
-      }
-    })
-
-    # Populate dorado_models_dir from directory browse
-    observeEvent(input$dorado_models_dir_browse, {
-      if (!is.integer(input$dorado_models_dir_browse)) {
-        dp <- parseDirPath(volumes, input$dorado_models_dir_browse)
-        if (length(dp) > 0 && nchar(dp) > 0) {
-          full_path <- as.character(dp)
-          updateTextInput(session, "dorado_models_dir", value = full_path)
-          .set_display("dorado_models_dir_display", full_path)
-          info <- vol_for_path(full_path, volumes)
-          save_ui_pref("lr_dorado_models_root", info$root)
-          save_ui_pref("lr_dorado_models_rel",  info$rel)
-        }
-      }
-    })
-
     # Auto-detect Dorado paths from wizard-installed locations
     observe({
       repo_root <- dirname(getwd())
@@ -269,16 +141,40 @@ long_read_server <- function(id, shared) {
       for (candidate in dorado_candidates) {
         if (file.exists(candidate) && nchar(input$dorado_bin) == 0) {
           updateTextInput(session, "dorado_bin", value = candidate)
-          .set_display("dorado_bin_display", candidate)
           models_dir <- file.path(dirname(dirname(candidate)), "models")
           if (dir.exists(models_dir) && nchar(input$dorado_models_dir) == 0) {
             updateTextInput(session, "dorado_models_dir", value = models_dir)
-            .set_display("dorado_models_dir_display", models_dir)
           }
           break
         }
       }
     })
+
+    # --- Additional output directory ---
+    # Browse button: open native macOS folder picker via osascript.
+    # Write the script to a temp file to avoid all shell-quoting issues.
+    observeEvent(input$choose_extra_dir, {
+      dir <- tryCatch({
+        scpt <- tempfile(fileext = ".scpt")
+        writeLines('POSIX path of (choose folder with prompt "Select Output Directory")', scpt)
+        result <- system2("osascript", args = scpt, stdout = TRUE, stderr = FALSE)
+        unlink(scpt)
+        if (length(result) > 0 && nchar(trimws(result[1])) > 0)
+          sub("/$", "", trimws(result[1]))   # strip trailing slash osascript adds
+        else
+          NULL
+      }, error = function(e) NULL)
+      if (!is.null(dir) && nchar(dir) > 0) {
+        updateTextInput(session, "extra_output_dir", value = dir)
+        shared$additional_output_dir <- dir
+      }
+    })
+
+    # Text field: sync to shared whenever the user types or drag-drops a path
+    observeEvent(input$extra_output_dir, {
+      val <- trimws(input$extra_output_dir %||% "")
+      shared$additional_output_dir <- if (nchar(val) > 0) val else NULL
+    }, ignoreInit = TRUE)
 
     # --- Display dynamic values ---
     output$quality_threshold_display <- renderText({ as.character(input$quality_threshold) })
@@ -393,7 +289,7 @@ long_read_server <- function(id, shared) {
         "-i", input$input_path
       )
 
-      if (nchar(input$output_dir) > 0)  cmd <- c(cmd, "-o", input$output_dir)
+      cmd <- c(cmd, "-o", file.path(dirname(getwd()), "outputs"))
       if (nchar(input$run_name) > 0)    cmd <- c(cmd, "--run-name", input$run_name)
 
       cmd <- c(cmd, "--sample-type", input$sample_type)
@@ -472,7 +368,7 @@ long_read_server <- function(id, shared) {
         technology        = input$lr_technology,
         input_format      = input$input_format,
         input_path        = input$input_path,
-        output_dir        = input$output_dir,
+        output_dir        = file.path(dirname(getwd()), "outputs"),
         run_scope         = input$run_scope,
         quality_threshold = input$quality_threshold,
         min_read_length   = input$min_read_length,

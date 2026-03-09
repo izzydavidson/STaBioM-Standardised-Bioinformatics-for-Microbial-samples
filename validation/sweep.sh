@@ -1,0 +1,239 @@
+#!/usr/bin/env bash
+# =============================================================================
+# STaBioM Parameter Sweep — lr_meta pipeline
+#
+# Sweeps Kraken2 confidence (0.01–0.10 in 0.01 steps) × min_hit_groups (1,2)
+# for BOTH the generic and vaginal CAMISIM mock datasets.
+#
+# Total runs: 10 confidence × 2 mhg × 2 datasets = 40 runs
+# Estimated runtime: ~2.5h per run on USB DB → ~100h total. Use tmux/screen.
+#
+# Resumable: already-completed runs are skipped automatically.
+#
+# Usage:
+#   ./sweep.sh                        # run everything
+#   ./sweep.sh --dataset generic      # only generic
+#   ./sweep.sh --dataset vaginal      # only vaginal
+#   ./sweep.sh --dry-run              # print what would run, don't execute
+# =============================================================================
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PIPELINE_RUNNER="${REPO_ROOT}/main/pipelines/run_in_container.sh"
+WORK_DIR="${REPO_ROOT}/outputs"
+VALIDATION_DIR="${REPO_ROOT}/validation"
+CONFIG_DIR="${VALIDATION_DIR}/sweep_configs"
+RESULTS_DIR="${VALIDATION_DIR}/sweep_results"
+SCORES_TSV="${RESULTS_DIR}/scores.tsv"
+
+# ── Dataset definitions ───────────────────────────────────────────────────────
+GENERIC_FASTQ="/Users/izzydavidson/Desktop/camisim_output/mock_metagenome_generic/nanopore/sample.fastq"
+GENERIC_GT="/Users/izzydavidson/Desktop/camisim_output/mock_metagenome_generic/nanopore/taxonomic_profile_0.txt"
+
+VAGINAL_FASTQ="/Users/izzydavidson/Desktop/camisim_output/mock_metagenome_vaginal/nanopore/sample.fastq"
+VAGINAL_GT="/Users/izzydavidson/Desktop/camisim_output/mock_metagenome_vaginal/nanopore/taxonomic_profile_0.txt"
+
+KRAKEN2_DB="/Volumes/MyPassport/Kraken/kraken2/core_nt/_old_build_20260116_060100"
+HUMAN_MMI="${REPO_ROOT}/main/data/reference/human/grch38/GRCh38.primary_assembly.genome.lowmem.mmi"
+VALENCIA_CSV="${REPO_ROOT}/tools/VALENCIA/CST_centroids_012920.csv"
+
+# ── Sweep grid ────────────────────────────────────────────────────────────────
+# confidence: 0.01 to 0.10 in 0.01 steps (represented as integers 1..10)
+CONFIDENCE_INTS=(1 2 3 4 5 6 7 8 9 10)
+MHG_VALUES=(1 2)
+DATASETS=(generic vaginal)
+
+# ── Args ──────────────────────────────────────────────────────────────────────
+DRY_RUN=0
+DATASET_FILTER="all"
+
+for arg in "$@"; do
+  case "${arg}" in
+    --dry-run)           DRY_RUN=1 ;;
+    --dataset)           ;;   # next arg handled below
+    --dataset=generic)   DATASET_FILTER="generic" ;;
+    --dataset=vaginal)   DATASET_FILTER="vaginal" ;;
+    generic|vaginal)     DATASET_FILTER="${arg}" ;;
+  esac
+done
+
+mkdir -p "${CONFIG_DIR}" "${RESULTS_DIR}"
+
+# Write TSV header if scores file is new
+if [[ ! -f "${SCORES_TSV}" ]]; then
+  printf "run_id\tdataset\tconfidence\tmhg\tMAE_pct\tspecies_detected\tspecies_total\trecovery_pct\tfalse_positives\n" \
+    > "${SCORES_TSV}"
+fi
+
+# ── Generate config JSON ──────────────────────────────────────────────────────
+make_config() {
+  local run_id="$1"
+  local fastq="$2"
+  local confidence="$3"
+  local mhg="$4"
+  local out="${CONFIG_DIR}/${run_id}.json"
+
+  jq -n \
+    --arg  run_id     "${run_id}" \
+    --arg  work_dir   "${WORK_DIR}" \
+    --arg  fastq      "${fastq}" \
+    --arg  db         "${KRAKEN2_DB}" \
+    --arg  human_mmi  "${HUMAN_MMI}" \
+    --arg  valencia   "${VALENCIA_CSV}" \
+    --argjson confidence "${confidence}" \
+    --argjson mhg         "${mhg}" \
+    '{
+      pipeline_id: "lr_meta",
+      run: {
+        work_dir: $work_dir,
+        run_id:   $run_id,
+        force_overwrite: 1,
+        scope: "full"
+      },
+      technology: "ONT",
+      specimen:   "vaginal",
+      input: { style: "FASTQ_SINGLE", fastq: $fastq },
+      resources: { threads: 4 },
+      params: {
+        common: {
+          min_qscore: 5, remove_host: 0, specimen: "vaginal",
+          trim_adapter: true, demultiplex: false
+        },
+        seq_type: "map-ont"
+      },
+      tools: {
+        qfilter:  { enabled: 1, min_q: 5, min_len: 1000 },
+        kraken2: {
+          db: $db,
+          vaginal:    { confidence: $confidence, minimum_hit_groups: $mhg },
+          nonvaginal: { confidence: $confidence, minimum_hit_groups: $mhg }
+        },
+        bracken: {
+          vaginal:    { enabled: 1, readlen: 1200 },
+          nonvaginal: { enabled: 0, readlen: 1200 }
+        },
+        minimap2: { human_mmi: $human_mmi, split_prefix: 0 }
+      },
+      output: {
+        selected: ["raw_csv","pie_chart","heatmap","stacked_bar","quality_reports"]
+      },
+      postprocess: {
+        enabled: 1,
+        steps: {
+          heatmap: 1, piechart: 1, stacked_bar: 1,
+          results_csv: 1, relative_abundance: 0, valencia: 1
+        }
+      },
+      valencia: { enabled: 1, mode: "auto", centroids_csv: $valencia }
+    }' > "${out}"
+
+  echo "${out}"
+}
+
+# ── Run one sweep point ───────────────────────────────────────────────────────
+run_point() {
+  local dataset="$1"
+  local run_id="$2"
+  local confidence="$3"
+  local mhg="$4"
+  local fastq="$5"
+  local ground_truth="$6"
+
+  local results_csv="${WORK_DIR}/${run_id}/results/tables/kraken_species_tidy.csv"
+
+  # Skip if already completed
+  if [[ -f "${results_csv}" ]]; then
+    echo "[SKIP] ${run_id} — results already exist"
+    # Still score it in case it wasn't scored yet
+    bash "${VALIDATION_DIR}/score.sh" \
+      "${results_csv}" "${ground_truth}" "${run_id}" "${dataset}" \
+      "${confidence}" "${mhg}" "${SCORES_TSV}" 2>/dev/null || true
+    return 0
+  fi
+
+  echo ""
+  echo "════════════════════════════════════════════════════════════════"
+  echo " RUN  : ${run_id}"
+  echo " Dataset    : ${dataset}"
+  echo " Confidence : ${confidence}"
+  echo " MHG        : ${mhg}"
+  echo " FASTQ      : ${fastq}"
+  echo "════════════════════════════════════════════════════════════════"
+
+  local config
+  config="$(make_config "${run_id}" "${fastq}" "${confidence}" "${mhg}")"
+  echo " Config: ${config}"
+
+  if [[ "${DRY_RUN}" -eq 1 ]]; then
+    echo " [DRY RUN] Would run: ${PIPELINE_RUNNER} --config ${config}"
+    return 0
+  fi
+
+  local start elapsed
+  start="$(date +%s)"
+
+  # Run pipeline — capture exit code without aborting the sweep
+  local ec=0
+  "${PIPELINE_RUNNER}" --config "${config}" || ec=$?
+
+  elapsed=$(( $(date +%s) - start ))
+  printf " Finished in %dm %ds (exit=%d)\n" $((elapsed/60)) $((elapsed%60)) "${ec}"
+
+  if [[ "${ec}" -ne 0 ]]; then
+    echo " [WARN] Pipeline exited with code ${ec} — skipping score for ${run_id}"
+    return 0
+  fi
+
+  if [[ ! -f "${results_csv}" ]]; then
+    echo " [WARN] Results CSV not found at ${results_csv} — skipping score"
+    return 0
+  fi
+
+  echo " Scoring..."
+  bash "${VALIDATION_DIR}/score.sh" \
+    "${results_csv}" "${ground_truth}" "${run_id}" "${dataset}" \
+    "${confidence}" "${mhg}" "${SCORES_TSV}" || true
+}
+
+# ── Main sweep loop ───────────────────────────────────────────────────────────
+echo "STaBioM lr_meta Parameter Sweep"
+echo "Confidence: 0.01 → 0.10  |  MHG: 1, 2  |  Datasets: ${DATASET_FILTER}"
+echo "Estimated runtime: ~2.5h per run. Run inside tmux/screen."
+echo ""
+
+total=0
+done_count=0
+
+for dataset in "${DATASETS[@]}"; do
+  [[ "${DATASET_FILTER}" != "all" && "${DATASET_FILTER}" != "${dataset}" ]] && continue
+
+  if [[ "${dataset}" == "generic" ]]; then
+    fastq="${GENERIC_FASTQ}"
+    gt="${GENERIC_GT}"
+  else
+    fastq="${VAGINAL_FASTQ}"
+    gt="${VAGINAL_GT}"
+  fi
+
+  for c_int in "${CONFIDENCE_INTS[@]}"; do
+    confidence="$(printf "0.%02d" "${c_int}")"
+    c_tag="$(printf "%03d" "${c_int}")"
+
+    for mhg in "${MHG_VALUES[@]}"; do
+      run_id="sweep_${dataset}_c${c_tag}_mhg${mhg}"
+      total=$(( total + 1 ))
+
+      run_point "${dataset}" "${run_id}" "${confidence}" "${mhg}" "${fastq}" "${gt}"
+      done_count=$(( done_count + 1 ))
+
+      echo " Progress: ${done_count}/${total} planned so far"
+    done
+  done
+done
+
+echo ""
+echo "════════════════════════════════════════════════════════════════"
+echo " Sweep complete. Summary:"
+echo "════════════════════════════════════════════════════════════════"
+if [[ -f "${SCORES_TSV}" ]]; then
+  column -t "${SCORES_TSV}" 2>/dev/null || cat "${SCORES_TSV}"
+fi

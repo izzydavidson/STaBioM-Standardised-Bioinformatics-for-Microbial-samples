@@ -57,6 +57,20 @@ on_error() {
 }
 trap 'on_error ${LINENO} "${BASH_COMMAND}"' ERR
 
+normalize_boolish() {
+  local raw="${1:-}"
+  local norm="false"
+  if [[ -z "${raw}" || "${raw}" == "null" ]]; then
+    echo "${norm}"; return 0
+  fi
+  case "$(printf "%s" "${raw}" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')" in
+    1|true|yes|y|on) norm="true" ;;
+    0|false|no|n|off) norm="false" ;;
+    *) norm="false" ;;
+  esac
+  echo "${norm}"
+}
+
 ############################################
 ##              HELPERS                   ##
 ############################################
@@ -418,6 +432,21 @@ GRCH38_MMI="$(jq_first "${CONFIG_PATH}" '.refs.human_mmi' '.tools.minimap2.human
 # Split-prefix mode for low-RAM machines (required when using multi-part/split minimap2 indices)
 MINIMAP2_SPLIT_PREFIX="$(jq_first "${CONFIG_PATH}" '.tools.minimap2.split_prefix' '.tools.host_depletion.split_prefix' || true)"
 [[ -n "${MINIMAP2_SPLIT_PREFIX}" ]] || MINIMAP2_SPLIT_PREFIX="0"
+
+# Host depletion (minimap2) enable/disable — mirrors sr_meta behaviour
+REMOVE_HOST_RAW="$(jq_first "${CONFIG_PATH}" \
+  '.params.common.remove_host' \
+  '.params.remove_host' \
+  '.common.remove_host' \
+  '.remove_host' \
+  || true)"
+REMOVE_HOST_NORM="$(normalize_boolish "${REMOVE_HOST_RAW}")"
+
+# Configurable sample name for FASTQ_SINGLE / BAM-single-sample mode
+# Defaults to the FASTQ filename stem; set input.sample_name in config to override
+SINGLE_SAMPLE_NAME="$(jq_first "${CONFIG_PATH}" '.input.sample_name' '.run.sample_name' || true)"
+[[ -n "${SINGLE_SAMPLE_NAME}" && "${SINGLE_SAMPLE_NAME}" != "null" ]] || SINGLE_SAMPLE_NAME=""
+
 KRAKEN2_DB="$(jq_first "${CONFIG_PATH}" '.tools.kraken2.db' '.tools.kraken2.db_classify' '.kraken2_db' || true)"
 
 # Fixed kraken params
@@ -437,7 +466,9 @@ BRACKEN_READLEN_VAGINAL="$(jq_first "${CONFIG_PATH}" '.tools.bracken.vaginal.rea
 [[ -n "${BRACKEN_READLEN_VAGINAL}" ]] || BRACKEN_READLEN_VAGINAL="1200"
 
 USE_BRACKEN_NONVAGINAL="$(jq_first "${CONFIG_PATH}" '.tools.bracken.nonvaginal.enabled' '.use_bracken_nonvaginal' || true)"
-[[ -n "${USE_BRACKEN_NONVAGINAL}" ]] || USE_BRACKEN_NONVAGINAL="0"
+[[ -n "${USE_BRACKEN_NONVAGINAL}" ]] || USE_BRACKEN_NONVAGINAL="1"
+BRACKEN_READLEN_NONVAGINAL="$(jq_first "${CONFIG_PATH}" '.tools.bracken.nonvaginal.readlen' '.bracken_readlen_nonvaginal' || true)"
+[[ -n "${BRACKEN_READLEN_NONVAGINAL}" ]] || BRACKEN_READLEN_NONVAGINAL="${BRACKEN_READLEN_VAGINAL}"
 BRACKEN_AVAILABLE="1"
 
 ############################################
@@ -516,6 +547,11 @@ case "${INPUT_STYLE}" in
       barcode_id="${barcode_id%.fastq}"
       barcode_id="${barcode_id%.fq.gz}"
       barcode_id="${barcode_id%.fq}"
+
+      # Override with explicit sample name if configured and only one file
+      if [[ -n "${SINGLE_SAMPLE_NAME}" && ${#FASTQ_FILES[@]} -eq 1 ]]; then
+        barcode_id="${SINGLE_SAMPLE_NAME}"
+      fi
 
       # Create per-barcode subdirectory
       barcode_dir="${RAW_READS_DIR}/${RUN_NAME}/${barcode_id}"
@@ -701,7 +737,7 @@ RSCRIPT_BIN="$(resolve_tool "${CONFIG_PATH}" '.tools.rscript_bin' 'Rscript')"
 # Behavior:
 # - If INPUT_STYLE is FAST5/FAST5_DIR: run POD5->basecall->demux->trim->bam2fq per barcode
 # - If INPUT_STYLE is FASTQ_SINGLE: bypass basecalling and treat provided fastq as the analysis fastq (no demux).
-# Note: Your pasted pipeline is per-barcode, but FASTQ_SINGLE here is a single file. We’ll run downstream on it as “barcode00”.
+# Note: FASTQ_SINGLE provides a single file; sample ID is derived from the filename (or input.sample_name in config).
 
 PER_BARCODE_FASTQ_ROOT=""       # directory containing per-barcode fastqs (plain .fastq or .fastq.gz)
 ANALYSIS_FASTQ_MODE="per_barcode"
@@ -717,21 +753,32 @@ ensure_metatax_tools() {
 
 check_bracken_available() {
   if ! command -v "${BRACKEN_BIN}" >/dev/null 2>&1; then
-    BRACKEN_AVAILABLE="0"
-    USE_BRACKEN_VAGINAL="0"
-    VALENCIA_FORCE_BRACKEN="0"
+    BRACKEN_AVAILABLE="0"; USE_BRACKEN_VAGINAL="0"; USE_BRACKEN_NONVAGINAL="0"; VALENCIA_FORCE_BRACKEN="0"
     log_warn "Bracken not found. Bracken will be skipped; VALENCIA can fallback to kreport."
     return 0
   fi
-
-  [[ -n "${KRAKEN2_DB}" && "${KRAKEN2_DB}" != "null" ]] || { BRACKEN_AVAILABLE="0"; USE_BRACKEN_VAGINAL="0"; VALENCIA_FORCE_BRACKEN="0"; log_warn "KRAKEN2_DB not set; bracken disabled."; return 0; }
-  local kmer_file="${KRAKEN2_DB}/database${BRACKEN_READLEN_VAGINAL}mers.kmer_distrib"
-  if [[ ! -s "${kmer_file}" ]]; then
-    BRACKEN_AVAILABLE="0"
-    USE_BRACKEN_VAGINAL="0"
-    VALENCIA_FORCE_BRACKEN="0"
-    log_warn "Bracken kmer distribution not found at ${kmer_file}; bracken disabled."
+  [[ -n "${KRAKEN2_DB}" && "${KRAKEN2_DB}" != "null" ]] || {
+    BRACKEN_AVAILABLE="0"; USE_BRACKEN_VAGINAL="0"; USE_BRACKEN_NONVAGINAL="0"; VALENCIA_FORCE_BRACKEN="0"
+    log_warn "KRAKEN2_DB not set; bracken disabled."
+    return 0
+  }
+  # Check vaginal kmer_distrib (skip "auto" — resolved later by auto_select_bracken_readlen)
+  if [[ "${BRACKEN_READLEN_VAGINAL}" != "auto" && -n "${BRACKEN_READLEN_VAGINAL}" ]]; then
+    local kmer_vag="${KRAKEN2_DB}/database${BRACKEN_READLEN_VAGINAL}mers.kmer_distrib"
+    if [[ ! -s "${kmer_vag}" ]]; then
+      USE_BRACKEN_VAGINAL="0"; VALENCIA_FORCE_BRACKEN="0"
+      log_warn "Bracken kmer_distrib missing for vaginal readlen=${BRACKEN_READLEN_VAGINAL}: ${kmer_vag}"
+    fi
   fi
+  # Check nonvaginal kmer_distrib independently
+  if [[ "${BRACKEN_READLEN_NONVAGINAL}" != "auto" && -n "${BRACKEN_READLEN_NONVAGINAL}" ]]; then
+    local kmer_nv="${KRAKEN2_DB}/database${BRACKEN_READLEN_NONVAGINAL}mers.kmer_distrib"
+    if [[ ! -s "${kmer_nv}" ]]; then
+      USE_BRACKEN_NONVAGINAL="0"
+      log_warn "Bracken kmer_distrib missing for nonvaginal readlen=${BRACKEN_READLEN_NONVAGINAL}: ${kmer_nv}"
+    fi
+  fi
+  BRACKEN_AVAILABLE="1"
 }
 
 ############################################
@@ -750,7 +797,7 @@ declare -A NAME_BY_BARCODE
 
 # Load barcode-to-site mapping from sample sheet (TSV with columns: barcode, site)
 # If sample sheet not provided or doesn't exist, all barcodes default to "unknown"
-# EXCEPT: If input.sample_type is set in config, use that for barcode00 (FASTQ_SINGLE mode)
+# EXCEPT: If input.sample_type is set in config, use that for FASTQ_SINGLE mode
 load_barcode_site_map() {
   local sheet="${1:-}"
   SITE_BY_BARCODE=()
@@ -874,8 +921,9 @@ dorado_demux_to_per_barcode_bam() {
   make_dir "${outdir}"
 
   if [[ -z "${BARCODE_KIT:-}" || "${BARCODE_KIT}" == "null" ]]; then
-    log_warn "barcode_kit empty; treating as single sample 'barcode00'"
-    cp "${inbam}" "${outdir}/barcode00.bam"
+    local single_name="${SINGLE_SAMPLE_NAME:-${RUN_NAME_BASE}}"
+    log_warn "barcode_kit empty; treating as single sample '${single_name}'"
+    cp "${inbam}" "${outdir}/${single_name}.bam"
     echo "${outdir}"
     return 0
   fi
@@ -1116,7 +1164,7 @@ taxonomy_per_barcode_fixed_params() {
       log_info "Sample ${sample_id} (${friendly}) treated as non-vaginal ($(get_site_for_barcode "${sample_id}")${SITE_BY_BARCODE[${sample_id}]:+})."
       if [[ "${BRACKEN_AVAILABLE}" -eq 1 && "${USE_BRACKEN_NONVAGINAL}" -eq 1 ]]; then
         do_bracken=1
-        br_readlen="${BRACKEN_READLEN_VAGINAL}"
+        br_readlen="${BRACKEN_READLEN_NONVAGINAL}"
       fi
     fi
 
@@ -1981,8 +2029,9 @@ main() {
 
       PER_BARCODE_FASTQ_ROOT="${per_barcode_root}"
     else
-      # No barcode kit - treat as single sample
-      log_info "No barcode kit specified - treating BAM as single sample (barcode00)"
+      # No barcode kit - treat as single sample, use configured name or run name
+      local bam_single_name="${SINGLE_SAMPLE_NAME:-${RUN_NAME_BASE}}"
+      log_info "No barcode kit specified - treating BAM as single sample (${bam_single_name})"
       make_dir "${TRIM_DIR}"
       make_dir "${RAW_READS_DIR}/${RUN_NAME}"
 
@@ -2009,9 +2058,9 @@ main() {
       fi
 
       # Convert to FASTQ
-      local bcdir="${RAW_READS_DIR}/${RUN_NAME}/barcode00"
+      local bcdir="${RAW_READS_DIR}/${RUN_NAME}/${bam_single_name}"
       make_dir "${bcdir}"
-      local outfq="${bcdir}/barcode00.fastq"
+      local outfq="${bcdir}/${bam_single_name}.fastq"
       "${SAMTOOLS_BIN}" bam2fq "${trimmed_bam}" > "${outfq}"
 
       PER_BARCODE_FASTQ_ROOT="${RAW_READS_DIR}/${RUN_NAME}"
@@ -2020,25 +2069,12 @@ main() {
     ANALYSIS_FASTQ_MODE="per_barcode"
 
   elif [[ "${INPUT_STYLE}" == "FASTQ_SINGLE" ]]; then
-    # Provided FASTQ -> treat as single "barcode00"
-    local staged_path
-    staged_path="$(jq -r '.inputs.fastq // empty' "${OUTPUTS_JSON}")"
-    [[ -n "${staged_path}" ]] || die "outputs.json missing .inputs.fastq"
-
-    local bcdir="${RAW_READS_DIR}/${RUN_NAME}/barcode00"
-    make_dir "${bcdir}"
-
-    log_info "Using provided FASTQ (bypass basecalling). Staging to per-barcode layout as barcode00."
-    local outfq
-    if [[ "${staged_path}" == *.gz ]]; then
-      outfq="${bcdir}/barcode00.fastq.gz"
-    else
-      outfq="${bcdir}/barcode00.fastq"
-    fi
-    ln -sfn "${staged_path}" "${outfq}"
-
+    # FASTQs were already staged in per-barcode layout by the input resolution block above.
+    # Each FASTQ's sample ID is its filename stem (or input.sample_name if configured).
+    # No re-staging to barcode00 — the original name is preserved throughout the pipeline.
     PER_BARCODE_FASTQ_ROOT="${RAW_READS_DIR}/${RUN_NAME}"
     ANALYSIS_FASTQ_MODE="per_barcode"
+    log_info "FASTQ_SINGLE: using pre-staged layout at ${PER_BARCODE_FASTQ_ROOT}"
   else
     die "Unsupported input style: ${INPUT_STYLE}"
   fi
@@ -2070,18 +2106,42 @@ main() {
     exit $ec
   fi
 
-  # Human depletion
-  started="$(iso_now)"
-  set +e
-  human_depletion_per_barcode
-  ec=$?
-  set -e
-  ended="$(iso_now)"
-  if [[ $ec -eq 0 ]]; then
-    steps_append "${STEPS_JSON}" "host_depletion" "succeeded" "human depletion completed" "${MINIMAP2_BIN}" "minimap2 | samtools" "${ec}" "${started}" "${ended}"
+  # Human depletion (minimap2) — only runs if params.common.remove_host = 1/true
+  if [[ "${REMOVE_HOST_NORM}" == "true" ]]; then
+    started="$(iso_now)"
+    set +e
+    human_depletion_per_barcode
+    ec=$?
+    set -e
+    ended="$(iso_now)"
+    if [[ $ec -eq 0 ]]; then
+      steps_append "${STEPS_JSON}" "host_depletion" "succeeded" "human depletion completed" "${MINIMAP2_BIN}" "minimap2 | samtools" "${ec}" "${started}" "${ended}"
+    else
+      steps_append "${STEPS_JSON}" "host_depletion" "failed" "human depletion failed" "${MINIMAP2_BIN}" "minimap2 | samtools" "${ec}" "${started}" "${ended}"
+      exit $ec
+    fi
   else
-    steps_append "${STEPS_JSON}" "host_depletion" "failed" "human depletion failed" "${MINIMAP2_BIN}" "minimap2 | samtools" "${ec}" "${started}" "${ended}"
-    exit $ec
+    # Host depletion disabled — symlink input reads into nonhuman/ dir as nonhuman.fastq.gz
+    # so taxonomy_per_barcode_fixed_params finds the expected file names.
+    local _ndir="${NONHUMAN_DIR}/${RUN_NAME_BASE}"
+    shopt -s nullglob
+    local _files=( "${PER_BARCODE_FASTQ_ROOT}"/*/*.fastq \
+                   "${PER_BARCODE_FASTQ_ROOT}"/*/*.fastq.gz \
+                   "${PER_BARCODE_FASTQ_ROOT}"/*/*.fq \
+                   "${PER_BARCODE_FASTQ_ROOT}"/*/*.fq.gz )
+    for _f in "${_files[@]}"; do
+      local _bc; _bc="$(basename "$(dirname "${_f}")")"
+      make_dir "${_ndir}/${_bc}"
+      if [[ "${_f}" == *.gz ]]; then
+        ln -sf "${_f}" "${_ndir}/${_bc}/nonhuman.fastq.gz"
+      else
+        gzip -c "${_f}" > "${_ndir}/${_bc}/nonhuman.fastq.gz"
+      fi
+    done
+    NONHUMAN_RUN_DIR="${_ndir}"
+    started="$(iso_now)"; ended="$(iso_now)"
+    steps_append "${STEPS_JSON}" "host_depletion" "skipped" "Host depletion disabled (params.common.remove_host != 1/true)" "" "" "0" "${started}" "${ended}"
+    log_info "Host depletion disabled — reads symlinked to nonhuman dir for Kraken2."
   fi
 
   # Taxonomy

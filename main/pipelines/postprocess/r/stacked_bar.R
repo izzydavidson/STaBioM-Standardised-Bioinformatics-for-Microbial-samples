@@ -61,6 +61,24 @@ if (is.null(outputs_json) || is.null(out_dir)) {
 outputs <- fromJSON(outputs_json)
 params <- tryCatch(fromJSON(params_json), error = function(e) list())
 
+`%||%` <- function(x, y) if (is.null(x)) y else x
+
+# Apply barcode → sample name mapping from sample sheet (if provided)
+apply_sample_map <- function(df, sample_col, params) {
+  tsv <- params$sample_sheet %||% NULL
+  if (is.null(tsv) || !nzchar(tsv) || !file.exists(tsv)) return(df)
+  sheet <- tryCatch(
+    read.delim(tsv, stringsAsFactors = FALSE, na.strings = ""),
+    error = function(e) NULL
+  )
+  if (is.null(sheet) || !all(c("barcode", "sample_name") %in% colnames(sheet))) return(df)
+  name_map <- setNames(sheet$sample_name, sheet$barcode)
+  bc_key   <- sub(".*_(barcode[0-9]+)$", "\\1", df[[sample_col]])
+  mapped   <- name_map[bc_key]
+  df[[sample_col]] <- ifelse(!is.na(mapped) & nzchar(mapped), mapped, df[[sample_col]])
+  df
+}
+
 cat("[stacked_bar] Module:", module_name, "\n")
 cat("[stacked_bar] Output dir:", out_dir, "\n")
 
@@ -191,6 +209,7 @@ if (module_name %in% c("lr_meta", "sr_meta", "lr_amp") || is.null(module_name)) 
     # Load genus data
     if (file.exists(genus_tidy)) {
       genus_data <- read.csv(genus_tidy, stringsAsFactors = FALSE)
+      genus_data <- apply_sample_map(genus_data, "sample_id", params)
       cat("[stacked_bar] Loaded genus data:", nrow(genus_data), "rows,", length(unique(genus_data$genus)), "taxa\n")
       if (generate_stacked_bar(genus_data, "genus", "fraction", "Genus", top_n, out_dir)) {
         generated_any <- TRUE
@@ -200,6 +219,7 @@ if (module_name %in% c("lr_meta", "sr_meta", "lr_amp") || is.null(module_name)) 
     # Load species data
     if (file.exists(species_tidy)) {
       species_data <- read.csv(species_tidy, stringsAsFactors = FALSE)
+      species_data <- apply_sample_map(species_data, "sample_id", params)
       cat("[stacked_bar] Loaded species data:", nrow(species_data), "rows,", length(unique(species_data$species)), "taxa\n")
       if (generate_stacked_bar(species_data, "species", "fraction", "Species", top_n, out_dir)) {
         generated_any <- TRUE
@@ -276,7 +296,8 @@ if (!generated_any && (module_name == "sr_amp" || is.null(module_name))) {
             mutate(fraction = count / sum(count)) %>%
             ungroup()
 
-          if (generate_stacked_bar(as.data.frame(genus_agg), "genus", "fraction", "Genus", top_n, out_dir)) {
+          genus_agg_df <- apply_sample_map(as.data.frame(genus_agg), "sample_id", params)
+          if (generate_stacked_bar(genus_agg_df, "genus", "fraction", "Genus", top_n, out_dir)) {
             generated_any <- TRUE
           }
 
@@ -291,7 +312,8 @@ if (!generated_any && (module_name == "sr_amp" || is.null(module_name))) {
               mutate(fraction = count / sum(count)) %>%
               ungroup()
 
-            if (generate_stacked_bar(as.data.frame(species_agg), "species", "fraction", "Species", top_n, out_dir)) {
+            species_agg_df <- apply_sample_map(as.data.frame(species_agg), "sample_id", params)
+            if (generate_stacked_bar(species_agg_df, "species", "fraction", "Species", top_n, out_dir)) {
               generated_any <- TRUE
             }
           }
@@ -384,6 +406,7 @@ if (!generated_any && module_name == "lr_amp") {
 
       if (length(genus_rows) > 0) {
         genus_data <- do.call(rbind, genus_rows)
+        genus_data <- apply_sample_map(genus_data, "sample_id", params)
         cat("[stacked_bar] Emu genus data:", nrow(genus_data), "rows,",
             length(unique(genus_data$sample_id)), "samples\n")
         if (generate_stacked_bar(genus_data, "genus", "fraction", "Genus", top_n, out_dir)) {
@@ -393,6 +416,7 @@ if (!generated_any && module_name == "lr_amp") {
 
       if (length(species_rows) > 0) {
         species_data <- do.call(rbind, species_rows)
+        species_data <- apply_sample_map(species_data, "sample_id", params)
         cat("[stacked_bar] Emu species data:", nrow(species_data), "rows,",
             length(unique(species_data$sample_id)), "samples\n")
         if (generate_stacked_bar(species_data, "species", "fraction", "Species", top_n, out_dir)) {
