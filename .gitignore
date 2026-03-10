@@ -39,6 +39,10 @@ main/configs/
 # Build/tool artifacts (preserve wrappers)
 main/tools/VALENCIA/
 
+# Large binary tool directories (dorado basecaller - download separately)
+tools/dorado/
+tools/dorado-*/
+
 # Keep files (for maintaining empty directories)
 !.keep
 !**/.keep
