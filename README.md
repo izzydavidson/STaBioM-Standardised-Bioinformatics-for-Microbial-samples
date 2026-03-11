@@ -1,41 +1,57 @@
-# STaBioM - Standardised Bioinformatics for Microbial Samples
+# STaBioM — Standardised Bioinformatics for Microbial Samples
 
 A unified CLI and graphical interface for running microbiome analysis pipelines on long-read and short-read sequencing data, supporting both 16S amplicon and shotgun metagenomics workflows.
 
+---
+
 ## Features
 
-- **Multiple pipelines**: Short-read amplicon (QIIME2/DADA2), long-read amplicon (Emu/Kraken2), and metagenomics (Kraken2/Bracken)
-- **Dual interfaces**: Command-line tool + Shiny web interface
-- **Zero dependencies**: Download and run - Python is bundled in the binary
-- **Interactive setup**: Guided installation of Docker and reference databases
-- **Containerized tools**: All bioinformatics tools run in Docker containers
-- **Standardized outputs**: Consistent taxonomy tables, diversity metrics, and visualizations
-- **Valencia CST analysis**: Automatic community state type classification for vaginal samples
+- **Multiple pipelines** — Short-read amplicon (QIIME2/DADA2), long-read amplicon (Emu/Kraken2), and metagenomics (Kraken2 + Bracken re-estimation)
+- **Dual interfaces** — Command-line tool + Shiny web application
+- **Zero dependencies** — Download and run; Python is bundled in the binary
+- **Interactive setup** — Guided installation of Docker and reference databases
+- **Containerized tools** — All bioinformatics tools run in Docker containers
+- **Bracken re-estimation** — Abundance estimates are automatically re-estimated at species level using Bracken after Kraken2 classification
+- **Standardised outputs** — Consistent taxonomy tables, visualizations (pie charts, heatmaps, stacked bar charts), and CSV exports
+- **Valencia CST analysis** — Automatic community state type classification for vaginal samples
+- **Body-site databases** — Custom Kraken2 databases optimized for vaginal, gut, oral, and skin microbiomes (see [Databases](#databases))
+
+---
 
 ## Interfaces
 
-STaBioM provides two interfaces:
+### 1. Shiny Web Application (Recommended for most users)
 
-### 1. Command-Line Interface (CLI)
+A point-and-click graphical interface with real-time progress monitoring, file browsing, and interactive result comparison.
+
+**Requirements:** R >= 4.0, Docker
+
+**Launch:**
+```bash
+cd frontend
+R -e "shiny::runApp()"
+```
+
+Or open `frontend/app.R` in RStudio and click **Run App**.
+
+The app will open in your browser. R package dependencies (`shiny`, `bslib`, `jsonlite`, `shinyjs`, `shinyFiles`) are installed automatically on first launch.
+
+**Features:**
+- Short Read and Long Read pipeline configuration pages
+- Three-way file/directory input: type a path, use the Browse button, or drag and drop
+- Real-time pipeline log streaming
+- Run comparison page with heatmaps and stacked bar charts
+- Setup wizard for first-time configuration
+
+### 2. Command-Line Interface (CLI)
 
 Fast, scriptable, suitable for HPC and automation:
 
 ```bash
-stabiom run -p sr_amp -i /path/to/reads/
+stabiom run -p lr_meta -i /path/to/reads/ --sample-type vaginal
 ```
 
-See full CLI documentation below.
-
-### 2. Graphical Interface (Shiny Web App)
-
-User-friendly web interface with real-time progress monitoring:
-
-```bash
-cd frontend
-./launch.sh
-```
-
-See `frontend/QUICKSTART.md` for details.
+---
 
 ## Quick Start
 
@@ -50,156 +66,163 @@ Download the latest release for your platform from [GitHub Releases](https://git
 | Linux (x64) | `stabiom-vX.X.X-linux-x64.tar.gz` |
 
 ```bash
-# Download (replace URL with actual release)
-curl -LO https://github.com/izzydavidson/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/releases/download/v1.0.0/stabiom-v1.0.0-macos-arm64.tar.gz
-
 # Extract
-tar -xzf stabiom-v1.0.0-macos-arm64.tar.gz
-cd stabiom-v1.0.0-macos-arm64
+tar -xzf stabiom-vX.X.X-macos-arm64.tar.gz
+cd stabiom-vX.X.X-macos-arm64
 ```
 
 ### 2. Run Setup
-
-The setup wizard configures everything you need:
 
 ```bash
 ./stabiom setup
 ```
 
 This will:
-1. **Add `stabiom` to your PATH** - so you can run it from anywhere
-2. **Check for Docker** - and provide installation instructions if missing
-3. **Download reference databases** - Kraken2 and Emu databases (optional, interactive)
-4. **Download analysis tools** - VALENCIA for vaginal CST classification (optional, interactive)
-5. **Download Dorado models** - For FAST5/POD5 basecalling (optional, interactive)
+1. Add `stabiom` to your PATH
+2. Check for Docker and provide installation instructions if missing
+3. Download reference databases (interactive)
+4. Download VALENCIA for vaginal CST classification (optional)
+5. Download Dorado models for FAST5/POD5 basecalling (optional)
 
-After setup completes, restart your terminal or run:
+After setup, restart your terminal or run:
 ```bash
-source ~/.zshrc  # or ~/.bashrc for bash users
+source ~/.zshrc   # or ~/.bashrc for bash
 ```
 
-### 3. Run a Pipeline
+### 3. Launch the App or Run a Pipeline
 
+**Graphical interface:**
 ```bash
-# List available pipelines
-stabiom list
-
-# Run short-read 16S amplicon analysis
-stabiom run -p sr_amp -i /path/to/reads/
-
-# Run long-read 16S amplicon analysis
-stabiom run -p lr_amp -i /path/to/reads/
-
-# Dry-run to preview configuration
-stabiom run -p sr_amp -i /path/to/reads/ --dry-run
+cd frontend
+R -e "shiny::runApp()"
 ```
+
+**CLI:**
+```bash
+stabiom run -p lr_meta -i /path/to/reads/ --sample-type vaginal --db /path/to/db
+```
+
+---
 
 ## Available Pipelines
 
-| Pipeline | Description | Classifier |
-|----------|-------------|------------|
-| `sr_amp` | Short-read 16S amplicon (Illumina, IonTorrent, BGI) | QIIME2/DADA2 |
-| `sr_meta` | Short-read shotgun metagenomics | Kraken2/Bracken |
-| `lr_amp` | Long-read 16S amplicon (ONT, PacBio) | Emu or Kraken2 |
-| `lr_meta` | Long-read shotgun metagenomics | Kraken2/Bracken |
+| Pipeline | Description | Classifier | Abundance estimation |
+|----------|-------------|------------|---------------------|
+| `sr_amp` | Short-read 16S amplicon (Illumina, IonTorrent, BGI) | QIIME2/DADA2 | ASV-based |
+| `sr_meta` | Short-read shotgun metagenomics | Kraken2 | Bracken |
+| `lr_amp` | Long-read 16S amplicon (ONT, PacBio) | Emu or Kraken2 | Emu or Bracken |
+| `lr_meta` | Long-read shotgun metagenomics | Kraken2 | Bracken |
 
-**Note:** Long-read pipelines support FAST5, POD5, and FASTQ input. For FAST5 input, Dorado basecalling and models are automatically set up via `stabiom setup`.
+All Kraken2 pipelines use **Bracken re-estimation** — after Kraken2 classifies reads, Bracken redistributes genus-level counts to species level using kmer distribution files, producing more accurate species-level abundance estimates. The final graphs and CSV outputs reflect Bracken-estimated abundances where available.
 
-## Commands
+---
+
+## Databases
+
+STaBioM supports any Kraken2-compatible database. For best results, use a database matched to your sample type.
+
+### Body-Site Specific Databases (Recommended)
+
+Custom databases built from NCBI RefSeq representative genomes, optimized for each body site. Smaller, faster, and more accurate than generic databases for the relevant sample types.
+
+| Database | Size | Body site | Contents |
+|----------|------|-----------|----------|
+| `stabiom-vaginal` | ~1 GB | Vaginal | 112+ organisms: all CST-relevant Lactobacillus spp., Gardnerella, BV anaerobes (Fannyhessea, Sneathia, Mobiluncus, Megasphaera, Dialister, Prevotella, Peptoniphilus, Anaerococcus), STI pathogens (Chlamydia, Gonorrhoeae, Treponema, HSV, HPV, HIV, Trichomonas), vaginal fungi (Candida spp.) |
+| `stabiom-core` | TBA | Gut / Oral / Skin | Coming soon |
+
+The vaginal database covers all [Community State Types (CST I–V)](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3102268/):
+
+| CST | Dominant organism | Included |
+|-----|-------------------|---------|
+| CST I | *Lactobacillus crispatus* | ✓ |
+| CST II | *Lactobacillus gasseri* | ✓ |
+| CST III | *Lactobacillus iners* | ✓ |
+| CST IV-A/B | *Gardnerella* spp. + *Fannyhessea vaginae* | ✓ |
+| CST IV-C0/C1 | *Prevotella* spp. | ✓ |
+| CST IV-C2 | *Enterococcus* spp. | ✓ |
+| CST IV-C3 | *Bifidobacterium* spp. | ✓ |
+| CST IV-C4 | *Staphylococcus* spp. | ✓ |
+| CST V | *Lactobacillus jensenii* | ✓ |
+
+### Generic Databases
+
+| Database | Size | Used by |
+|----------|------|---------|
+| Kraken2 Standard-8 | ~8 GB | sr_meta, lr_meta, lr_amp |
+| Kraken2 Standard-16 | ~16 GB | sr_meta, lr_meta, lr_amp |
+| Kraken2 PlusPF | ~87 GB | sr_meta, lr_meta, lr_amp |
+| Emu Default | ~0.5 GB | lr_amp (full-length 16S) |
+
+---
+
+## CLI Commands
 
 ### `stabiom setup`
 
-Interactive setup wizard. Run this after first installing STaBioM.
+Interactive setup wizard. Run after first installing STaBioM.
 
 ```bash
-stabiom setup                    # Interactive setup
-stabiom setup --non-interactive  # Automated setup (for CI)
-stabiom setup -d kraken2-standard-8  # Download specific database
+stabiom setup                    # Interactive
+stabiom setup --non-interactive  # Automated (for CI)
 ```
 
 ### `stabiom run`
 
-Run a microbiome analysis pipeline.
-
 ```bash
-# Basic usage
-stabiom run -p <pipeline> -i <input>
+stabiom run -p <pipeline> -i <input> [options]
 
 # Examples
-stabiom run -p sr_amp -i reads/*.fastq.gz
-stabiom run -p lr_amp -i pod5_pass/ --sample-type vaginal
-stabiom run -p sr_meta -i reads/ --db /path/to/kraken2/db -o ./results
+stabiom run -p lr_meta -i sample.fastq --sample-type vaginal --db /path/to/stabiom-vaginal
+stabiom run -p sr_amp  -i reads/*.fastq.gz
+stabiom run -p lr_amp  -i pod5_pass/ --sample-type vaginal
 
 # Key options
   -p, --pipeline      Pipeline: sr_amp | sr_meta | lr_amp | lr_meta (required)
-  -i, --input         Input files, directory, or glob pattern (required)
+  -i, --input         Input file, directory, or glob pattern (required)
   -o, --outdir        Output directory (default: ./outputs)
-  --sample-type       Sample type: vaginal | gut | oral | skin | other
+  --sample-type       vaginal | gut | oral | skin | other
   --db                Kraken2 database path
-  --threads           Number of CPU threads (default: 4)
+  --threads           CPU threads (default: 4)
   --dry-run           Preview configuration without running
-  --no-container      Run without Docker (use local tools)
-
-# FAST5 input (auto-detected if models installed via setup)
-stabiom run -p lr_amp -i fast5/*.fast5
-
-# Or specify paths manually
-stabiom run -p lr_amp -i fast5/*.fast5 \
-  --dorado-bin /path/to/dorado/bin/dorado \
-  --dorado-models-dir /path/to/models \
-  --dorado-model dna_r10.4.1_e8.2_400bps_hac@v5.2.0
 ```
-
-**Note**: FAST5 input requires Dorado and models:
-- If installed via `stabiom setup`: Auto-detected (no flags needed)
-- If manually installed: Use `--dorado-bin`, `--dorado-models-dir`, and `--dorado-model`
-
-See [Dorado Models](#dorado-models-for-fast5-input) section for installation instructions.
 
 ### `stabiom compare`
 
-Compare taxonomic profiles from multiple pipeline runs.
-
 ```bash
 stabiom compare --run outputs/run1 --run outputs/run2
-stabiom compare --run run1 --run run2 --rank species --norm clr
-```
-
-### `stabiom list`
-
-List all available pipelines with descriptions.
-
-```bash
-stabiom list
-```
-
-### `stabiom info`
-
-Show detailed information about pipelines.
-
-```bash
-stabiom info           # Show all pipelines
-stabiom info sr_amp    # Show specific pipeline
 ```
 
 ### `stabiom doctor`
 
-Diagnose your installation and check system requirements.
+Diagnose installation, check Docker, databases, and disk space.
 
 ```bash
 stabiom doctor
 ```
 
-Shows status of:
-- PATH configuration
-- Docker installation
-- Downloaded databases
-- Disk space
-- Required dependencies
+---
+
+## Output Structure
+
+```
+outputs/
+└── <run_id>/
+    └── lr_meta/
+        └── final/
+            ├── tables/
+            │   ├── kraken_species_tidy.csv     # Species abundances (Bracken-estimated)
+            │   └── valencia_cst.csv            # CST classification (vaginal only)
+            └── plots/
+                ├── piechart.html
+                ├── heatmap.html
+                └── stacked_bar.html
+```
+
+---
 
 ## Requirements
 
-### What's Included (No Installation Needed)
+### What's Included
 
 - Python runtime (bundled in binary)
 - Pipeline scripts
@@ -207,147 +230,55 @@ Shows status of:
 
 ### What You Need
 
-- **Docker**: Required to run pipelines (installed via `stabiom setup`)
-- **Reference databases**: Downloaded via `stabiom setup` or manually
+- **Docker** — Required to run pipelines
+- **R >= 4.0** — Required for the Shiny app
+- **Reference databases** — Download via `stabiom setup` or manually
 
-### Supported Databases
+### Dorado Models (FAST5/POD5 Basecalling)
 
-| Database | Size | Used By |
-|----------|------|---------|
-| Kraken2 Standard-8 | ~8 GB | sr_meta, lr_meta, lr_amp (partial) |
-| Kraken2 Standard-16 | ~16 GB | sr_meta, lr_meta, lr_amp (partial) |
-| Emu Default | ~0.5 GB | lr_amp (full-length 16S) |
-
-### Dorado Models (For FAST5 Input)
-
-For FAST5 input with long-read pipelines, Dorado basecalling models are required.
-
-**Option 1: Download via Setup (Recommended)**
-
-Run the setup wizard and select Dorado models to download:
+For FAST5 or POD5 input, Dorado basecalling models are required. Install via `stabiom setup` (recommended) or manually:
 
 ```bash
-stabiom setup
-```
-
-The wizard will:
-- Download the Dorado binary automatically (including Linux binary for Docker on macOS)
-- Let you select which models to download (HAC, SUP, or FAST)
-- Auto-detect models for FAST5 input (no --dorado-model flag needed if only one model is installed)
-
-**Note for macOS users:** The setup downloads TWO Dorado binaries:
-- Linux binary (for Docker containers) - auto-mounted when running pipelines
-- macOS binary (for downloading models on your Mac)
-
-**Option 2: Manual Download**
-
-If you prefer manual installation:
-
-```bash
-# Using Docker
 docker run -v $(pwd)/models:/models ontresearch/dorado:latest \
   dorado download --model dna_r10.4.1_e8.2_400bps_hac@v5.2.0 --models-directory /models
-
-# Or download Dorado binary and models from:
-# https://github.com/nanoporetech/dorado/releases
 ```
 
-**Available Models:**
-- `dna_r10.4.1_e8.2_400bps_hac@v5.2.0` - High-accuracy (recommended)
-- `dna_r10.4.1_e8.2_400bps_sup@v5.2.0` - Super-accuracy (slower)
-- `dna_r10.4.1_e8.2_400bps_fast@v5.2.0` - Fast (less accurate)
+---
 
-For a full list of available models, see the [Dorado models documentation](https://github.com/nanoporetech/dorado#models).
-
-## Sample Types
-
-| Type | Valencia CST | Notes |
-|------|--------------|-------|
-| `vaginal` | Auto-enabled | Community state type analysis |
-| `gut` | Disabled | Gut microbiome |
-| `oral` | Disabled | Oral microbiome |
-| `skin` | Disabled | Skin microbiome |
-| `other` | Disabled | Generic (default) |
-
-## Output Structure
-
-Each pipeline run produces:
-
-```
-outputs/
-└── 20240131_143052/           # Run ID (timestamp)
-    ├── config.json            # Run configuration
-    ├── outputs.json           # Output file manifest
-    ├── logs/                  # Pipeline logs
-    ├── intermediate/          # Intermediate files
-    │   ├── qc/               # Quality control
-    │   ├── filtered/         # Filtered reads
-    │   └── classification/   # Raw classifier output
-    └── final/                 # Analysis-ready outputs
-        ├── taxonomy/         # Abundance tables
-        ├── diversity/        # Alpha/beta diversity
-        ├── plots/            # Visualizations
-        └── report/           # Summary reports
-```
-
-## Development Installation
-
-For contributors or advanced users who want to run from source:
+## Development
 
 ```bash
-# Clone the repository
 git clone https://github.com/izzydavidson/STaBioM-Standardised-Bioinformatics-for-Microbial-samples.git
-cd STaBioM
+cd STaBioM-Standardised-Bioinformatics-for-Microbial-samples
 
-# Run directly with Python
+# Run CLI from source
 python -m cli --help
-python -m cli run -p sr_amp -i reads/
 
-# Or install in development mode
-pip install -e .
-stabiom --help
+# Run Shiny app
+cd frontend
+R -e "shiny::runApp()"
 ```
 
-### Building the Binary
-
-```bash
-# Install PyInstaller
-pip install pyinstaller
-
-# Build
-./scripts/build-release.sh --version v1.0.0
-
-# Test
-./dist/stabiom-v1.0.0-macos-arm64/stabiom --help
-```
+---
 
 ## Troubleshooting
 
 ### "Docker not found"
-
-Run the setup wizard to get installation instructions:
 ```bash
-stabiom setup
+stabiom setup   # provides installation instructions
 ```
-
-Or install Docker manually:
-- **macOS**: [Docker Desktop for Mac](https://docs.docker.com/desktop/install/mac-install/)
-- **Linux**: `curl -fsSL https://get.docker.com | sh`
+Or install manually: [Docker Desktop](https://docs.docker.com/desktop/install/mac-install/) (macOS) / `curl -fsSL https://get.docker.com | sh` (Linux)
 
 ### "stabiom: command not found"
+Run `stabiom setup` again, then restart your terminal.
 
-The PATH wasn't configured. Either:
-1. Run `stabiom setup` again
-2. Restart your terminal
-3. Or run with full path: `./stabiom`
-
-### Check system status
-
+### Bracken not running
+Bracken requires a `database<readlen>mers.kmer_distrib` file in your Kraken2 database directory. If missing, the pipeline will log a warning and fall back to raw Kraken2 output. Build kmer distribution files with:
 ```bash
-stabiom doctor
+bracken-build -d /path/to/db -t 8 -l 1200 -k 35
 ```
 
-This shows what's working and what needs attention.
+---
 
 ## Citation
 
