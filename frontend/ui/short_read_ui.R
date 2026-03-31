@@ -50,8 +50,11 @@ short_read_ui <- function(id) {
                       placeholder = "/path/to/output  (e.g. /Users/you/Desktop)",
                       width = "100%"
                     ),
-                    actionButton(ns("choose_extra_dir"), "Browse\u2026",
-                      class = "btn btn-outline-secondary btn-sm",
+                    shinyDirButton(ns("extra_output_dir_browse"),
+                      label = tagList(icon("folder-open"), " Browse"),
+                      title = "Select output directory",
+                      buttonType = "outline-secondary",
+                      class = "btn-sm",
                       style = "white-space: nowrap; flex-shrink: 0;"
                     )
                   ),
@@ -74,20 +77,26 @@ short_read_ui <- function(id) {
                   tags$label(class = "form-label", "FASTQ File or Directory"),
                   div(
                     class = "file-input-zone",
-                    tags$p(class = "fiz-hint", "\u2b06 Drag & drop a file or folder here"),
+                    tags$p(class = "fiz-hint", "\u2b06 Drag & drop a file or folder here, or use Browse"),
                     textInput(ns("input_path"), NULL,
                       placeholder = "/path/to/file.fastq.gz  or  /path/to/directory",
                       width = "100%"
                     ),
                     div(
                       class = "d-flex align-items-center gap-2 mt-2",
-                      tags$label(
-                        class = "btn btn-outline-secondary btn-sm mb-0",
-                        style = "cursor: pointer;",
-                        icon("folder-open"), " Choose File",
-                        tags$input(type = "file", class = "fiz-native", style = "display: none;")
+                      shinyFilesButton(ns("input_path_browse_file"),
+                        label = tagList(icon("file"), " File"),
+                        title = "Choose FASTQ file",
+                        multiple = FALSE,
+                        buttonType = "outline-secondary",
+                        class = "btn-sm"
                       ),
-                      tags$span(class = "fiz-chosen", "No file chosen")
+                      shinyDirButton(ns("input_path_browse_dir"),
+                        label = tagList(icon("folder-open"), " Folder"),
+                        title = "Choose input directory",
+                        buttonType = "outline-secondary",
+                        class = "btn-sm"
+                      )
                     )
                   )
                 )
@@ -101,20 +110,20 @@ short_read_ui <- function(id) {
                     tags$label(class = "form-label", "Forward Reads (R1)"),
                     div(
                       class = "file-input-zone",
-                      tags$p(class = "fiz-hint", "\u2b06 Drag & drop here"),
+                      tags$p(class = "fiz-hint", "\u2b06 Drag & drop here, or Browse"),
                       textInput(ns("input_r1"), NULL,
                         placeholder = "/path/to/sample_R1.fastq.gz",
                         width = "100%"
                       ),
                       div(
-                        class = "d-flex align-items-center gap-2 mt-2",
-                        tags$label(
-                          class = "btn btn-outline-secondary btn-sm mb-0",
-                          style = "cursor: pointer;",
-                          icon("folder-open"), " Choose File",
-                          tags$input(type = "file", class = "fiz-native", style = "display: none;")
-                        ),
-                        tags$span(class = "fiz-chosen", "No file chosen")
+                        class = "mt-2",
+                        shinyFilesButton(ns("input_r1_browse"),
+                          label = tagList(icon("file"), " Browse R1"),
+                          title = "Choose forward reads (R1)",
+                          multiple = FALSE,
+                          buttonType = "outline-secondary",
+                          class = "btn-sm"
+                        )
                       )
                     )
                   ),
@@ -123,20 +132,20 @@ short_read_ui <- function(id) {
                     tags$label(class = "form-label", "Reverse Reads (R2)"),
                     div(
                       class = "file-input-zone",
-                      tags$p(class = "fiz-hint", "\u2b06 Drag & drop here"),
+                      tags$p(class = "fiz-hint", "\u2b06 Drag & drop here, or Browse"),
                       textInput(ns("input_r2"), NULL,
                         placeholder = "/path/to/sample_R2.fastq.gz",
                         width = "100%"
                       ),
                       div(
-                        class = "d-flex align-items-center gap-2 mt-2",
-                        tags$label(
-                          class = "btn btn-outline-secondary btn-sm mb-0",
-                          style = "cursor: pointer;",
-                          icon("folder-open"), " Choose File",
-                          tags$input(type = "file", class = "fiz-native", style = "display: none;")
-                        ),
-                        tags$span(class = "fiz-chosen", "No file chosen")
+                        class = "mt-2",
+                        shinyFilesButton(ns("input_r2_browse"),
+                          label = tagList(icon("file"), " Browse R2"),
+                          title = "Choose reverse reads (R2)",
+                          multiple = FALSE,
+                          buttonType = "outline-secondary",
+                          class = "btn-sm"
+                        )
                       )
                     )
                   )
@@ -225,7 +234,20 @@ short_read_ui <- function(id) {
               div(
                 class = "mb-3",
                 tags$label(class = "form-label", "External Database Directory (Optional)"),
-                textInput(ns("external_db_dir"), NULL, placeholder = "/path/to/database"),
+                div(
+                  class = "d-flex align-items-center gap-2",
+                  textInput(ns("external_db_dir"), NULL,
+                    placeholder = "/path/to/database",
+                    width = "100%"
+                  ),
+                  shinyDirButton(ns("external_db_dir_browse"),
+                    label = tagList(icon("folder-open"), " Browse"),
+                    title = "Choose external database directory",
+                    buttonType = "outline-secondary",
+                    class = "btn-sm",
+                    style = "white-space: nowrap; flex-shrink: 0;"
+                  )
+                ),
                 tags$small(class = "text-muted", "Optionally mount an external database directory")
               ),
 
@@ -314,7 +336,20 @@ short_read_ui <- function(id) {
                   div(
                     class = "col-md-12 mb-3",
                     tags$label(class = "form-label", "Kraken2 Database Path"),
-                    textInput(ns("kraken_db"), NULL, placeholder = "/path/to/kraken2/db")
+                    div(
+                      class = "d-flex align-items-center gap-2",
+                      textInput(ns("kraken_db"), NULL,
+                        placeholder = "/path/to/kraken2/db",
+                        width = "100%"
+                      ),
+                      shinyDirButton(ns("kraken_db_browse"),
+                        label = tagList(icon("folder-open"), " Browse"),
+                        title = "Choose Kraken2 database directory",
+                        buttonType = "outline-secondary",
+                        class = "btn-sm",
+                        style = "white-space: nowrap; flex-shrink: 0;"
+                      )
+                    )
                   ),
                   div(
                     class = "col-md-6 mb-3",

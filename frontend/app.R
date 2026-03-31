@@ -613,6 +613,22 @@ server <- function(input, output, session) {
   })
 }
 
+# ── Ready message printed to terminal ────────────────────────────────────────
+local({
+  w   <- 58L
+  top <- paste0("\u2554", paste(rep("\u2550", w), collapse = ""), "\u2557")
+  bot <- paste0("\u255a", paste(rep("\u2550", w), collapse = ""), "\u255d")
+  row <- function(txt) {
+    pad <- w - 2L - nchar(txt)
+    paste0("\u2551 ", txt, paste(rep(" ", max(0L, pad)), collapse = ""), " \u2551")
+  }
+  cat(top, "\n", sep = "")
+  cat(row("  STaBioM is starting \u2014 opening browser automatically"), "\n", sep = "")
+  cat(row("  If the browser does not open, navigate to the URL shown"), "\n", sep = "")
+  cat(row("  below. Press Ctrl+C in this terminal to stop the app."), "\n", sep = "")
+  cat(bot, "\n\n", sep = "")
+})
+
 # Run the app with auto-launch
 options(shiny.launch.browser = TRUE)
 shinyApp(ui = ui, server = server)
