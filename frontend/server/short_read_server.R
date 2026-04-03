@@ -3,78 +3,43 @@ short_read_server <- function(id, shared) {
 
     ns <- session$ns
 
-    # ── shinyFiles: full filesystem file/dir browsing ─────────────────────────
-    volumes <- c("Home" = path.expand("~"), getVolumes()())
+    # ── Native OS file/dir pickers via osascript ──────────────────────────────
 
-    # FASTQ file browser (single-file mode)
-    shinyFileChoose(input, "input_path_browse_file", roots = volumes, session = session,
-                    filetypes = c("fastq", "gz", "fq", "bam"))
     observeEvent(input$input_path_browse_file, {
-      req(is.list(input$input_path_browse_file))
-      info <- parseFilePaths(volumes, input$input_path_browse_file)
-      if (nrow(info) > 0)
-        updateTextInput(session, "input_path", value = as.character(info$datapath[1]))
+      path <- trimws(system("osascript -e 'POSIX path of (choose file)'", intern = TRUE))
+      if (nchar(path) > 0) updateTextInput(session, "input_path", value = path)
     })
 
-    # FASTQ directory browser
-    shinyDirChoose(input, "input_path_browse_dir", roots = volumes, session = session,
-                   allowDirCreate = FALSE)
     observeEvent(input$input_path_browse_dir, {
-      req(is.list(input$input_path_browse_dir))
-      path <- parseDirPath(volumes, input$input_path_browse_dir)
-      if (length(path) > 0 && nchar(as.character(path)) > 0)
-        updateTextInput(session, "input_path", value = as.character(path))
+      path <- trimws(system("osascript -e 'POSIX path of (choose folder)'", intern = TRUE))
+      if (nchar(path) > 0) updateTextInput(session, "input_path", value = path)
     })
 
-    # R1 file browser
-    shinyFileChoose(input, "input_r1_browse", roots = volumes, session = session,
-                    filetypes = c("fastq", "gz", "fq"))
     observeEvent(input$input_r1_browse, {
-      req(is.list(input$input_r1_browse))
-      info <- parseFilePaths(volumes, input$input_r1_browse)
-      if (nrow(info) > 0)
-        updateTextInput(session, "input_r1", value = as.character(info$datapath[1]))
+      path <- trimws(system("osascript -e 'POSIX path of (choose file)'", intern = TRUE))
+      if (nchar(path) > 0) updateTextInput(session, "input_r1", value = path)
     })
 
-    # R2 file browser
-    shinyFileChoose(input, "input_r2_browse", roots = volumes, session = session,
-                    filetypes = c("fastq", "gz", "fq"))
     observeEvent(input$input_r2_browse, {
-      req(is.list(input$input_r2_browse))
-      info <- parseFilePaths(volumes, input$input_r2_browse)
-      if (nrow(info) > 0)
-        updateTextInput(session, "input_r2", value = as.character(info$datapath[1]))
+      path <- trimws(system("osascript -e 'POSIX path of (choose file)'", intern = TRUE))
+      if (nchar(path) > 0) updateTextInput(session, "input_r2", value = path)
     })
 
-    # Kraken2 DB directory browser
-    shinyDirChoose(input, "kraken_db_browse", roots = volumes, session = session,
-                   allowDirCreate = FALSE)
     observeEvent(input$kraken_db_browse, {
-      req(is.list(input$kraken_db_browse))
-      path <- parseDirPath(volumes, input$kraken_db_browse)
-      if (length(path) > 0 && nchar(as.character(path)) > 0)
-        updateTextInput(session, "kraken_db", value = as.character(path))
+      path <- trimws(system("osascript -e 'POSIX path of (choose folder)'", intern = TRUE))
+      if (nchar(path) > 0) updateTextInput(session, "kraken_db", value = path)
     })
 
-    # External DB directory browser
-    shinyDirChoose(input, "external_db_dir_browse", roots = volumes, session = session,
-                   allowDirCreate = FALSE)
     observeEvent(input$external_db_dir_browse, {
-      req(is.list(input$external_db_dir_browse))
-      path <- parseDirPath(volumes, input$external_db_dir_browse)
-      if (length(path) > 0 && nchar(as.character(path)) > 0)
-        updateTextInput(session, "external_db_dir", value = as.character(path))
+      path <- trimws(system("osascript -e 'POSIX path of (choose folder)'", intern = TRUE))
+      if (nchar(path) > 0) updateTextInput(session, "external_db_dir", value = path)
     })
 
-    # Output directory browser (replaces osascript)
-    shinyDirChoose(input, "extra_output_dir_browse", roots = volumes, session = session,
-                   allowDirCreate = FALSE)
     observeEvent(input$extra_output_dir_browse, {
-      req(is.list(input$extra_output_dir_browse))
-      path <- parseDirPath(volumes, input$extra_output_dir_browse)
-      if (length(path) > 0 && nchar(as.character(path)) > 0) {
-        updateTextInput(session, "extra_output_dir", value = as.character(path))
-        shared$additional_output_dir <- as.character(path)
+      path <- trimws(system("osascript -e 'POSIX path of (choose folder)'", intern = TRUE))
+      if (nchar(path) > 0) {
+        updateTextInput(session, "extra_output_dir", value = path)
+        shared$additional_output_dir <- path
       }
     })
 

@@ -486,73 +486,106 @@ ui <- page_navbar(
         transition: none !important;
       }
 
-      /* ── File input zone: native picker + drag-drop + text path ─────── */
-      .file-input-zone {
-        border: 1.5px dashed #d1d5db;
-        border-radius: 0.5rem;
-        padding: 0.875rem 1rem 0.75rem;
-        background: #fafafa;
-        transition: border-color 0.2s, background 0.2s;
+      /* ── File browse group — demo-style drop zone + path input ─────────── */
+      .file-browse-group {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
       }
-      .file-input-zone.drag-over {
+      /* Dashed upload zone (contains header + browse buttons) */
+      .file-browse-group .drop-zone {
+        border: 2px dashed #d1d5db;
+        border-radius: 0.5rem;
+        background: #f9fafb;
+        padding: 1rem 1rem 0.875rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.5rem;
+        transition: border-color 0.15s ease, background 0.15s ease;
+        cursor: default;
+      }
+      .file-browse-group.drag-over .drop-zone {
         border-color: #2563eb;
         background: #eff6ff;
       }
-      .file-input-zone .shiny-input-container {
+      /* Drag & drop caption text */
+      .file-browse-group .drop-zone-header {
+        color: #9ca3af;
+        font-size: 0.8rem;
+        pointer-events: none;
+      }
+      /* Browse buttons inside zone — native clean styling */
+      .file-browse-group .drop-zone > .btn,
+      .file-browse-group .drop-zone .btn-group > .btn {
+        background: white !important;
+        border: 1px solid #d1d5db !important;
+        border-radius: 0.375rem !important;
+        color: #374151 !important;
+        padding: 0.375rem 0.875rem !important;
+        font-size: 0.8125rem !important;
+        font-weight: 400 !important;
+        white-space: nowrap;
+        transition: background 0.1s ease, border-color 0.1s ease !important;
+      }
+      .file-browse-group .drop-zone > .btn:hover,
+      .file-browse-group .drop-zone .btn-group > .btn:hover {
+        background: #f9fafb !important;
+        border-color: #9ca3af !important;
+        color: #111827 !important;
+      }
+      .file-browse-group .drop-zone .btn-group {
+        display: flex;
+        gap: 0.375rem;
+      }
+      /* Path text input — plain, below the zone */
+      .file-browse-group > .shiny-input-container {
         margin-bottom: 0 !important;
       }
-      .fiz-hint {
-        font-size: 0.8rem;
-        color: #9ca3af;
-        margin: 0 0 0.45rem;
+      .file-browse-group > .shiny-input-container .form-control {
+        border: 1px solid #e5e7eb;
+        border-radius: 0.375rem;
+        background: white;
+        font-size: 0.875rem;
+        color: #1f2937;
       }
-      .fiz-chosen {
-        font-size: 0.78rem;
-        color: #6b7280;
-        font-style: italic;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-      .fiz-chosen.has-file {
-        color: #374151;
-        font-style: normal;
+      /* Drag-over: glow the text input too */
+      .file-browse-group.drag-over > .shiny-input-container .form-control {
+        border-color: #2563eb;
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+        background: #eff6ff;
       }
     ")),
   tags$script(HTML("
     $(function() {
-      /* drag-over highlight */
-      $(document).on('dragenter dragover', '.file-input-zone', function(e) {
+      var DRAG_SEL = '.file-browse-group';
+      /* Drag-over highlight */
+      $(document).on('dragenter dragover', DRAG_SEL, function(e) {
         e.preventDefault(); e.stopPropagation();
         $(this).addClass('drag-over');
       });
-      $(document).on('dragleave', '.file-input-zone', function(e) {
+      $(document).on('dragleave', DRAG_SEL, function(e) {
         var rt = e.relatedTarget;
         if (rt && (this === rt || $.contains(this, rt))) return;
         $(this).removeClass('drag-over');
       });
-      /* drop: extract file:// URI and populate the text input */
-      $(document).on('drop', '.file-input-zone', function(e) {
+      /* Drop: extract file:// URI → populate the text input */
+      $(document).on('drop', DRAG_SEL, function(e) {
         e.preventDefault(); e.stopPropagation();
         $(this).removeClass('drag-over');
         var $txt = $(this).find('input[type=\"text\"]').first();
         if (!$txt.length) return;
         var dt = e.originalEvent.dataTransfer;
-        var uri = (dt && dt.getData && (dt.getData('text/uri-list') || dt.getData('text/plain'))) || '';
-        if (!uri && dt && dt.files && dt.files.length > 0) { uri = dt.files[0].path || ''; }
-        uri = uri.split(/\\r?\\n/)[0].trim();
-        if (uri.indexOf('file://') === 0) { uri = decodeURIComponent(uri.substring(7)); }
-        if (uri) {
-          $txt.val(uri).trigger('input');
-          $(this).find('.fiz-chosen').text(uri.split('/').pop()).addClass('has-file');
+        var uri = (dt && dt.getData &&
+                   (dt.getData('text/uri-list') || dt.getData('text/plain'))) || '';
+        if (!uri && dt && dt.files && dt.files.length > 0) {
+          uri = dt.files[0].path || '';
         }
-      });
-      /* native picker: show chosen filename as hint (path cannot be read from browser) */
-      $(document).on('change', '.fiz-native', function() {
-        var f = this.files && this.files[0];
-        var $chosen = $(this).closest('.file-input-zone').find('.fiz-chosen');
-        if (f) { $chosen.text(f.name).addClass('has-file'); }
-        else    { $chosen.text('').removeClass('has-file'); }
+        uri = uri.split(/\\r?\\n/)[0].trim();
+        if (uri.indexOf('file://') === 0) {
+          uri = decodeURIComponent(uri.substring(7));
+        }
+        if (uri) { $txt.val(uri).trigger('input'); }
       });
     });
   ")),
@@ -615,18 +648,48 @@ server <- function(input, output, session) {
 
 # ── Ready message printed to terminal ────────────────────────────────────────
 local({
-  w   <- 58L
-  top <- paste0("\u2554", paste(rep("\u2550", w), collapse = ""), "\u2557")
-  bot <- paste0("\u255a", paste(rep("\u2550", w), collapse = ""), "\u255d")
-  row <- function(txt) {
-    pad <- w - 2L - nchar(txt)
-    paste0("\u2551 ", txt, paste(rep(" ", max(0L, pad)), collapse = ""), " \u2551")
+  X  <- "\033[0m"
+  C  <- "\033[96m"             # bright cyan  (box chrome)
+  PK <- "\033[1;4;38;5;213m"  # bold + underline + hot pink  (STaBioM title)
+  W  <- "\033[97m"             # bright white
+  G  <- "\033[92m"             # bright green  (ready indicator)
+  DG <- "\033[90m"             # dark grey  (secondary info)
+
+  w <- 58L
+  top   <- paste0(C, "\u2554", strrep("\u2550", w), "\u2557", X)
+  mid   <- paste0(C, "\u2560", strrep("\u2550", w), "\u2563", X)
+  bot   <- paste0(C, "\u255a", strrep("\u2550", w), "\u255d", X)
+  blank <- paste0(C, "\u2551", strrep(" ", w), "\u2551", X)
+
+  row <- function(plain, display = plain) {
+    pad <- max(0L, w - 2L - nchar(plain, type = "chars"))
+    paste0(C, "\u2551 ", X, display, strrep(" ", pad), C, " \u2551", X)
   }
-  cat(top, "\n", sep = "")
-  cat(row("  STaBioM is starting \u2014 opening browser automatically"), "\n", sep = "")
-  cat(row("  If the browser does not open, navigate to the URL shown"), "\n", sep = "")
-  cat(row("  below. Press Ctrl+C in this terminal to stop the app."), "\n", sep = "")
-  cat(bot, "\n\n", sep = "")
+
+  l1p <- " STaBioM"
+  l1d <- paste0(" ", PK, "STaBioM", X)
+  l2p <- " Standardised Bioinformatics for Microbial Samples"
+  l2d <- paste0(" ", W, "Standardised Bioinformatics for Microbial Samples", X)
+  l3p <- " Ready \u2014 browser opening automatically"
+  l3d <- paste0(" ", G, "Ready", X, W, " \u2014 browser opening automatically", X)
+  l4p <- " If the browser doesn't open, use the URL above"
+  l4d <- paste0(" ", DG, "If the browser doesn't open, use the URL above", X)
+  l5p <- " Press Ctrl+C in this terminal to stop"
+  l5d <- paste0(" ", DG, "Press Ctrl+C in this terminal to stop", X)
+
+  cat("\n")
+  cat(top,            "\n", sep = "")
+  cat(blank,          "\n", sep = "")
+  cat(row(l1p, l1d),  "\n", sep = "")
+  cat(blank,          "\n", sep = "")
+  cat(row(l2p, l2d),  "\n", sep = "")
+  cat(blank,          "\n", sep = "")
+  cat(mid,            "\n", sep = "")
+  cat(row(l3p, l3d),  "\n", sep = "")
+  cat(row(l4p, l4d),  "\n", sep = "")
+  cat(row(l5p, l5d),  "\n", sep = "")
+  cat(blank,          "\n", sep = "")
+  cat(bot,            "\n\n", sep = "")
 })
 
 # Run the app with auto-launch

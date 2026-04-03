@@ -2,27 +2,58 @@
 # Prints the STaBioM startup banner and ensures the environment is ready.
 
 .stabiom_banner <- function() {
-  w   <- 58L
-  top <- paste0("\u2554", paste(rep("\u2550", w), collapse = ""), "\u2557")
-  mid <- paste0("\u2560", paste(rep("\u2550", w), collapse = ""), "\u2563")
-  bot <- paste0("\u255a", paste(rep("\u2550", w), collapse = ""), "\u255d")
-  row <- function(txt) {
-    pad <- w - 2L - nchar(txt)
-    paste0("\u2551 ", txt, paste(rep(" ", max(0L, pad)), collapse = ""), " \u2551")
+  # ANSI codes — degrade gracefully on non-colour terminals
+  X  <- "\033[0m"              # reset
+  C  <- "\033[96m"             # bright cyan  (box chrome)
+  PK <- "\033[1;4;38;5;213m"  # bold + underline + hot pink  (STaBioM title)
+  W  <- "\033[97m"             # bright white  (subtitle)
+  DG <- "\033[90m"             # dark grey  (version line)
+  Y  <- "\033[93m"             # amber  (status line)
+
+  w <- 58L  # inner width (chars between the two ║)
+
+  top   <- paste0(C, "\u2554", strrep("\u2550", w), "\u2557", X)
+  mid   <- paste0(C, "\u2560", strrep("\u2550", w), "\u2563", X)
+  bot   <- paste0(C, "\u255a", strrep("\u2550", w), "\u255d", X)
+  blank <- paste0(C, "\u2551", strrep(" ", w), "\u2551", X)
+
+  # row(): plain = visible text for width, display = ANSI-decorated version
+  row <- function(plain, display = plain) {
+    pad <- max(0L, w - 2L - nchar(plain, type = "chars"))
+    paste0(C, "\u2551 ", X, display, strrep(" ", pad), C, " \u2551", X)
   }
-  blank <- paste0("\u2551", paste(rep(" ", w), collapse = ""), "\u2551")
+
+  # Get version from git — falls back gracefully if git is unavailable
+  git_ver <- tryCatch({
+    v <- system2("git", c("describe", "--tags", "--always"),
+                 stdout = TRUE, stderr = FALSE)
+    if (length(v) > 0 && nchar(trimws(v[1])) > 0) trimws(v[1]) else "dev"
+  }, error = function(e) "dev")
+
+  # Plain strings (for width calc — no ANSI codes)
+  t1p  <- " STaBioM"                                                # 8 chars
+  t2p  <- " Standardised Bioinformatics for Microbial Samples"      # 51 chars
+  vp   <- paste0(" ", git_ver)                                      # varies
+  chkp <- " Checking environment\u2026"                             # 22 chars
+
+  # Display strings (with ANSI codes)
+  t1d  <- paste0(" ", PK, "STaBioM", X)
+  t2d  <- paste0(" ", W, "Standardised Bioinformatics for Microbial Samples", X)
+  vd   <- paste0(" ", DG, git_ver, X)
+  chkd <- paste0(" ", Y, "Checking environment\u2026", X)
 
   cat("\n")
-  cat(top,   "\n", sep = "")
-  cat(blank, "\n", sep = "")
-  cat(row("  \u2588\u2588\u2588\u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588\u2588\u2588\u2588 "), "\n", sep = "")
-  cat(row("  \u2588\u2588\u2588\u2588\u2588\u2588\u2588 \u2588\u2588\u2588\u2588\u2588\u2588\u2588 "), "\n", sep = "")
-  cat(row("  STaBioM  \u2500  Standardised Bioinformatics"), "\n", sep = "")
-  cat(row("               for Microbial Samples"), "\n", sep = "")
-  cat(blank, "\n", sep = "")
-  cat(mid,   "\n", sep = "")
-  cat(row("  Checking environment \u2026"), "\n", sep = "")
-  cat(bot,   "\n", sep = "")
+  cat(top,              "\n", sep = "")
+  cat(blank,            "\n", sep = "")
+  cat(row(t1p,  t1d),   "\n", sep = "")
+  cat(blank,            "\n", sep = "")
+  cat(row(t2p,  t2d),   "\n", sep = "")
+  cat(blank,            "\n", sep = "")
+  cat(row(vp,   vd),    "\n", sep = "")
+  cat(blank,            "\n", sep = "")
+  cat(mid,              "\n", sep = "")
+  cat(row(chkp, chkd),  "\n", sep = "")
+  cat(bot,              "\n", sep = "")
   cat("\n")
 }
 
@@ -41,8 +72,8 @@ check_and_install_packages <- function(quiet = FALSE) {
             paste(missing_packages, collapse = ", "), " ...")
     tryCatch(
       install.packages(missing_packages,
-                       repos  = "https://cloud.r-project.org/",
-                       quiet  = quiet),
+                       repos = "https://cloud.r-project.org/",
+                       quiet = quiet),
       error = function(e) {
         stop("[STaBioM] install.packages() failed: ", conditionMessage(e))
       }

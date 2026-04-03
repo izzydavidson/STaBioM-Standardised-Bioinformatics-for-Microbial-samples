@@ -80,22 +80,20 @@ long_read_ui <- function(id) {
                       style = "font-size: 0.8rem; font-weight: 400;", " (Optional)")
                   ),
                   div(
-                    class = "d-flex align-items-center gap-2",
+                    class = "file-browse-group",
+                    div(
+                      class = "drop-zone",
+                      div(class = "drop-zone-header", icon("upload"), " Drag & drop"),
+                      actionButton(ns("extra_output_dir_browse"), "Browse",
+                        class = "btn btn-outline-secondary"
+                      )
+                    ),
                     textInput(ns("extra_output_dir"), NULL,
                       placeholder = "/path/to/output  (e.g. /Users/you/Desktop)",
                       width = "100%"
-                    ),
-                    shinyDirButton(ns("extra_output_dir_browse"),
-                      label = tagList(icon("folder-open"), " Browse"),
-                      title = "Select output directory",
-                      buttonType = "outline-secondary",
-                      class = "btn-sm",
-                      style = "white-space: nowrap; flex-shrink: 0;"
                     )
                   ),
-                  tags$small(class = "text-muted",
-                    "A copy of the run folder will be saved here after a successful run."
-                  )
+                  tags$small(class = "text-muted", "A copy of the run folder will be saved here after a successful run.")
                 )
               ),
 
@@ -106,29 +104,25 @@ long_read_ui <- function(id) {
                 class = "mb-3",
                 tags$label(class = "form-label", "Input File or Directory"),
                 div(
-                  class = "file-input-zone",
-                  tags$p(class = "fiz-hint", "\u2b06 Drag & drop a file or folder here, or use Browse"),
+                  class = "file-browse-group",
+                  div(
+                    class = "drop-zone",
+                    div(class = "drop-zone-header", icon("upload"), " Drag & drop"),
+                    div(
+                      class = "btn-group",
+                      actionButton(ns("input_path_browse_file"), "File",
+                        class = "btn btn-outline-secondary"
+                      ),
+                      actionButton(ns("input_path_browse_dir"), "Folder",
+                        class = "btn btn-outline-secondary"
+                      )
+                    )
+                  ),
                   textInput(ns("input_path"), NULL,
                     placeholder = "/path/to/file.fastq.gz  or  /path/to/directory",
                     width = "100%"
-                  ),
-                  div(
-                    class = "d-flex align-items-center gap-2 mt-2",
-                    shinyFilesButton(ns("input_path_browse_file"),
-                      label = tagList(icon("file"), " File"),
-                      title = "Choose FASTQ / FAST5 / POD5 file",
-                      multiple = FALSE,
-                      buttonType = "outline-secondary",
-                      class = "btn-sm"
-                    ),
-                    shinyDirButton(ns("input_path_browse_dir"),
-                      label = tagList(icon("folder-open"), " Folder"),
-                      title = "Choose input directory",
-                      buttonType = "outline-secondary",
-                      class = "btn-sm"
-                    )
                   )
-                )
+                ),
               ),
 
               # Dorado config (FAST5/POD5 only)
@@ -146,44 +140,37 @@ long_read_ui <- function(id) {
                     class = "col-md-6 mb-3",
                     tags$label(class = "form-label", "Dorado Binary Path (optional)"),
                     div(
-                      class = "file-input-zone",
-                      tags$p(class = "fiz-hint", "\u2b06 Drag & drop here, or Browse"),
+                      class = "file-browse-group",
+                      div(
+                        class = "drop-zone",
+                        div(class = "drop-zone-header", icon("upload"), " Drag & drop"),
+                        actionButton(ns("dorado_bin_browse"), "Browse",
+                          class = "btn btn-outline-secondary"
+                        )
+                      ),
                       textInput(ns("dorado_bin"), NULL,
                         placeholder = "Auto-detected if installed via Setup Wizard",
                         width = "100%"
-                      ),
-                      div(
-                        class = "mt-2",
-                        shinyFilesButton(ns("dorado_bin_browse"),
-                          label = tagList(icon("file"), " Browse"),
-                          title = "Choose Dorado binary",
-                          multiple = FALSE,
-                          buttonType = "outline-secondary",
-                          class = "btn-sm"
-                        )
                       )
-                    )
+                    ),
                   ),
                   div(
                     class = "col-md-6 mb-3",
                     tags$label(class = "form-label", "Dorado Models Directory (optional)"),
                     div(
-                      class = "file-input-zone",
-                      tags$p(class = "fiz-hint", "\u2b06 Drag & drop folder here, or Browse"),
+                      class = "file-browse-group",
+                      div(
+                        class = "drop-zone",
+                        div(class = "drop-zone-header", icon("upload"), " Drag & drop"),
+                        actionButton(ns("dorado_models_dir_browse"), "Browse",
+                          class = "btn btn-outline-secondary"
+                        )
+                      ),
                       textInput(ns("dorado_models_dir"), NULL,
                         placeholder = "Auto-detected if installed via Setup Wizard",
                         width = "100%"
-                      ),
-                      div(
-                        class = "mt-2",
-                        shinyDirButton(ns("dorado_models_dir_browse"),
-                          label = tagList(icon("folder-open"), " Browse"),
-                          title = "Choose Dorado models directory",
-                          buttonType = "outline-secondary",
-                          class = "btn-sm"
-                        )
                       )
-                    )
+                    ),
                   ),
                   div(
                     class = "col-md-12 mb-3",
@@ -259,20 +246,19 @@ long_read_ui <- function(id) {
                 class = "mb-3",
                 tags$label(class = "form-label", "External Database Directory (Optional)"),
                 div(
-                  class = "d-flex align-items-center gap-2",
+                  class = "file-browse-group",
+                  div(
+                    class = "drop-zone",
+                    div(class = "drop-zone-header", icon("upload"), " Drag & drop"),
+                    actionButton(ns("external_db_dir_browse"), "Browse",
+                      class = "btn btn-outline-secondary"
+                    )
+                  ),
                   textInput(ns("external_db_dir"), NULL,
                     placeholder = "/path/to/database",
                     width = "100%"
-                  ),
-                  shinyDirButton(ns("external_db_dir_browse"),
-                    label = tagList(icon("folder-open"), " Browse"),
-                    title = "Choose external database directory",
-                    buttonType = "outline-secondary",
-                    class = "btn-sm",
-                    style = "white-space: nowrap; flex-shrink: 0;"
                   )
                 ),
-                tags$small(class = "text-muted", "Optionally mount an external database directory")
               ),
 
               conditionalPanel(
@@ -337,23 +323,19 @@ long_read_ui <- function(id) {
                     class = "col-md-12 mb-3",
                     tags$label(class = "form-label", "Kraken2 Database Path"),
                     div(
-                      class = "file-input-zone",
-                      tags$p(class = "fiz-hint", "\u2b06 Drag & drop database folder here, or Browse"),
+                      class = "file-browse-group",
                       div(
-                        class = "d-flex align-items-center gap-2",
-                        textInput(ns("kraken_db"), NULL,
-                          placeholder = "/path/to/kraken2/db",
-                          width = "100%"
-                        ),
-                        shinyDirButton(ns("kraken_db_browse"),
-                          label = tagList(icon("folder-open"), " Browse"),
-                          title = "Choose Kraken2 database directory",
-                          buttonType = "outline-secondary",
-                          class = "btn-sm",
-                          style = "white-space: nowrap; flex-shrink: 0;"
+                        class = "drop-zone",
+                        div(class = "drop-zone-header", icon("upload"), " Drag & drop"),
+                        actionButton(ns("kraken_db_browse"), "Browse",
+                          class = "btn btn-outline-secondary"
                         )
+                      ),
+                      textInput(ns("kraken_db"), NULL,
+                        placeholder = "/path/to/kraken2/db",
+                        width = "100%"
                       )
-                    )
+                    ),
                   ),
                   div(
                     class = "col-md-12 mb-3",

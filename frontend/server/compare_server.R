@@ -5,6 +5,18 @@ compare_server <- function(id, shared) {
 
     `%||%` <- function(x, y) if (is.null(x) || length(x) == 0) y else x
 
+    # ── Native OS file pickers via osascript ─────────────────────────────────
+
+    observeEvent(input$path_a_browse, {
+      path <- trimws(system("osascript -e 'POSIX path of (choose file)'", intern = TRUE))
+      if (nchar(path) > 0) updateTextInput(session, "path_a", value = path)
+    })
+
+    observeEvent(input$path_b_browse, {
+      path <- trimws(system("osascript -e 'POSIX path of (choose file)'", intern = TRUE))
+      if (nchar(path) > 0) updateTextInput(session, "path_b", value = path)
+    })
+
 
     # Detect whether a run directory has completed
     get_run_status <- function(run_dir) {
@@ -166,29 +178,17 @@ compare_server <- function(id, shared) {
 
       if (input$input_mode == "csv") {
         # ── CSV upload mode ──
-        # Direct text path takes priority; fall back to fileInput upload
-        path_a <- if (nzchar(trimws(input$path_a %||% ""))) {
-          trimws(input$path_a)
-        } else if (!is.null(input$file_a)) {
-          input$file_a$datapath
-        } else {
-          NULL
-        }
-        path_b <- if (nzchar(trimws(input$path_b %||% ""))) {
-          trimws(input$path_b)
-        } else if (!is.null(input$file_b)) {
-          input$file_b$datapath
-        } else {
-          NULL
-        }
+        path_a <- if (nzchar(trimws(input$path_a %||% ""))) trimws(input$path_a) else NULL
+        path_b <- if (nzchar(trimws(input$path_b %||% ""))) trimws(input$path_b) else NULL
+
         if (is.null(path_a) || is.null(path_b)) {
-          showNotification("Please provide both CSV files (upload or enter path).", type = "warning")
+          showNotification("Please provide both CSV files (Browse or type path).", type = "warning")
           return()
         }
         label_a  <- if (nzchar(trimws(input$label_a %||% ""))) trimws(input$label_a) else "Run A"
         label_b  <- if (nzchar(trimws(input$label_b %||% ""))) trimws(input$label_b) else "Run B"
-        source_a <- if (!is.null(input$file_a) && !nzchar(trimws(input$path_a %||% ""))) input$file_a$name else basename(path_a)
-        source_b <- if (!is.null(input$file_b) && !nzchar(trimws(input$path_b %||% ""))) input$file_b$name else basename(path_b)
+        source_a <- basename(path_a)
+        source_b <- basename(path_b)
 
       } else {
         # ── Run selection mode ──

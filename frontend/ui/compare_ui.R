@@ -49,61 +49,43 @@ compare_ui <- function(id) {
                 class = "col-md-5 mb-3",
                 tags$label(class = "form-label", "File A"),
                 div(
-                  class = "file-input-zone",
-                  tags$p(class = "fiz-hint", "\u2b06 Drag & drop a CSV here"),
+                  class = "file-browse-group",
+                  div(
+                    class = "drop-zone",
+                    div(class = "drop-zone-header", icon("upload"), " Drag & drop"),
+                    actionButton(ns("path_a_browse"), "Browse",
+                      class = "btn btn-outline-secondary"
+                    )
+                  ),
                   textInput(ns("path_a"), NULL,
                     placeholder = "/path/to/file_a.csv",
                     width = "100%"
-                  ),
-                  div(
-                    class = "d-flex align-items-center gap-2 mt-2",
-                    tags$label(
-                      class = "btn btn-outline-secondary btn-sm mb-0",
-                      style = "cursor: pointer;",
-                      icon("folder-open"), " Choose File",
-                      tags$input(type = "file", class = "fiz-native",
-                                 accept = ".csv", style = "display: none;")
-                    ),
-                    tags$span(class = "fiz-chosen", "No file chosen")
                   )
                 ),
-                tags$div(class = "mt-2",
-                  fileInput(ns("file_a"), NULL, accept = ".csv",
-                    placeholder = "or upload via browser",
-                    buttonLabel = "Upload CSV"
-                  )
-                ),
-                textInput(ns("label_a"), "Label", placeholder = "e.g. Run A, Patient group")
+                div(class = "mt-2",
+                  textInput(ns("label_a"), "Label", placeholder = "e.g. Run A, Patient group")
+                )
               ),
               div(
                 class = "col-md-5 mb-3",
                 tags$label(class = "form-label", "File B"),
                 div(
-                  class = "file-input-zone",
-                  tags$p(class = "fiz-hint", "\u2b06 Drag & drop a CSV here"),
+                  class = "file-browse-group",
+                  div(
+                    class = "drop-zone",
+                    div(class = "drop-zone-header", icon("upload"), " Drag & drop"),
+                    actionButton(ns("path_b_browse"), "Browse",
+                      class = "btn btn-outline-secondary"
+                    )
+                  ),
                   textInput(ns("path_b"), NULL,
                     placeholder = "/path/to/file_b.csv",
                     width = "100%"
-                  ),
-                  div(
-                    class = "d-flex align-items-center gap-2 mt-2",
-                    tags$label(
-                      class = "btn btn-outline-secondary btn-sm mb-0",
-                      style = "cursor: pointer;",
-                      icon("folder-open"), " Choose File",
-                      tags$input(type = "file", class = "fiz-native",
-                                 accept = ".csv", style = "display: none;")
-                    ),
-                    tags$span(class = "fiz-chosen", "No file chosen")
                   )
                 ),
-                tags$div(class = "mt-2",
-                  fileInput(ns("file_b"), NULL, accept = ".csv",
-                    placeholder = "or upload via browser",
-                    buttonLabel = "Upload CSV"
-                  )
-                ),
-                textInput(ns("label_b"), "Label", placeholder = "e.g. Run B, Control group")
+                div(class = "mt-2",
+                  textInput(ns("label_b"), "Label", placeholder = "e.g. Run B, Control group")
+                )
               )
             )
           ),
