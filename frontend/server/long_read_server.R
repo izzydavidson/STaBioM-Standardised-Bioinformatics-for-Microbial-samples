@@ -46,6 +46,20 @@ long_read_server <- function(id, shared) {
       if (nchar(path) > 0) updateTextInput(session, "kraken_db", value = path)
     })
 
+    # ── Site-specific Kraken2 defaults ───────────────────────────────────────────
+    # Gut/skin: conf=0.03, MHG=4 | oral: conf=0.04, MHG=4 | vaginal: conf=0.02, MHG=2
+    observeEvent(input$sample_type, {
+      defaults <- switch(input$sample_type,
+        vaginal = list(conf = 0.02, mhg = 2L),
+        gut     = list(conf = 0.03, mhg = 4L),
+        oral    = list(conf = 0.04, mhg = 4L),
+        skin    = list(conf = 0.03, mhg = 4L),
+        other   = list(conf = 0.05, mhg = 2L)
+      )
+      updateNumericInput(session, "kraken_confidence",     value = defaults$conf)
+      updateNumericInput(session, "kraken_min_hit_groups", value = defaults$mhg)
+    }, ignoreInit = FALSE)
+
     observeEvent(input$external_db_dir_browse, {
       path <- trimws(system("osascript -e 'POSIX path of (choose folder)'", intern = TRUE))
       if (nchar(path) > 0) updateTextInput(session, "external_db_dir", value = path)

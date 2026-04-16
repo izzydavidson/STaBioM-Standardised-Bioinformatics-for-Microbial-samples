@@ -1,0 +1,18 @@
+accession	species	taxid	source	notes
+# ── CAMISIM simulation genomes ───────────────────────────────────────────────
+GCF_900637025.1	Streptococcus mitis	1303	camisim_simulation
+GCF_000164675.2	Streptococcus salivarius	1318	camisim_simulation
+GCF_900186885.1	Veillonella parvula	29466	camisim_simulation
+GCF_900625065.1	Prevotella melaninogenica	838	camisim_simulation
+GCF_003019295.1	Fusobacterium nucleatum	851	camisim_simulation
+GCF_900636915.1	Haemophilus parainfluenzae	732	camisim_simulation
+GCF_000212375.1	Porphyromonas gingivalis	836	camisim_simulation
+GCA_000011025.1	Rothia mucilaginosa	43675	camisim_simulation
+GCF_900475315.1	Neisseria subflava	483	camisim_simulation
+GCF_004362855.1	Tannerella forsythia	224471	camisim_simulation
+GCF_016127855.1	Actinomyces naeslundii	1760	camisim_simulation
+# ── Additional NCBI RefSeq strains (added to improve per-species recall) ──────
+GCF_900637025.1	Streptococcus oralis	1303	ncbi_additional	Low recall in v4 validation sweep (S. oralis = same taxid as S. mitis group)
+GCF_016127555.1	Streptococcus oralis	1303	ncbi_additional	Low recall in v4 validation sweep
+GCF_018985485.2	Streptococcus oralis	1303	ncbi_additional	Low recall in v4 validation sweep
+GCF_023611505.1	Streptococcus oralis	1303	ncbi_additional	Low recall in v4 validation sweep

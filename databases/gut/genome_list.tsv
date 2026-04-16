@@ -1,0 +1,25 @@
+accession	species	taxid	source	notes
+# ── CAMISIM simulation genomes ───────────────────────────────────────────────
+GCF_014131755.1	Bacteroides thetaiotaomicron	818	camisim_simulation
+GCF_000154385.1	Faecalibacterium prausnitzii	853	camisim_simulation
+GCF_012932365.1	Bifidobacterium longum	1678	camisim_simulation
+GCF_009731575.1	Akkermansia muciniphila	239935	camisim_simulation
+GCF_000008865.2	Escherichia coli	562	camisim_simulation
+GCF_000014425.1	Lacticaseibacillus rhamnosus	1596	camisim_simulation
+GCF_025147765.1	Roseburia intestinalis	40520	camisim_simulation
+GCF_016027375.1	Clostridioides difficile	1502	camisim_simulation
+GCF_000025985.1	Bacteroides fragilis	817	camisim_simulation
+GCF_020735445.1	Prevotella copri	165179	camisim_simulation
+GCF_900537995.1	Ruminococcus gnavus	166486	camisim_simulation
+GCF_025998455.1	Helicobacter pylori	210	camisim_simulation
+# ── Additional NCBI RefSeq strains (added to improve per-species recall) ──────
+GCF_022453665.1	Bacteroides thetaiotaomicron	818	ncbi_additional	Low recall in v4 validation sweep
+GCF_019857385.1	Bacteroides thetaiotaomicron	818	ncbi_additional	Low recall in v4 validation sweep
+GCF_019896115.1	Bacteroides thetaiotaomicron	818	ncbi_additional	Low recall in v4 validation sweep
+GCF_003050665.1	Helicobacter pylori	210	ncbi_additional	Low recall in v4 validation sweep
+GCF_004295525.1	Helicobacter pylori	210	ncbi_additional	Low recall in v4 validation sweep
+GCF_900478295.1	Helicobacter pylori	210	ncbi_additional	Low recall in v4 validation sweep
+GCF_040050875.1	Lactobacillus gasseri	1596	ncbi_additional	Low recall in v4 validation sweep
+GCF_002158885.1	Lactobacillus gasseri	1596	ncbi_additional	Low recall in v4 validation sweep
+GCF_013363915.1	Lactobacillus gasseri	1596	ncbi_additional	Low recall in v4 validation sweep
+GCF_017840575.1	Lactobacillus gasseri	1596	ncbi_additional	Low recall in v4 validation sweep

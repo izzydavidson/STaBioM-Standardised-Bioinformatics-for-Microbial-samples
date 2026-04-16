@@ -341,7 +341,10 @@ make_species_panel <- function(site_key, panel_label, site_full) {
     scale_fill_manual(values = db_palette) +
     scale_x_continuous(expand = c(0, 0),
                        labels = function(x) paste0(x, "%")) +
-    labs(title    = paste0(panel_label, "  ", site_full, " — Per-Species Abundance"),
+    labs(title    = if (nchar(trimws(panel_label)) > 0)
+                      paste0(panel_label, "  ", site_full, " — Per-Species Abundance")
+                    else
+                      paste0(site_full, " — Per-Species Abundance"),
          subtitle = "Bars = Bracken-estimated abundance; grey = CAMISIM ground truth",
          x = "Estimated abundance (%)", y = NULL) +
     pub_theme +
@@ -457,7 +460,15 @@ make_site_figure <- function(site_key, site_full, out_path) {
 
   pSp <- make_species_panel(site_key, "", site_full)
 
-  top <- plot_grid(pRec, pFP, pMAE, nrow = 1, align = "h")
+  top <- plot_grid(pRec, pFP, pMAE, nrow = 1, align = "h",
+                   labels = c("A", "B", "C"),
+                   label_fontface = "bold", label_size = 11,
+                   label_colour = "#111111")
+
+  pSp_D <- plot_grid(pSp, labels = "D",
+                     label_fontface = "bold", label_size = 11,
+                     label_colour = "#111111")
+
   ttl <- ggdraw() +
     draw_label(sprintf("STaBioM Validation — %s", site_full),
                fontface = "bold", size = 13, x = 0.03, hjust = 0)
@@ -467,7 +478,7 @@ make_site_figure <- function(site_key, site_full, out_path) {
               ifelse(site_key == "oral", 0.04, 0.03), length(ground_truth[[site_key]])),
       fontface = "plain", size = 8.5, color = "grey45", x = 0.03, hjust = 0)
 
-  fig <- plot_grid(ttl, sub, top, pSp,
+  fig <- plot_grid(ttl, sub, top, pSp_D,
                    ncol = 1, rel_heights = c(0.06, 0.04, 0.35, 0.55))
 
   png(out_path, width = 12, height = 9, units = "in", res = 200)

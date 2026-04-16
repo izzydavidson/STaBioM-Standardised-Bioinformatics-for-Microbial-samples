@@ -1,0 +1,29 @@
+accession	species	taxid	source	notes
+# ── CAMISIM simulation genomes (added to library with kraken:taxid headers) ───
+L_crispatus_CTV05.fa	Lactobacillus crispatus	47770	camisim_simulation	Custom assembly; no GCF accession
+L_crispatus_JV_V01.fa	Lactobacillus crispatus	47770	camisim_simulation	Custom assembly; no GCF accession
+L_crispatus_CO3.fa	Lactobacillus crispatus	47770	camisim_simulation	Custom assembly; no GCF accession
+L_iners_KY.fa	Lactobacillus iners	147802	camisim_simulation	Custom assembly; no GCF accession
+L_iners_C0094A1.fa	Lactobacillus iners	147802	camisim_simulation	Custom assembly; no GCF accession
+L_jensenii_208-300.fa	Lactobacillus jensenii	109790	camisim_simulation	Custom assembly; no GCF accession
+L_gasseri_ATCC33323.fa	Lactobacillus gasseri	1596	camisim_simulation	Custom assembly; no GCF accession
+L_vaginalis_DSM5837.fa	Lactobacillus vaginalis	1633	camisim_simulation	Custom assembly; species_taxid=1633 (not strain 2058610)
+Gardnerella_vaginalis_HMP9231.fa	Gardnerella vaginalis	2702	camisim_simulation	Custom assembly; no GCF accession
+Gardnerella_leopoldii.fa	Gardnerella leopoldii	2792978	camisim_simulation	Custom assembly; no GCF accession
+Gardnerella_piotii.fa	Gardnerella piotii	2792977	camisim_simulation	Custom assembly; no GCF accession
+Fannyhessea_vaginae.fa	Fannyhessea vaginae	82135	camisim_simulation	Custom assembly; no GCF accession
+Prevotella_bivia.fa	Prevotella bivia	28125	camisim_simulation	Custom assembly; no GCF accession
+Mobiluncus_mulieris.fa	Mobiluncus mulieris	2052	camisim_simulation	Custom assembly; no GCF accession
+Streptococcus_agalactiae.fa	Streptococcus agalactiae	1311	camisim_simulation	Custom assembly; no GCF accession
+Ureaplasma_urealyticum.fa	Ureaplasma urealyticum	2130	camisim_simulation	Custom assembly; no GCF accession
+Anaerococcus_prevotii.fa	Anaerococcus prevotii	33034	camisim_simulation	Custom assembly; no GCF accession
+# ── RefSeq backbone ──────────────────────────────────────────────────────────
+# 112 RefSeq representative genomes downloaded via:
+#   kraken2-build --download-library bacteria --db <db_path>
+# covering all vaginal CST-relevant taxa:
+#   Lactobacillus spp., Gardnerella spp., Fannyhessea vaginae,
+#   Sneathia sanguinegens, Mobiluncus spp., Megasphaera spp.,
+#   Dialister spp., Prevotella spp., Peptoniphilus spp., Anaerococcus spp.,
+#   Chlamydia trachomatis, Neisseria gonorrhoeae, Treponema pallidum,
+#   Candida albicans, Candida glabrata, Trichomonas vaginalis
+# Full accession list available from the Zenodo deposit metadata.

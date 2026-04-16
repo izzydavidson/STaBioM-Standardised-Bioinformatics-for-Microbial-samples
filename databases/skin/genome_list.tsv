@@ -1,0 +1,15 @@
+accession	species	taxid	source	notes
+# ── CAMISIM simulation genomes ───────────────────────────────────────────────
+GCF_006094375.1	Staphylococcus epidermidis	1282	camisim_simulation
+GCF_000013425.1	Staphylococcus aureus	1280	camisim_simulation
+GCF_900478045.1	Corynebacterium tuberculostearicum	38301	camisim_simulation
+GCF_029542785.1	Malassezia globosa	55193	camisim_simulation
+GCF_000181695.2	Malassezia restricta	76773	camisim_simulation
+GCF_900475555.1	Micrococcus luteus	1270	camisim_simulation
+GCF_006094395.1	Staphylococcus haemolyticus	1283	camisim_simulation
+GCF_001941425.1	Brevibacterium linens	1697	camisim_simulation
+GCF_000092445.1	Cutibacterium acnes	1743460	camisim_simulation	CAMISIM used wrong label (Allopiophila luteata); taxid corrected to C. acnes
+# ── Additional NCBI RefSeq strains (added to improve per-species recall) ──────
+GCF_006742205.1	Staphylococcus epidermidis	1282	ncbi_additional	Low recall in v4 validation sweep
+GCF_019329745.1	Staphylococcus epidermidis	1282	ncbi_additional	Low recall in v4 validation sweep
+GCF_019329665.1	Staphylococcus epidermidis	1282	ncbi_additional	Low recall in v4 validation sweep

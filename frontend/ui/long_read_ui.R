@@ -346,13 +346,13 @@ long_read_ui <- function(id) {
                     class = "col-md-6 mb-3",
                     tags$label(class = "form-label", "Kraken2 Confidence Threshold"),
                     numericInput(ns("kraken_confidence"), NULL, value = 0.05, min = 0, max = 1, step = 0.01),
-                    tags$small(class = "text-muted", "Fraction of k-mers supporting classification (0\u20131). Default: 0.05 (vaginal), 0.02 (other)")
+                    tags$small(class = "text-muted", "Fraction of k-mers supporting classification (0\u20131). Site defaults: vaginal=0.02, gut=0.03, oral=0.04, skin=0.03")
                   ),
                   div(
                     class = "col-md-6 mb-3",
                     tags$label(class = "form-label", "Kraken2 Minimum Hit Groups"),
                     numericInput(ns("kraken_min_hit_groups"), NULL, value = 2L, min = 1, max = 100, step = 1),
-                    tags$small(class = "text-muted", "Distinct k-mer hit groups required for a classification. Default: 2")
+                    tags$small(class = "text-muted", "Distinct k-mer hit groups required for a classification. Site defaults: vaginal=2, gut=4, oral=4, skin=4")
                   )
                 ),
                 # Output Types
