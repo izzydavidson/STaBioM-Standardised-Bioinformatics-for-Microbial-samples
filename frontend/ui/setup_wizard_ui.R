@@ -224,14 +224,34 @@ setup_wizard_ui <- function(id) {
             uiOutput(ns("databases_ui"))
         ),
 
-        # Step 3 — Tools (VALENCIA + Dorado binaries)
+        # Step 3 — Tools (VALENCIA + Dorado binaries + Bracken readlen)
         div(class = "wiz-section",
             div(class = "wiz-section-hdr",
                 div(class = "wiz-step-badge", "3"),
                 span(class = "wiz-section-title", "Analysis Tools")),
             p(class = "wiz-section-desc",
               "Optional tools for specific sample types (e.g. vaginal CST classification). Also select a Dorado binary here \u2014 required before downloading basecalling models in Step 4."),
-            uiOutput(ns("tools_ui"))
+            uiOutput(ns("tools_ui")),
+            hr(style = "margin: 1rem 0 0.75rem;"),
+            div(style = "display:flex; align-items:center; gap:1rem;",
+                div(style = "flex:1;",
+                    tags$label(style = "font-weight:600; color:#1e293b; font-size:0.9rem;",
+                               "Bracken Read Length"),
+                    p(style = "color:#64748b; font-size:0.8125rem; margin:2px 0 0;",
+                      "kmer_distrib read length for Bracken abundance re-estimation. ",
+                      tags$b("Auto-detect"), " scans the selected database directory for available lengths and picks the largest.")),
+                div(style = "width:180px; flex-shrink:0;",
+                    selectInput(ns("bracken_readlen"), NULL,
+                                choices = c("Auto-detect" = "auto",
+                                            "500 bp"  = "500",
+                                            "750 bp"  = "750",
+                                            "1000 bp" = "1000",
+                                            "1200 bp" = "1200",
+                                            "1500 bp" = "1500",
+                                            "2000 bp" = "2000"),
+                                selected = "auto",
+                                width = "100%"))
+            )
         ),
 
         # Step 4 — Dorado models

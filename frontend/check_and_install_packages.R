@@ -2,59 +2,70 @@
 # Prints the STaBioM startup banner and ensures the environment is ready.
 
 .stabiom_banner <- function() {
-  # ANSI codes — degrade gracefully on non-colour terminals
-  X  <- "\033[0m"              # reset
-  C  <- "\033[96m"             # bright cyan  (box chrome)
-  PK <- "\033[1;4;38;5;213m"  # bold + underline + hot pink  (STaBioM title)
-  W  <- "\033[97m"             # bright white  (subtitle)
-  DG <- "\033[90m"             # dark grey  (version line)
-  Y  <- "\033[93m"             # amber  (status line)
+  X  <- "\033[0m"    # reset
+  B  <- "\033[1m"    # bold
+  C  <- "\033[96m"   # bright cyan  (box chrome)
+  W  <- "\033[97m"   # bright white (subtitle)
+  DG <- "\033[90m"   # dark grey    (version)
+  Y  <- "\033[93m"   # amber        (status)
 
-  w <- 58L  # inner width (chars between the two ║)
+  # Pink → purple → blue gradient across the 6 art lines
+  ART <- c(
+    "\033[38;5;213m",  # hot pink
+    "\033[38;5;207m",  # pink-magenta
+    "\033[38;5;171m",  # orchid
+    "\033[38;5;135m",  # medium purple
+    "\033[38;5;99m",   # slate blue
+    "\033[38;5;75m"    # cornflower blue
+  )
 
+  # ASCII art for "STaBioM" — each element is one row, same visual width
+  art <- c(
+    "  _____ _        ____  _       __  __ ",
+    " / ____| |      |  _ \\(_)     |  \\/  |",
+    "| (___ | |_ __ _| |_) |_  ___ | \\  / |",
+    " \\___ \\| __/ _` |  _ <| |/ _ \\| |\\/| |",
+    " ____) | || (_| | |_) | | (_) | |  | |",
+    "|_____/ \\__\\__,_|____/|_|\\___/|_|  |_|"
+  )
+
+  w <- 58L
   top   <- paste0(C, "\u2554", strrep("\u2550", w), "\u2557", X)
   mid   <- paste0(C, "\u2560", strrep("\u2550", w), "\u2563", X)
   bot   <- paste0(C, "\u255a", strrep("\u2550", w), "\u255d", X)
   blank <- paste0(C, "\u2551", strrep(" ", w), "\u2551", X)
 
-  # row(): plain = visible text for width, display = ANSI-decorated version
   row <- function(plain, display = plain) {
     pad <- max(0L, w - 2L - nchar(plain, type = "chars"))
     paste0(C, "\u2551 ", X, display, strrep(" ", pad), C, " \u2551", X)
   }
 
-  # Get version from git — falls back gracefully if git is unavailable
   git_ver <- tryCatch({
     v <- system2("git", c("describe", "--tags", "--always"),
                  stdout = TRUE, stderr = FALSE)
     if (length(v) > 0 && nchar(trimws(v[1])) > 0) trimws(v[1]) else "dev"
   }, error = function(e) "dev")
 
-  # Plain strings (for width calc — no ANSI codes)
-  t1p  <- " STaBioM"                                                # 8 chars
-  t2p  <- " Standardised Bioinformatics for Microbial Samples"      # 51 chars
-  vp   <- paste0(" ", git_ver)                                      # varies
-  chkp <- " Checking environment\u2026"                             # 22 chars
-
-  # Display strings (with ANSI codes)
-  t1d  <- paste0(" ", PK, "STaBioM", X)
-  t2d  <- paste0(" ", W, "Standardised Bioinformatics for Microbial Samples", X)
+  subp <- " Standardised Bioinformatics for Microbial Samples"
+  subd <- paste0(" ", W, "Standardised Bioinformatics for Microbial Samples", X)
+  vp   <- paste0(" ", git_ver)
   vd   <- paste0(" ", DG, git_ver, X)
+  chkp <- " Checking environment\u2026"
   chkd <- paste0(" ", Y, "Checking environment\u2026", X)
 
   cat("\n")
-  cat(top,              "\n", sep = "")
-  cat(blank,            "\n", sep = "")
-  cat(row(t1p,  t1d),   "\n", sep = "")
-  cat(blank,            "\n", sep = "")
-  cat(row(t2p,  t2d),   "\n", sep = "")
-  cat(blank,            "\n", sep = "")
-  cat(row(vp,   vd),    "\n", sep = "")
-  cat(blank,            "\n", sep = "")
-  cat(mid,              "\n", sep = "")
-  cat(row(chkp, chkd),  "\n", sep = "")
-  cat(bot,              "\n", sep = "")
-  cat("\n")
+  cat(top, "\n", sep = "")
+  cat(blank, "\n", sep = "")
+  for (i in seq_along(art))
+    cat(row(art[i], paste0(B, ART[[i]], art[i], X)), "\n", sep = "")
+  cat(blank, "\n", sep = "")
+  cat(mid, "\n", sep = "")
+  cat(row(subp, subd), "\n", sep = "")
+  cat(row(vp,   vd),   "\n", sep = "")
+  cat(blank, "\n", sep = "")
+  cat(mid, "\n", sep = "")
+  cat(row(chkp, chkd), "\n", sep = "")
+  cat(bot, "\n\n", sep = "")
 }
 
 check_and_install_packages <- function(quiet = FALSE) {
@@ -67,9 +78,11 @@ check_and_install_packages <- function(quiet = FALSE) {
     !sapply(required_packages, requireNamespace, quietly = TRUE)
   ]
 
+  .log <- function(...) cat("\033[92m[STaBioM]\033[0m ", ..., "\n", sep = "")
+
   if (length(missing_packages) > 0) {
-    message("[STaBioM] Installing missing packages: ",
-            paste(missing_packages, collapse = ", "), " ...")
+    .log("\033[93mInstalling missing packages: \033[0m",
+         paste(missing_packages, collapse = ", "), " \033[90m...\033[0m")
     tryCatch(
       install.packages(missing_packages,
                        repos = "https://cloud.r-project.org/",
@@ -85,9 +98,9 @@ check_and_install_packages <- function(quiet = FALSE) {
       stop("[STaBioM] Failed to install: ",
            paste(still_missing, collapse = ", "))
     }
-    message("[STaBioM] All packages installed successfully.")
+    .log("\033[92mAll packages installed successfully.\033[0m")
   } else if (!quiet) {
-    message("[STaBioM] All required packages present.")
+    .log("All required packages present.")
   }
 
   invisible(TRUE)

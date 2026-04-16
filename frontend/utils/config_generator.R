@@ -1312,11 +1312,33 @@ generate_lr_meta_config <- function(params) {
     tools_obj$qfilter$min_len <- min_read_length
   }
 
-  # Bracken: always enable with readlen=1200 (sweep confirms readlen doesn't matter for ONT).
-  # check_bracken_available() will warn and disable gracefully if kmer_distrib is missing.
+  # Bracken readlen: respect user wizard preference, auto-detect from DB, fallback to 1200.
+  bracken_rl_pref <- params$bracken_readlen %||% "auto"
+  bracken_readlen <- if (bracken_rl_pref == "auto") {
+    db_path <- if (!is.null(params$kraken_db) && nchar(trimws(params$kraken_db)) > 0)
+      trimws(params$kraken_db) else NULL
+    available <- if (!is.null(db_path) && dir.exists(db_path)) {
+      files <- list.files(db_path, pattern = "^database[0-9]+mers\\.kmer_distrib$")
+      lens  <- suppressWarnings(
+        as.integer(gsub("^database([0-9]+)mers\\.kmer_distrib$", "\\1", files)))
+      lens[!is.na(lens)]
+    } else integer(0)
+    if (length(available) > 0) {
+      chosen <- max(available)
+      cat("[WIRE] bracken readlen: auto-detected", chosen, "mers from DB\n")
+      chosen
+    } else {
+      cat("[WIRE] bracken readlen: auto fallback to 1200 (no DB path or no kmer_distrib)\n")
+      1200L
+    }
+  } else {
+    rl <- suppressWarnings(as.integer(bracken_rl_pref))
+    cat("[WIRE] bracken readlen: user preference", rl, "mers\n")
+    rl
+  }
   tools_obj$bracken <- list(
-    vaginal    = list(enabled = 1L, readlen = 1200L),
-    nonvaginal = list(enabled = 1L, readlen = 1200L)
+    vaginal    = list(enabled = 1L, readlen = bracken_readlen),
+    nonvaginal = list(enabled = 1L, readlen = bracken_readlen)
   )
 
   # minimap2 index: always output when found (pipeline ignores if remove_host=0)

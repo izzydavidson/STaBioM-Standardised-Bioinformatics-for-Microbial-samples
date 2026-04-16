@@ -5,16 +5,23 @@
 # Auto-install missing packages
 source("check_and_install_packages.R", local = TRUE)
 
-library(shiny)
-library(bslib)
-library(jsonlite)
-library(shinyjs)
-library(shinydashboard)
-library(shinyFiles)
-library(fs)
-library(processx)
+.slog <- function(msg)
+  cat("\033[92m[STaBioM]\033[0m \033[97m", msg, "\033[0m\n", sep = "")
+
+# Load packages — suppress attach noise and version warnings
+suppressPackageStartupMessages(suppressWarnings({
+  library(shiny)
+  library(bslib)
+  library(jsonlite)
+  library(shinyjs)
+  library(shinydashboard)
+  library(shinyFiles)
+  library(fs)
+  library(processx)
+}))
 
 # Source UI modules
+.slog("Loading UI modules...")
 source("ui/dashboard_ui.R")
 source("ui/short_read_ui.R")
 source("ui/long_read_ui.R")
@@ -23,6 +30,7 @@ source("ui/pipeline_modal_ui.R")
 source("ui/setup_wizard_ui.R")
 
 # Source server modules
+.slog("Loading server modules...")
 source("server/dashboard_server.R")
 source("server/short_read_server.R")
 source("server/long_read_server.R")
@@ -31,6 +39,7 @@ source("server/pipeline_modal_server.R")
 source("server/setup_wizard_server.R")
 
 # Source utilities
+.slog("Loading utilities...")
 source("utils/cli_interface.R")
 source("utils/config_generator.R")
 source("utils/log_streamer.R")
@@ -38,14 +47,16 @@ source("utils/log_discovery.R")
 source("utils/wizard_defs.R")
 source("utils/ui_prefs.R")
 
+.slog("Building UI...")
+
 # Determine whether wizard overlay should start hidden
 # (file.exists evaluated at UI-build time — before server starts)
 .wizard_init_hidden <- file.exists(
   file.path(dirname(getwd()), ".setup_complete")
 )
 
-# Define UI
-ui <- page_navbar(
+# Define UI — suppressWarnings hides the bslib nav_panel overlay warning
+ui <- suppressWarnings(page_navbar(
   title = "STaBioM",
   id = "main_nav",
   theme = bs_theme(
@@ -614,7 +625,7 @@ ui <- page_navbar(
     icon = icon("code-compare"),
     compare_ui("compare")
   )
-)
+))  # end suppressWarnings(page_navbar(...))
 
 # Define server
 server <- function(input, output, session) {
@@ -649,47 +660,33 @@ server <- function(input, output, session) {
 # ── Ready message printed to terminal ────────────────────────────────────────
 local({
   X  <- "\033[0m"
-  C  <- "\033[96m"             # bright cyan  (box chrome)
-  PK <- "\033[1;4;38;5;213m"  # bold + underline + hot pink  (STaBioM title)
-  W  <- "\033[97m"             # bright white
-  G  <- "\033[92m"             # bright green  (ready indicator)
-  DG <- "\033[90m"             # dark grey  (secondary info)
+  C  <- "\033[96m"   # bright cyan  (box chrome)
+  G  <- "\033[92m"   # bright green
+  W  <- "\033[97m"   # bright white
+  DG <- "\033[90m"   # dark grey
 
-  w <- 58L
-  top   <- paste0(C, "\u2554", strrep("\u2550", w), "\u2557", X)
-  mid   <- paste0(C, "\u2560", strrep("\u2550", w), "\u2563", X)
-  bot   <- paste0(C, "\u255a", strrep("\u2550", w), "\u255d", X)
-  blank <- paste0(C, "\u2551", strrep(" ", w), "\u2551", X)
+  w   <- 58L
+  top <- paste0(C, "\u2554", strrep("\u2550", w), "\u2557", X)
+  bot <- paste0(C, "\u255a", strrep("\u2550", w), "\u255d", X)
 
   row <- function(plain, display = plain) {
     pad <- max(0L, w - 2L - nchar(plain, type = "chars"))
     paste0(C, "\u2551 ", X, display, strrep(" ", pad), C, " \u2551", X)
   }
 
-  l1p <- " STaBioM"
-  l1d <- paste0(" ", PK, "STaBioM", X)
-  l2p <- " Standardised Bioinformatics for Microbial Samples"
-  l2d <- paste0(" ", W, "Standardised Bioinformatics for Microbial Samples", X)
-  l3p <- " Ready \u2014 browser opening automatically"
-  l3d <- paste0(" ", G, "Ready", X, W, " \u2014 browser opening automatically", X)
-  l4p <- " If the browser doesn't open, use the URL above"
-  l4d <- paste0(" ", DG, "If the browser doesn't open, use the URL above", X)
-  l5p <- " Press Ctrl+C in this terminal to stop"
-  l5d <- paste0(" ", DG, "Press Ctrl+C in this terminal to stop", X)
+  r1p <- "\u2714 Ready \u2014 browser opening automatically"
+  r1d <- paste0(G, "\u2714 Ready", X, W, " \u2014 browser opening automatically", X)
+  r2p <- "If the browser doesn't open, use the URL above"
+  r2d <- paste0(DG, "If the browser doesn't open, use the URL above", X)
+  r3p <- "Press Ctrl+C in this terminal to stop"
+  r3d <- paste0(DG, "Press Ctrl+C in this terminal to stop", X)
 
   cat("\n")
-  cat(top,            "\n", sep = "")
-  cat(blank,          "\n", sep = "")
-  cat(row(l1p, l1d),  "\n", sep = "")
-  cat(blank,          "\n", sep = "")
-  cat(row(l2p, l2d),  "\n", sep = "")
-  cat(blank,          "\n", sep = "")
-  cat(mid,            "\n", sep = "")
-  cat(row(l3p, l3d),  "\n", sep = "")
-  cat(row(l4p, l4d),  "\n", sep = "")
-  cat(row(l5p, l5d),  "\n", sep = "")
-  cat(blank,          "\n", sep = "")
-  cat(bot,            "\n\n", sep = "")
+  cat(top,           "\n", sep = "")
+  cat(row(r1p, r1d), "\n", sep = "")
+  cat(row(r2p, r2d), "\n", sep = "")
+  cat(row(r3p, r3d), "\n", sep = "")
+  cat(bot,           "\n\n", sep = "")
 })
 
 # Run the app with auto-launch

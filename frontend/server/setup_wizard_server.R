@@ -26,6 +26,22 @@ setup_wizard_server <- function(id, shared) {
     wiz_installed  <- reactiveVal(wizard_detect_installed(repo_root))
     docker_ok      <- reactiveVal(NA)          # NA = not yet checked
 
+    # -----------------------------------------------------------------------
+    # Bracken readlen preference — load saved value on init, persist on change
+    # -----------------------------------------------------------------------
+    local({
+      val <- wizard_load_bracken_readlen(repo_root)
+      shared$bracken_readlen <- val
+      session$onFlushed(function() {
+        updateSelectInput(session, "bracken_readlen", selected = val)
+      }, once = TRUE)
+    })
+
+    observeEvent(input$bracken_readlen, {
+      wizard_save_bracken_readlen(input$bracken_readlen, repo_root)
+      shared$bracken_readlen <- input$bracken_readlen
+    }, ignoreInit = TRUE)
+
     dl_proc        <- reactiveVal(NULL)        # processx process
     dl_running     <- reactiveVal(FALSE)
     dl_log_lines   <- reactiveVal(character(0))

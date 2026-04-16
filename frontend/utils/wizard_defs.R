@@ -22,6 +22,18 @@ wizard_mark_complete <- function(repo_root = wizard_repo_root()) {
   writeLines(format(Sys.time()), wizard_marker_file(repo_root))
 }
 
+wizard_save_bracken_readlen <- function(value, repo_root = wizard_repo_root()) {
+  writeLines(as.character(value), file.path(repo_root, ".bracken_readlen"))
+}
+
+wizard_load_bracken_readlen <- function(repo_root = wizard_repo_root()) {
+  path <- file.path(repo_root, ".bracken_readlen")
+  if (!file.exists(path)) return("auto")
+  val <- trimws(readLines(path, warn = FALSE)[1])
+  if (is.na(val) || !nzchar(val)) return("auto")
+  val
+}
+
 wizard_check_docker <- function() {
   tryCatch({
     result <- system2("docker", args = "info",

@@ -415,7 +415,8 @@ long_read_server <- function(id, shared) {
         enable_postprocess = any(c(isTRUE(input$output_raw_csv), isTRUE(input$output_pie_chart),
                                    isTRUE(input$output_heatmap), isTRUE(input$output_stacked_bar),
                                    isTRUE(input$output_quality_reports))),
-        sample_map        = get_sample_map()
+        sample_map        = get_sample_map(),
+        bracken_readlen   = shared$bracken_readlen %||% "auto"
       )
 
       config <- if (input$pipeline == "lr_amp") {
