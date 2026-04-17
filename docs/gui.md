@@ -1,76 +1,106 @@
 # STaBioM App Guide
 
-The STaBioM Shiny application provides a point-and-click interface for configuring and running pipelines, monitoring progress in real time, and comparing results across runs — without writing any command-line arguments.
+The STaBioM Shiny app lets you run microbiome analysis pipelines through a browser-based graphical interface — no command-line knowledge required after the initial installation.
 
 ---
 
 ## Requirements
 
-| Requirement | Notes |
-|-------------|-------|
-| **R >= 4.0** | [Download R](https://cran.r-project.org/) |
-| **Docker** | Must be running before launching a pipeline |
-| **STaBioM setup completed** | Run `./stabiom setup` first to install databases |
+Before launching the app, make sure you have:
 
-R package dependencies (`shiny`, `bslib`, `jsonlite`, `shinyjs`, `shinyFiles`, `processx`, and others) are installed automatically on first launch.
+| Requirement | How to get it | Check |
+|-------------|---------------|-------|
+| **R (version 4.0 or newer)** | [Download R](https://cran.r-project.org/) | Type `R --version` in a terminal |
+| **Docker (running)** | [Docker Desktop](https://www.docker.com/products/docker-desktop/) | Whale icon visible in menu bar |
+| **STaBioM setup completed** | Run `./stabiom setup` from the downloaded folder | Run `stabiom doctor` |
+
+> R packages needed by the app (`shiny`, `bslib`, `jsonlite`, and others) are **installed automatically** on first launch — you don't need to install them manually.
 
 ---
 
 ## Launching the App
 
-### From the terminal (recommended)
+Open a terminal, navigate to the `frontend` folder inside the STaBioM directory, and start the app:
 
 ```bash
 cd /path/to/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/frontend
 R -e "shiny::runApp()"
 ```
 
+Replace `/path/to/STaBioM-...` with wherever you extracted the STaBioM folder.
+
+**Example** — if STaBioM is on your Desktop:
+```bash
+cd ~/Desktop/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/frontend
+R -e "shiny::runApp()"
+```
+
+**What happens next:**
+1. The STaBioM banner appears in the terminal with a coloured border
+2. Missing R packages are installed automatically (first launch only — may take 1–2 minutes)
+3. The app prints a "Ready" message and your browser opens automatically
+
+If your browser doesn't open, copy the URL from the terminal (it looks like `http://127.0.0.1:5859`) and paste it into your browser.
+
+> **Keep the terminal open** while using the app — it is the "engine" running in the background. To stop the app, come back to the terminal and press `Ctrl+C`.
+
 ### From RStudio
 
-Open `frontend/app.R` in RStudio and click **Run App** in the top-right of the editor.
+If you prefer RStudio:
+1. Open `frontend/app.R` in RStudio
+2. Click the **Run App** button in the top-right corner of the editor
 
-### What happens on launch
+---
 
-1. The STaBioM banner is printed in the terminal with a pink-to-blue gradient
-2. R package dependencies are checked and any missing ones are installed automatically
-3. Progress messages are printed with `[STaBioM]` prefixes showing what is loading
-4. A ready message appears with the local URL
-5. Your browser opens automatically (or navigate to `http://127.0.0.1:<port>`)
+## First Launch — Setup Wizard
 
-The terminal remains open and streams live pipeline logs while the app is running. Press `Ctrl+C` to stop the app.
+The first time you open the app, the Setup Wizard will appear. It guides you through:
+- Locating the `stabiom` binary on your computer
+- Setting your default output directory
+- Confirming your database paths
+
+Complete the wizard before running your first pipeline. You can return to it at any time from the dashboard.
 
 ---
 
 ## Pages
 
-### Short Read
+### Dashboard
 
-Configure and run short-read pipelines (`sr_amp`, `sr_meta`) for Illumina, IonTorrent, or BGI sequencing data.
+The home page shows:
+- A count of your completed, in-progress, and failed runs
+- A table of your 10 most recent runs with their status and date
+- A **Refresh** button to manually update the list
 
-Key inputs:
-- **Input path** — directory of FASTQ files or glob pattern
-- **Pipeline** — QIIME2/DADA2 amplicon or Kraken2 metagenomics
-- **Sample type** — used for site-specific defaults and Valencia classification
-- **Output directory** — where results are saved
+From here you can also return to the Setup Wizard if you need to change paths or settings.
 
 ---
 
 ### Long Read
 
-Configure and run long-read pipelines (`lr_amp`, `lr_meta`) for Oxford Nanopore or PacBio data.
+Use this page for Oxford Nanopore or PacBio sequencing data.
 
-Key inputs:
-- **Input path** — FASTQ file, FAST5/POD5 directory, or directory of FASTQs
-- **Pipeline** — 16S amplicon (Emu) or metagenomics (Kraken2 + Bracken)
-- **Sample type** — sets site-specific Kraken2 defaults automatically (see below)
-- **Kraken2 Database** — path to a Kraken2-compatible database directory
-- **Confidence threshold** and **Min Hit Groups** — pre-set per body site, adjustable
+**Supported pipelines:**
+- `lr_meta` — Long-read shotgun metagenomics (Kraken2 + Bracken)
+- `lr_amp` — Long-read 16S amplicon (Emu or Kraken2)
 
-#### Site-specific Kraken2 defaults
+#### Step-by-step
 
-When you change the **Sample Type**, the confidence threshold and minimum hit groups are updated automatically to validated optimal values:
+**1. Set your input**
 
-| Sample type | Confidence | Min Hit Groups |
+Click **File** to select a single FASTQ file, or **Folder** to select a directory of FASTQ files. You can also type a path directly into the text box, or drag and drop a file or folder from Finder onto the input area.
+
+If your data is in FAST5 or POD5 format (raw signal), select **FAST5** or **POD5** from the format dropdown. Additional fields will appear for Dorado basecalling (see [Basecalling](#basecalling-fast5--pod5) below).
+
+**2. Choose a pipeline**
+
+Select `lr_meta` (metagenomics) or `lr_amp` (16S amplicon) from the Pipeline dropdown.
+
+**3. Set your sample type**
+
+Select the body site your sample is from. This automatically sets the best Kraken2 confidence and minimum hit group thresholds for that site:
+
+| Sample type | Confidence | Min hit groups |
 |-------------|-----------|----------------|
 | Vaginal | 0.02 | 2 |
 | Gut | 0.03 | 4 |
@@ -78,102 +108,184 @@ When you change the **Sample Type**, the confidence threshold and minimum hit gr
 | Skin | 0.03 | 4 |
 | Other | 0.05 | 2 |
 
-These were derived from parameter sweep validation using CAMISIM-simulated ground truth datasets for each body site. You can override them manually if your data requires it.
+You can adjust these manually if you need to.
 
-#### Basecalling (FAST5/POD5 input)
+**4. Set your Kraken2 database**
 
-If your input is in FAST5 or POD5 format, enable basecalling and provide:
-- **Dorado binary path** — path to the Dorado executable
-- **Models directory** — directory containing downloaded Dorado models
-- **Model** — select from available models in the models directory
+Click **Browse** next to the Kraken2 Database field and select the database directory. The folder should contain `hash.k2d`, `taxo.k2d`, and `opts.k2d` files.
 
-#### Demultiplexing
+**5. Set a Run ID (optional)**
 
-Enable demultiplexing if your run contains barcoded samples. Select:
-- **Barcoding kit** — e.g. SQK-RBK110
-- **Ligation kit** — if applicable
-- **Barcodes** — add one barcode per sample with sample name
+Give your run a name — for example `patient_01_run1`. If you leave it blank, a timestamp will be used.
+
+**6. Click Run**
+
+The pipeline starts. Switch to the log panel to watch live output.
+
+---
+
+#### Basecalling (FAST5 / POD5)
+
+If your input is in FAST5 or POD5 format, enable the **Basecalling** toggle. You will need:
+
+- **Dorado binary** — the path to the Dorado executable (installed via `stabiom setup`)
+- **Models directory** — the folder containing downloaded Dorado models
+- **Model** — select from the models found in that directory
+
+If you installed Dorado via the setup wizard, the paths are usually detected automatically. Click **Browse** next to each field if they are not filled in.
+
+---
+
+### Short Read
+
+Use this page for Illumina (or compatible) sequencing data.
+
+**Supported pipelines:**
+- `sr_meta` — Short-read shotgun metagenomics (Kraken2 + Bracken)
+- `sr_amp` — Short-read 16S amplicon (QIIME2 / DADA2)
+
+#### Step-by-step
+
+**1. Set your input**
+
+For paired-end reads, point to the folder containing your R1 and R2 FASTQ files — STaBioM finds the pairs automatically. For single-end reads, select the file or folder directly.
+
+**2. Choose a pipeline**
+
+Select `sr_meta` for metagenomics or `sr_amp` for amplicon sequencing.
+
+**3. Set your sample type and database**
+
+Same as the Long Read page. For `sr_amp`, the database field is replaced by a QIIME2 classifier selector.
+
+**4. Primers (sr_amp only)**
+
+For amplicon sequencing, enter your forward and reverse primer sequences. Common presets:
+
+| Region | Forward primer | Reverse primer |
+|--------|---------------|----------------|
+| V3–V4 | `CCTACGGGNGGCWGCAG` | `GACTACHVGGGTATCTAATCC` |
+| V4 | `GTGYCAGCMGCCGCGGTAA` | `GGACTACNVGGGTWTCTAAT` |
+
+**5. Click Run**
 
 ---
 
 ### Compare
 
-Compare species-level abundance profiles across two or more completed runs.
+Compare microbiome profiles from two or more completed runs.
 
-Two input modes:
-- **Select from runs** — pick completed runs from the output directory
-- **CSV files** — provide paths to `kraken_species_tidy.csv` files directly (type a path, Browse, or drag and drop)
+**Two input modes:**
 
-Outputs:
-- Heatmap of species relative abundances across runs
-- Stacked bar chart per run
-- Side-by-side comparison table
+**Mode 1 — Select from your runs:**
+Use the dropdowns to select two completed runs from your outputs folder. This is the easiest method.
+
+**Mode 2 — CSV files:**
+Provide paths to `kraken_species_tidy.csv` files directly. Click Browse, type a path, or drag and drop the file onto the input field.
+
+**Settings:**
+
+| Setting | Description |
+|---------|-------------|
+| Taxonomic rank | Compare at species, genus, or family level |
+| Top N taxa | How many taxa to show in plots (default: 20) |
+| Normalisation | Relative abundance or CLR-transformed |
+
+Click **Run Comparison** to generate the report. The output includes:
+- A heatmap of species abundances across runs
+- A stacked bar chart per run
+- A Venn diagram of taxa overlap
+- An HTML report you can save and share
 
 ---
 
 ### Setup Wizard
 
-Guides first-time configuration:
-- Set the STaBioM binary path
-- Set default output directory
-- Configure database paths
-- Download databases and tools interactively
-
-The wizard writes a config file that the app reads on subsequent launches so you do not need to fill in paths each time.
+Accessible from the dashboard by clicking **Return to Setup Wizard**. Use this to:
+- Update your `stabiom` binary path
+- Change your default output directory
+- Set or change your database paths
+- Download additional databases or tools
 
 ---
 
-## File Input
+## File Input — Three Ways
 
-All file and directory inputs support three methods — use whichever is most convenient:
+Every file and directory field in the app supports:
 
-1. **Type a path** directly into the text box (absolute paths recommended)
-2. **Browse button** — opens a native macOS file/folder picker
-3. **Drag and drop** — drag a file or folder from Finder onto the input field
+1. **Type a path** — paste or type a full absolute path (e.g. `/Users/yourname/data/sample.fastq`)
+2. **Browse** — click to open a native file/folder picker
+3. **Drag and drop** — drag a file or folder from Finder directly onto the input field
 
-The hint text below each input shows which method is expected (file vs folder).
+If you cancel the Browse dialog, the field stays unchanged.
 
 ---
 
-## Real-Time Log Streaming
+## Log Panel
 
-Once a pipeline starts, the terminal output is streamed live into the app log panel. This includes:
-- Kraken2 classification progress (reads/min)
-- Bracken re-estimation
-- Output file generation
-- Any warnings or errors from the pipeline
+Once a pipeline starts, the log panel streams live output from the pipeline process:
+- Read counts and classification progress
+- Bracken re-estimation steps
+- Output file paths as they are created
+- Any errors or warnings
 
-The pipeline runs in a background process — you can navigate between pages while it runs. The log panel updates automatically.
+You can navigate to other pages while the pipeline runs — it continues in the background. Return to the log panel at any time to check progress.
+
+---
+
+## Where Are My Results?
+
+Results are saved to your output directory (default: the `outputs/` folder inside the STaBioM directory). Each run creates a subfolder named after your Run ID:
+
+```
+outputs/
+└── patient_01_run1/
+    ├── config.json              # settings used for this run
+    ├── outputs.json             # list of all output files
+    ├── logs/                    # full pipeline log
+    └── results/
+        └── tables/
+            ├── results.csv                 # main results
+            ├── kraken_species_tidy.csv     # species abundances
+            ├── kraken_genus_tidy.csv       # genus-level abundances
+            └── valencia_cst.csv            # CST type (vaginal only)
+```
+
+Open `kraken_species_tidy.csv` in Excel or R to see which species are present and in what proportions.
 
 ---
 
 ## Troubleshooting
 
-### App does not open in browser
+### The browser doesn't open automatically
 
-Navigate manually to the URL shown in the terminal (e.g. `http://127.0.0.1:3838`).
+Copy the URL printed in the terminal (e.g. `http://127.0.0.1:5859`) and paste it into your browser.
 
-### Package installation fails on first launch
+### R packages fail to install on first launch
 
-Check that your R installation has write access to the library path. On macOS with a system R install, you may need to install packages as a user library:
-
-```r
-install.packages("shiny", lib = "~/R/library")
-```
-
-Or use a package manager like `renv`.
+Check that R has permission to write to its library folder. On macOS, you may see a prompt asking which library to use — select your personal library (the option containing your username).
 
 ### "Docker not running" error when starting a pipeline
 
-Start Docker Desktop and wait for it to show "Docker is running" before submitting a pipeline run.
+Open Docker Desktop and wait until the whale icon in your menu bar stops animating and shows "Docker Desktop is running". Then try again.
 
-### Pipeline starts but produces no output
+### Browse button doesn't open a picker
 
-- Check the log panel for error messages
-- Verify your database path is correct and the directory contains `hash.k2d`
-- Verify your Kraken2 database has a `database<N>mers.kmer_distrib` file for Bracken (build one with `bracken-build` if missing)
-- Run `stabiom doctor` in the terminal for a full diagnosis
+The Browse button opens a native macOS file picker. If nothing happens:
+- Check **System Settings → Privacy & Security → Automation** — your terminal app may need permission to control the system
+- As a workaround, type or paste the path directly into the text box
 
-### Browse button not working (macOS)
+### Pipeline started but no output was created
 
-The Browse button uses macOS `osascript` to open a native file picker. If it does not respond, check that your terminal / R process has permission to display dialogs in **System Settings → Privacy & Security → Automation**.
+Check the log panel for error messages. Common causes:
+- The database path is wrong (the folder doesn't contain `hash.k2d`)
+- Docker doesn't have enough memory — increase it in Docker Desktop settings (at least 8 GB recommended)
+- The database is missing a Bracken kmer_distrib file — see the [Databases guide](databases.md)
+
+### The app crashes or goes dark
+
+A crash is usually caused by an unexpected error in one of the inputs. Restart the app:
+```bash
+R -e "shiny::runApp()"
+```
+Check `stabiom doctor` to make sure everything is still configured correctly.
