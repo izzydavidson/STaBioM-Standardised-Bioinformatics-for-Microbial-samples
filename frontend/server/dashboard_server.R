@@ -2,38 +2,32 @@ dashboard_server <- function(id, shared) {
   moduleServer(id, function(input, output, session) {
 
     get_run_status <- function(run_dir) {
-      logs_dir <- file.path(run_dir, "logs")
-
-      if (!dir.exists(logs_dir)) {
-        return("Pending")
+      # Fast path: outputs.json presence means the pipeline completed successfully
+      if (file.exists(file.path(run_dir, "outputs.json"))) {
+        return("Completed")
       }
+
+      logs_dir <- file.path(run_dir, "logs")
+      if (!dir.exists(logs_dir)) return("Pending")
 
       log_files <- list.files(logs_dir, pattern = "\\.log$", full.names = TRUE)
+      if (length(log_files) == 0) return("Pending")
 
-      if (length(log_files) == 0) {
-        return("Pending")
+      # Only read the most recently modified log to keep this fast
+      log_mtimes <- file.info(log_files)$mtime
+      log_file   <- log_files[which.max(log_mtimes)]
+
+      if (file.info(log_file)$size == 0) return("Pending")
+
+      log_content <- tryCatch(
+        paste(readLines(log_file, warn = FALSE), collapse = "\n"),
+        error = function(e) ""
+      )
+
+      if (grepl("CONTAINER FAILED|ERROR: Module failed|exit code: [1-9]|Pipeline failed", log_content, ignore.case = FALSE)) {
+        return("Failed")
       }
-
-      for (log_file in log_files) {
-        if (file.exists(log_file) && file.info(log_file)$size > 0) {
-          log_content <- tryCatch({
-            paste(readLines(log_file, warn = FALSE), collapse = "\n")
-          }, error = function(e) "")
-
-          if (grepl("CONTAINER FAILED|ERROR: Module failed|exit code: [1-9]|Pipeline failed", log_content, ignore.case = FALSE)) {
-            return("Failed")
-          }
-
-          if (grepl("Pipeline completed successfully|Pipeline finished|To retry:|exit_code: 0", log_content, ignore.case = FALSE)) {
-            return("Completed")
-          }
-
-          if (nchar(log_content) > 0) {
-            return("In Progress")
-          }
-        }
-      }
-
+      if (nchar(log_content) > 0) return("In Progress")
       return("Pending")
     }
 
@@ -91,46 +85,46 @@ dashboard_server <- function(id, shared) {
     }
 
     project_stats <- reactive({
-      # Update every 2 seconds to show new/updated runs
-      invalidateLater(2000)
+      # Poll every 5 seconds — frequent enough to catch new runs without blocking Browse
+      invalidateLater(5000)
 
       outputs_dir <- file.path(dirname(getwd()), "outputs")
 
       if (!dir.exists(outputs_dir)) {
-        return(list(
-          total = 0,
-          completed = 0,
-          in_progress = 0,
-          failed = 0,
-          recent = data.frame()
-        ))
+        return(list(total = 0, completed = 0, in_progress = 0, failed = 0, recent = data.frame()))
       }
 
       run_dirs <- list.dirs(outputs_dir, recursive = FALSE, full.names = TRUE)
+      # Exclude compare output dirs (no pipeline config)
+      run_dirs <- run_dirs[!grepl("/compare_[0-9]", run_dirs)]
 
       if (length(run_dirs) == 0) {
-        return(list(
-          total = 0,
-          completed = 0,
-          in_progress = 0,
-          failed = 0,
-          recent = data.frame()
-        ))
+        return(list(total = 0, completed = 0, in_progress = 0, failed = 0, recent = data.frame()))
       }
 
-      runs <- lapply(run_dirs, function(run_dir) {
-        run_id <- basename(run_dir)
-        status <- get_run_status(run_dir)
-        pipeline <- get_pipeline_type(run_dir)
+      total <- length(run_dirs)
+
+      # Use a single file.info() call to get all mtimes cheaply, then sort
+      # so we only do expensive per-file reads for the most recent 20 runs.
+      dir_info  <- file.info(run_dirs)
+      mtimes    <- dir_info$mtime
+      order_idx <- order(mtimes, decreasing = TRUE)
+      recent_dirs <- run_dirs[order_idx[seq_len(min(20L, length(run_dirs)))]]
+
+      runs <- lapply(recent_dirs, function(run_dir) {
+        run_id     <- basename(run_dir)
+        status     <- get_run_status(run_dir)
+        pipeline   <- get_pipeline_type(run_dir)
         sample_type <- get_sample_type(run_dir)
-        date <- get_run_date(run_dir)
+        mtime      <- dir_info[run_dir, "mtime"]
+        date       <- if (!is.na(mtime)) format(mtime, "%Y-%m-%d %H:%M") else ""
 
         data.frame(
-          run_id = run_id,
-          pipeline = pipeline,
+          run_id      = run_id,
+          pipeline    = pipeline,
           sample_type = sample_type,
-          status = status,
-          date = date,
+          status      = status,
+          date        = date,
           stringsAsFactors = FALSE
         )
       })
@@ -138,23 +132,15 @@ dashboard_server <- function(id, shared) {
       runs_df <- do.call(rbind, runs)
 
       if (is.null(runs_df) || nrow(runs_df) == 0) {
-        return(list(
-          total = 0,
-          completed = 0,
-          in_progress = 0,
-          failed = 0,
-          recent = data.frame()
-        ))
+        return(list(total = 0, completed = 0, in_progress = 0, failed = 0, recent = data.frame()))
       }
 
-      runs_df <- runs_df[order(runs_df$date, decreasing = TRUE), ]
-
       list(
-        total = nrow(runs_df),
-        completed = sum(runs_df$status == "Completed"),
+        total       = total,
+        completed   = sum(runs_df$status == "Completed"),
         in_progress = sum(runs_df$status == "In Progress"),
-        failed = sum(runs_df$status == "Failed"),
-        recent = head(runs_df, 10)
+        failed      = sum(runs_df$status == "Failed"),
+        recent      = head(runs_df, 10)
       )
     })
 

@@ -155,9 +155,12 @@ compare_server <- function(id, shared) {
       outputs_dir <- file.path(dirname(getwd()), "outputs")
       if (!dir.exists(outputs_dir)) return(c("No completed runs found" = ""))
       run_ids <- list.dirs(outputs_dir, recursive = FALSE, full.names = FALSE)
+      # Exclude compare output dirs
+      run_ids <- run_ids[!grepl("^compare_[0-9]", run_ids)]
       if (length(run_ids) == 0) return(c("No completed runs found" = ""))
+      # Use outputs.json presence as a fast "completed" check — avoids reading log files for all runs
       completed <- Filter(
-        function(r) get_run_status(file.path(outputs_dir, r)) == "Completed",
+        function(r) file.exists(file.path(outputs_dir, r, "outputs.json")),
         run_ids
       )
       if (length(completed) > 0) setNames(completed, completed) else c("No completed runs found" = "")
