@@ -2,12 +2,12 @@ accession	species	taxid	source	notes
 # ── CAMISIM simulation genomes ───────────────────────────────────────────────
 GCF_006094375.1	Staphylococcus epidermidis	1282	camisim_simulation
 GCF_000013425.1	Staphylococcus aureus	1280	camisim_simulation
-GCF_900478045.1	Corynebacterium tuberculostearicum	38301	camisim_simulation
+GCF_900478045.1	Corynebacterium tuberculostearicum	38304	camisim_simulation	taxid corrected: was 38301 (C. minutissimum), actual species is C. tuberculostearicum (38304)
 GCF_029542785.1	Malassezia globosa	55193	camisim_simulation
 GCF_000181695.2	Malassezia restricta	76773	camisim_simulation
 GCF_900475555.1	Micrococcus luteus	1270	camisim_simulation
 GCF_006094395.1	Staphylococcus haemolyticus	1283	camisim_simulation
-GCF_001941425.1	Corynebacterium glutamicum	1697	camisim_simulation
+GCF_001941425.1	Brevibacterium linens	1697	camisim_simulation	CAMISIM mislabeled as C. glutamicum/ammoniagenes (1697); actual genome is B. linens (NZ_CP009244.1); taxid kept as 1697 to match CAMISIM GT
 GCF_000092445.1	Cutibacterium acnes	1743460	camisim_simulation	CAMISIM used wrong label (Allopiophila luteata); taxid corrected to C. acnes
 # ── Additional NCBI RefSeq strains (v1 — improve S. epidermidis recall) ───────
 GCF_006742205.1	Staphylococcus epidermidis	1282	ncbi_additional

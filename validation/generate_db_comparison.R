@@ -13,8 +13,9 @@ suppressPackageStartupMessages({
 # Paths — derive from script location; override via CLI args:
 #   Rscript generate_db_comparison.R [outputs_dir] [val_dir] [gt_gut] [gt_oral] [gt_skin] [out_dir]
 args_cli  <- commandArgs(trailingOnly = TRUE)
-REPO_ROOT <- normalizePath(file.path(dirname(sys.frame(1)$ofile %||% "."), ".."), mustWork = FALSE)
 `%||%`    <- function(a, b) if (length(a) > 0) a else b
+script_path <- tryCatch(normalizePath(sys.frame(1)$ofile), error = function(e) ".")
+REPO_ROOT <- normalizePath(file.path(dirname(script_path), ".."), mustWork = FALSE)
 BASE      <- if (length(args_cli) >= 1) args_cli[1] else file.path(REPO_ROOT, "outputs")
 VAL_DIR   <- if (length(args_cli) >= 2) args_cli[2] else file.path(REPO_ROOT, "validation/sweep_results")
 DESKTOP   <- if (length(args_cli) >= 6) args_cli[6] else path.expand("~/Desktop")
@@ -76,7 +77,7 @@ ground_truth$oral["1655"]    <- 0.07   # Actinomyces naeslundii     (actual NCBI
 # - GCF_001941425.1 labeled 1697 (C. ammoniagenes, WRONG) → 1703 (Brevibacterium linens)
 # - GCF_029542785.1 / GCF_000181695.2 Malassezia: CAMISIM profile has 76773 (M. globosa) — keep as-is
 gt_skin <- ground_truth$skin
-subst_skin <- c("1743460" = "1747", "38301" = "38304", "1697" = "1703")
+subst_skin <- c("1743460" = "1747", "38301" = "38304")
 for (old in names(subst_skin)) {
   new <- subst_skin[[old]]
   if (old %in% names(gt_skin)) {
@@ -96,17 +97,17 @@ paths <- list(
   gut = list(
     corent    = file.path(BASE, "gut_corent_v2/results/tables/results.csv"),
     custom_v4 = file.path(BASE, "gut_customdb_v4/results/tables/results.csv"),
-    custom_v5 = file.path(BASE, "gut_customdb_v5/results/tables/results.csv")
+    custom_v5 = file.path(BASE, "gut_v5_test/results/tables/results.csv")
   ),
   oral = list(
     corent    = file.path(BASE, "oral_corent_v2/results/tables/results.csv"),
     custom_v4 = file.path(BASE, "oral_customdb_v4/results/tables/results.csv"),
-    custom_v5 = file.path(BASE, "oral_customdb_v5/results/tables/results.csv")
+    custom_v5 = file.path(BASE, "oral_v5_test/results/tables/results.csv")
   ),
   skin = list(
     corent    = file.path(BASE, "skin_corent_v2/results/tables/results.csv"),
     custom_v4 = file.path(BASE, "skin_customdb_v4/results/tables/results.csv"),
-    custom_v5 = file.path(BASE, "skin_customdb_v5/results/tables/results.csv")
+    custom_v5 = file.path(BASE, "skin_v5_test/results/tables/results.csv")
   )
 )
 

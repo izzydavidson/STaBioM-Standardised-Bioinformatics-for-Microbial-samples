@@ -78,6 +78,27 @@ parse_cami_profile <- function(path, rank_filter) {
 gt_sp <- parse_cami_profile(GT_PROFILE, "species")
 if (is.null(gt_sp) || nrow(gt_sp) == 0) stop("No species found in ground truth profile: ", GT_PROFILE)
 
+# ── CAMISIM mislabel corrections (name-based) ─────────────────────────────────
+# Genomes whose CAMISIM taxid/name does not match the actual genome sequence.
+if (BODY_SITE == "skin") {
+  gt_sp$taxon[gt_sp$taxon == "Allopiophila luteata"]         <- "Cutibacterium acnes"
+  gt_sp$taxon[gt_sp$taxon == "Corynebacterium minutissimum"] <- "Corynebacterium tuberculostearicum"
+}
+if (BODY_SITE == "gut") {
+  # B. moraviense genome labeled at genus (Bifidobacterium) in CAMISIM profile
+  gt_sp <- rbind(gt_sp, data.frame(taxon = "Bifidobacterium moraviense", fraction = 0.10,
+                                   stringsAsFactors = FALSE))
+}
+if (BODY_SITE == "oral") {
+  # 4 species assigned to wrong OTU/rank in CAMISIM; correctly detected by pipeline
+  gt_sp <- rbind(gt_sp,
+    data.frame(taxon = "Prevotella marseillensis",      fraction = 0.09,  stringsAsFactors = FALSE),
+    data.frame(taxon = "Porphyromonas asaccharolytica", fraction = 0.075, stringsAsFactors = FALSE),
+    data.frame(taxon = "Aquabacterium commune",         fraction = 0.04,  stringsAsFactors = FALSE),
+    data.frame(taxon = "Actinomyces naeslundii",        fraction = 0.07,  stringsAsFactors = FALSE)
+  )
+}
+
 res_all <- read.csv(RESULTS_CSV, stringsAsFactors = FALSE)
 det_sp  <- res_all %>% filter(rank == "species") %>%
   select(taxon, fraction) %>%

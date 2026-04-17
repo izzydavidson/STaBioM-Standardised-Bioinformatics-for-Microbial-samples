@@ -23,8 +23,9 @@ if (length(args) < 1) stop("Usage: Rscript generate_site_db_validation.R <gut|or
 BODY_SITE <- tolower(args[1])
 if (!BODY_SITE %in% c("gut", "oral", "skin")) stop("body_site must be gut, oral, or skin")
 
-REPO_ROOT <- normalizePath(file.path(dirname(sys.frame(1)$ofile %||% "."), ".."), mustWork = FALSE)
 `%||%`    <- function(a, b) if (length(a) > 0) a else b
+script_path <- tryCatch(normalizePath(sys.frame(1)$ofile), error = function(e) ".")
+REPO_ROOT <- normalizePath(file.path(dirname(script_path), ".."), mustWork = FALSE)
 BASE      <- if (length(args) >= 2) args[2] else file.path(REPO_ROOT, "outputs")
 DESKTOP   <- if (length(args) >= 4) args[4] else path.expand("~/Desktop")
 
@@ -50,7 +51,7 @@ site <- site_meta[[BODY_SITE]]
 db_paths <- list(
   "core_nt"      = file.path(BASE, paste0(BODY_SITE, "_corent_v2/results/tables/results.csv")),
   "Custom DB v4" = file.path(BASE, paste0(BODY_SITE, "_customdb_v4/results/tables/results.csv")),
-  "Custom DB v5" = file.path(BASE, paste0(BODY_SITE, "_customdb_v5/results/tables/results.csv"))
+  "Custom DB v5" = file.path(BASE, paste0(BODY_SITE, "_v5_test/results/tables/results.csv"))
 )
 db_labels <- names(db_paths)
 
