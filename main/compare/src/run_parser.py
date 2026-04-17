@@ -328,13 +328,38 @@ class RunParser:
             if tax_path.exists():
                 run_data.taxonomy = pd.read_csv(tax_path, sep="\t")
 
-        # Kraken2 outputs (sr_meta, lr_meta)
-        kraken_dir = module_dir / "results" / "kraken2"
-        if kraken_dir.exists():
-            reports = list(kraken_dir.glob("*.report.tsv")) + list(kraken_dir.glob("*.kreport"))
-            if reports:
-                run_data.abundance_table = self._read_kraken_report(reports[0])
-                run_data.pipeline = "sr_meta"
+        # Kraken2 outputs (sr_meta, lr_meta) — prefer tidy aggregate CSV over raw kreport
+        kraken_tidy_candidates = [
+            module_dir / "results" / "tables" / "kraken_species_tidy.csv",
+            module_dir / "results" / "postprocess" / "kraken_species_tidy.csv",
+            module_dir / "lr_meta" / "results" / "tables" / "kraken_species_tidy.csv",
+            module_dir / "lr_meta" / "final" / "tables" / "kraken_species_tidy.csv",
+            module_dir / "sr_meta" / "results" / "tables" / "kraken_species_tidy.csv",
+            module_dir / "sr_meta" / "final" / "tables" / "kraken_species_tidy.csv",
+        ]
+        for tidy_csv in kraken_tidy_candidates:
+            if tidy_csv.exists():
+                df = pd.read_csv(tidy_csv)
+                sample_col = "sample_id" if "sample_id" in df.columns else "sample"
+                taxon_col = "species" if "species" in df.columns else "taxon"
+                value_col = "reads" if "reads" in df.columns else "abundance"
+                if sample_col in df.columns and taxon_col in df.columns and value_col in df.columns:
+                    run_data.abundance_table = df.pivot(
+                        index=sample_col, columns=taxon_col, values=value_col
+                    ).fillna(0)
+                    run_data.pipeline = "lr_meta" if "lr_meta" in str(tidy_csv) else "sr_meta"
+                    if self.verbose:
+                        print(f"[run_parser] Fallback: loaded tidy CSV {tidy_csv}")
+                    break
+
+        # If no tidy CSV, fall back to raw kreport (single-sample only)
+        if run_data.abundance_table is None:
+            kraken_dir = module_dir / "results" / "kraken2"
+            if kraken_dir.exists():
+                reports = list(kraken_dir.glob("*.report.tsv")) + list(kraken_dir.glob("*.kreport"))
+                if reports:
+                    run_data.abundance_table = self._read_kraken_report(reports[0])
+                    run_data.pipeline = "sr_meta"
 
         # Emu outputs (lr_amp)
         emu_dir = module_dir / "results" / "emu"

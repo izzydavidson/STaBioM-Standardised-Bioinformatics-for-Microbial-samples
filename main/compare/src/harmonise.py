@@ -152,6 +152,12 @@ class Harmoniser:
         # Filter
         aligned = self._filter_taxa(aligned)
 
+        if aligned.empty or aligned.shape[1] == 0:
+            raise ValueError(
+                "No taxa remaining after prevalence/abundance filters. "
+                "Try lowering --min-prevalence (current: {}) or --min-abundance.".format(self.min_prevalence)
+            )
+
         # Create run labels series
         run_label_series = pd.Series(
             [lbl.split(":")[0] for lbl in aligned.index],

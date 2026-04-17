@@ -344,6 +344,8 @@ class ComparisonVisualizer:
         fig, ax = plt.subplots(figsize=(8, 8))
 
         try:
+            if not HAS_VENN:
+                raise ImportError("matplotlib_venn not available")
             if len(runs) == 2:
                 venn2(
                     [taxa_sets[runs[0]], taxa_sets[runs[1]]],

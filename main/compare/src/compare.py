@@ -111,11 +111,15 @@ def run_compare(config: CompareConfig) -> int:
         elif config.table_paths:
             # Mode 2: Parse manual tables
             for i, table_path in enumerate(config.table_paths):
+                try:
+                    abundance = pd.read_csv(table_path, sep="\t", index_col=0)
+                except Exception as e:
+                    raise CompareError(f"Could not read table '{table_path}': {e}")
                 run_data = RunData(
                     run_id=f"table_{i+1}",
                     pipeline="manual",
                     run_dir=Path(table_path).parent,
-                    abundance_table=pd.read_csv(table_path, sep="\t", index_col=0),
+                    abundance_table=abundance,
                 )
                 # Load taxonomy if provided
                 if config.taxonomy_path and Path(config.taxonomy_path).exists():
@@ -303,7 +307,7 @@ def run_compare(config: CompareConfig) -> int:
 
         return 0
 
-    except CompareError as e:
+    except (CompareError, ValueError) as e:
         print(f"[compare] ERROR: {e}")
         return 1
     except Exception as e:
