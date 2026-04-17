@@ -26,20 +26,26 @@ Each database ships with Bracken kmer_distrib files for read lengths of 500, 750
 
 | Database | Body site | Contents |
 |----------|-----------|----------|
-| `stabiom-vaginal` | Vaginal | All CST-relevant *Lactobacillus* spp., *Gardnerella*, BV anaerobes, STI pathogens, vaginal fungi |
-| `stabiom-gut` | Gut | Gut-relevant species including common commensals and pathogens |
-| `stabiom-oral` | Oral | Oral-relevant species including periodontal organisms |
-| `stabiom-skin` | Skin | Skin-relevant species including *Staphylococcus*, *Cutibacterium*, *Malassezia* |
+| `stabiom-vaginal` | Vaginal | All CST-relevant *Lactobacillus* spp., *Gardnerella*, BV anaerobes, STI pathogens, vaginal fungi. Built from 112 RefSeq representative genomes + simulation-derived strains. |
+| `stabiom-gut` | Gut | Gut-relevant commensals and pathogens. Validated against CAMISIM-simulated ground truth (100% species recovery at default thresholds). |
+| `stabiom-oral` | Oral | Oral-relevant species including periodontal organisms. Validated against CAMISIM-simulated ground truth (100% species recovery at default thresholds). |
+| `stabiom-skin` | Skin | Skin-relevant species including *Staphylococcus*, *Cutibacterium*, *Malassezia* and others. 161 taxids across bacteria and fungi. |
 
 ### Download
 
-Download via the setup wizard:
+**Option 1 — Setup wizard (recommended):**
 
 ```bash
 stabiom setup
 ```
 
-Or download manually from the [Releases page](https://github.com/izzydavidson/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/releases) and extract to a directory of your choice.
+**Option 2 — Zenodo:**
+
+All STaBioM body-site databases are archived on Zenodo: [https://doi.org/10.5281/zenodo.19617383](https://doi.org/10.5281/zenodo.19617383). Download the `.tar.gz` archive for the database you need and extract it to a directory of your choice.
+
+**Option 3 — Build from source:**
+
+Build scripts for constructing or extending each body-site database are available in the `validation/` directory of this repository. These scripts use publicly available genomes from NCBI RefSeq and can be adapted to add organisms relevant to your samples.
 
 ### Using a body-site database
 

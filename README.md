@@ -163,12 +163,14 @@ STaBioM works with standard Kraken2 databases and ships body-site-specific datab
 
 | Database | Body site | Includes |
 |----------|-----------|----------|
-| `stabiom-vaginal` | Vaginal | All CST-relevant species, BV anaerobes, STI pathogens |
-| `stabiom-gut` | Gut | Gut-relevant species |
-| `stabiom-oral` | Oral | Oral-relevant species |
-| `stabiom-skin` | Skin | Skin-relevant species |
+| `stabiom-vaginal` | Vaginal | All CST-relevant *Lactobacillus* spp., *Gardnerella*, BV anaerobes, STI pathogens, vaginal fungi |
+| `stabiom-gut` | Gut | Gut-relevant commensals and pathogens, validated against CAMISIM ground truth |
+| `stabiom-oral` | Oral | Oral-relevant species including periodontal organisms |
+| `stabiom-skin` | Skin | Skin-relevant species including *Staphylococcus*, *Cutibacterium*, *Malassezia* |
 
 Generic Kraken2 databases (Standard-8, Standard-16, PlusPF) also work with all metagenomics pipelines.
+
+**Download:** STaBioM body-site databases are available on [Zenodo (DOI: 10.5281/zenodo.19617383)](https://doi.org/10.5281/zenodo.19617383) and via the setup wizard (`stabiom setup`). Build scripts for constructing or extending these databases are in the `validation/` directory of this repository.
 
 → **Database guide (including how to download and build custom databases):** [docs/databases.md](docs/databases.md)
 
