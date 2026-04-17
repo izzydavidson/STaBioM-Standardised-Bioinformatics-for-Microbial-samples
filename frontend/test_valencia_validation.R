@@ -1,6 +1,10 @@
 #!/usr/bin/env Rscript
 
-setwd("/Users/izzydavidson/Desktop/STaBioM/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/frontend")
+if (requireNamespace("rstudioapi", quietly = TRUE) && rstudioapi::isAvailable()) {
+  setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+} else {
+  setwd(dirname(normalizePath(sys.frame(1)$ofile, mustWork = FALSE)))
+}
 source("utils/config_generator.R")
 
 cat("\n========== VALENCIA VALIDATION TEST ==========\n\n")

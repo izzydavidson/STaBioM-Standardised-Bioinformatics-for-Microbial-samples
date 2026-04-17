@@ -26,7 +26,7 @@ const { chromium } = require('playwright');
 
     // In the file browser modal, navigate to test_inputs
     // Note: This might need adjustment based on actual shinyFiles UI
-    const testFilePath = '/Users/izzydavidson/Desktop/STaBioM/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/main/data/test_inputs/ERR10233589_1.fastq';
+    const testFilePath = process.env.TEST_FASTQ || require('path').resolve(__dirname, '../main/data/test_inputs/ERR10233589_1.fastq');
 
     // Since we can't easily interact with shinyFiles modal, let's directly set the hidden input
     await page.evaluate((path) => {

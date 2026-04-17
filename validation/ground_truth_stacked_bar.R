@@ -11,8 +11,12 @@ suppressPackageStartupMessages({
   library(grid)
 })
 
-GROUND_TRUTH <- "/Users/izzydavidson/Desktop/camisim_output/mock_metagenome_generic/nanopore/taxonomic_profile_0.txt"
-OUT_DIR <- "/Users/izzydavidson/Desktop/STaBioM/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/validation"
+# Override paths via CLI: Rscript ground_truth_stacked_bar.R [gt_path] [out_dir]
+args_cli     <- commandArgs(trailingOnly = TRUE)
+REPO_ROOT    <- normalizePath(file.path(dirname(sys.frame(1)$ofile %||% "."), ".."), mustWork = FALSE)
+`%||%`       <- function(a, b) if (length(a) > 0) a else b
+GROUND_TRUTH <- if (length(args_cli) >= 1) args_cli[1] else file.path(path.expand("~"), "camisim_output/mock_metagenome_generic/nanopore/taxonomic_profile_0.txt")
+OUT_DIR      <- if (length(args_cli) >= 2) args_cli[2] else file.path(REPO_ROOT, "validation")
 
 TOP_N <- 15
 

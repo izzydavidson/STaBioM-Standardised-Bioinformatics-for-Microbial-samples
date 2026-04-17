@@ -17,24 +17,32 @@ suppressPackageStartupMessages({
   library(scales)
 })
 
+# Usage: Rscript generate_site_db_validation.R <gut|oral|skin> [outputs_dir] [gt_path] [out_dir]
 args <- commandArgs(trailingOnly = TRUE)
-if (length(args) < 1) stop("Usage: Rscript generate_site_db_validation.R <gut|oral|skin>")
+if (length(args) < 1) stop("Usage: Rscript generate_site_db_validation.R <gut|oral|skin> [outputs_dir] [gt_path] [out_dir]")
 BODY_SITE <- tolower(args[1])
 if (!BODY_SITE %in% c("gut", "oral", "skin")) stop("body_site must be gut, oral, or skin")
 
-BASE    <- "/Users/izzydavidson/Desktop/STaBioM/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/outputs"
-DESKTOP <- "/Users/izzydavidson/Desktop"
+REPO_ROOT <- normalizePath(file.path(dirname(sys.frame(1)$ofile %||% "."), ".."), mustWork = FALSE)
+`%||%`    <- function(a, b) if (length(a) > 0) a else b
+BASE      <- if (length(args) >= 2) args[2] else file.path(REPO_ROOT, "outputs")
+DESKTOP   <- if (length(args) >= 4) args[4] else path.expand("~/Desktop")
 
 FP_THRESHOLD <- 0  # no threshold — every non-GT detection is a FP
 
 # ── Site metadata ─────────────────────────────────────────────────────────────
+default_gt <- list(
+  gut  = file.path(path.expand("~"), "camisim_output/mock_metagenome_gut/nanopore/taxonomic_profile_0.txt"),
+  oral = file.path(path.expand("~"), "camisim_output/mock_metagenome_oral/nanopore/taxonomic_profile_0.txt"),
+  skin = file.path(path.expand("~"), "camisim_output/mock_metagenome_skin/nanopore/taxonomic_profile_0.txt")
+)
 site_meta <- list(
   gut  = list(full = "Gut",  color = "#2196F3", conf = 0.03,
-              gt_path = "/Users/izzydavidson/Desktop/camisim_output/mock_metagenome_gut/nanopore/taxonomic_profile_0.txt"),
+              gt_path = if (length(args) >= 3) args[3] else default_gt$gut),
   oral = list(full = "Oral", color = "#FF9800", conf = 0.04,
-              gt_path = "/Users/izzydavidson/camisim_output/mock_metagenome_oral/nanopore/taxonomic_profile_0.txt"),
+              gt_path = if (length(args) >= 3) args[3] else default_gt$oral),
   skin = list(full = "Skin", color = "#4CAF50", conf = 0.03,
-              gt_path = "/Users/izzydavidson/camisim_output/mock_metagenome_skin/nanopore/taxonomic_profile_0.txt")
+              gt_path = if (length(args) >= 3) args[3] else default_gt$skin)
 )
 site <- site_meta[[BODY_SITE]]
 

@@ -10,17 +10,22 @@ suppressPackageStartupMessages({
   library(cowplot)
 })
 
-BASE     <- "/Users/izzydavidson/Desktop/STaBioM/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/outputs"
-VAL_DIR  <- "/Users/izzydavidson/Desktop/STaBioM/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/validation/sweep_results"
-DESKTOP  <- "/Users/izzydavidson/Desktop"
+# Paths — derive from script location; override via CLI args:
+#   Rscript generate_db_comparison.R [outputs_dir] [val_dir] [gt_gut] [gt_oral] [gt_skin] [out_dir]
+args_cli  <- commandArgs(trailingOnly = TRUE)
+REPO_ROOT <- normalizePath(file.path(dirname(sys.frame(1)$ofile %||% "."), ".."), mustWork = FALSE)
+`%||%`    <- function(a, b) if (length(a) > 0) a else b
+BASE      <- if (length(args_cli) >= 1) args_cli[1] else file.path(REPO_ROOT, "outputs")
+VAL_DIR   <- if (length(args_cli) >= 2) args_cli[2] else file.path(REPO_ROOT, "validation/sweep_results")
+DESKTOP   <- if (length(args_cli) >= 6) args_cli[6] else path.expand("~/Desktop")
 
 FP_THRESHOLD <- 0.001   # ignore species < 0.1% abundance
 
 # ── Ground truth paths ──────────────────────────────────────────────────────
 gt_paths <- list(
-  gut  = "/Users/izzydavidson/Desktop/camisim_output/mock_metagenome_gut/nanopore/taxonomic_profile_0.txt",
-  oral = "/Users/izzydavidson/camisim_output/mock_metagenome_oral/nanopore/taxonomic_profile_0.txt",
-  skin = "/Users/izzydavidson/camisim_output/mock_metagenome_skin/nanopore/taxonomic_profile_0.txt"
+  gut  = if (length(args_cli) >= 3) args_cli[3] else file.path(path.expand("~"), "camisim_output/mock_metagenome_gut/nanopore/taxonomic_profile_0.txt"),
+  oral = if (length(args_cli) >= 4) args_cli[4] else file.path(path.expand("~"), "camisim_output/mock_metagenome_oral/nanopore/taxonomic_profile_0.txt"),
+  skin = if (length(args_cli) >= 5) args_cli[5] else file.path(path.expand("~"), "camisim_output/mock_metagenome_skin/nanopore/taxonomic_profile_0.txt")
 )
 
 # ── Parse CAMISIM taxonomic profile ─────────────────────────────────────────

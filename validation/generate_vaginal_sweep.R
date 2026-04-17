@@ -8,7 +8,7 @@
 #
 # Defaults:
 #   scores_tsv : /tmp/scores_vaginaldb.tsv
-#   out_png    : /Users/izzydavidson/Desktop/STaBioM_Vaginal_Sweep.png
+#   out_png    : ~/Desktop/STaBioM_Vaginal_Sweep.png
 
 suppressPackageStartupMessages({
   library(dplyr)
@@ -19,7 +19,7 @@ suppressPackageStartupMessages({
 
 args      <- commandArgs(trailingOnly = TRUE)
 SCORES    <- if (length(args) >= 1) args[1] else "/tmp/scores_vaginaldb.tsv"
-OUT_PNG   <- if (length(args) >= 2) args[2] else "/Users/izzydavidson/Desktop/STaBioM_Vaginal_Sweep.png"
+OUT_PNG   <- if (length(args) >= 2) args[2] else file.path(path.expand("~/Desktop"), "STaBioM_Vaginal_Sweep.png")
 
 # ── Load and filter ───────────────────────────────────────────────────────────
 raw <- read.table(SCORES, sep = "\t", header = TRUE,

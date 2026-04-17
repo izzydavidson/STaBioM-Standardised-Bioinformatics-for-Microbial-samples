@@ -22,7 +22,7 @@ const { chromium } = require('playwright');
     await runNameInput.fill('Playwright_Modal_Test');
 
     // Browse for input file - set the hidden input directly
-    const testFilePath = '/Users/izzydavidson/Desktop/STaBioM/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/main/data/test_inputs/ERR10233589_1.fastq';
+    const testFilePath = process.env.TEST_FASTQ || require('path').resolve(__dirname, '../main/data/test_inputs/ERR10233589_1.fastq');
 
     await page.evaluate((path) => {
       // Find all input fields with input_path in their ID

@@ -11,10 +11,12 @@
 # Resumable: already-completed runs are skipped automatically.
 #
 # Usage:
-#   ./sweep.sh                        # run everything
-#   ./sweep.sh --dataset generic      # only generic
-#   ./sweep.sh --dataset vaginal      # only vaginal
-#   ./sweep.sh --dry-run              # print what would run, don't execute
+#   ./sweep.sh --db /path/to/kraken2/db \
+#              --generic-fastq /path/to/generic.fastq --generic-gt /path/to/generic_gt.txt \
+#              --vaginal-fastq /path/to/vaginal.fastq --vaginal-gt /path/to/vaginal_gt.txt
+#   ./sweep.sh ... --dataset generic    # only generic dataset
+#   ./sweep.sh ... --dataset vaginal    # only vaginal dataset
+#   ./sweep.sh ... --dry-run            # print what would run, don't execute
 # =============================================================================
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -25,14 +27,12 @@ CONFIG_DIR="${VALIDATION_DIR}/sweep_configs"
 RESULTS_DIR="${VALIDATION_DIR}/sweep_results"
 SCORES_TSV="${RESULTS_DIR}/scores.tsv"
 
-# ── Dataset definitions ───────────────────────────────────────────────────────
-GENERIC_FASTQ="/Users/izzydavidson/Desktop/camisim_output/mock_metagenome_generic/nanopore/sample.fastq"
-GENERIC_GT="/Users/izzydavidson/Desktop/camisim_output/mock_metagenome_generic/nanopore/taxonomic_profile_0.txt"
-
-VAGINAL_FASTQ="/Users/izzydavidson/Desktop/camisim_output/mock_metagenome_vaginal/nanopore/sample.fastq"
-VAGINAL_GT="/Users/izzydavidson/Desktop/camisim_output/mock_metagenome_vaginal/nanopore/taxonomic_profile_0.txt"
-
-KRAKEN2_DB="/Volumes/MyPassport/Kraken/kraken2/core_nt/_old_build_20260116_060100"
+# ── Dataset definitions (override with --generic-fastq, --vaginal-fastq, --db) ──
+GENERIC_FASTQ=""
+GENERIC_GT=""
+VAGINAL_FASTQ=""
+VAGINAL_GT=""
+KRAKEN2_DB=""
 HUMAN_MMI="${REPO_ROOT}/main/data/reference/human/grch38/GRCh38.primary_assembly.genome.lowmem.mmi"
 VALENCIA_CSV="${REPO_ROOT}/tools/VALENCIA/CST_centroids_012920.csv"
 
@@ -46,15 +46,36 @@ DATASETS=(generic vaginal)
 DRY_RUN=0
 DATASET_FILTER="all"
 
-for arg in "$@"; do
-  case "${arg}" in
-    --dry-run)           DRY_RUN=1 ;;
-    --dataset)           ;;   # next arg handled below
-    --dataset=generic)   DATASET_FILTER="generic" ;;
-    --dataset=vaginal)   DATASET_FILTER="vaginal" ;;
-    generic|vaginal)     DATASET_FILTER="${arg}" ;;
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run)             DRY_RUN=1; shift ;;
+    --dataset)             DATASET_FILTER="$2"; shift 2 ;;
+    --dataset=*)           DATASET_FILTER="${1#*=}"; shift ;;
+    generic|vaginal)       DATASET_FILTER="$1"; shift ;;
+    --generic-fastq)       GENERIC_FASTQ="$2"; shift 2 ;;
+    --generic-gt)          GENERIC_GT="$2"; shift 2 ;;
+    --vaginal-fastq)       VAGINAL_FASTQ="$2"; shift 2 ;;
+    --vaginal-gt)          VAGINAL_GT="$2"; shift 2 ;;
+    --db)                  KRAKEN2_DB="$2"; shift 2 ;;
+    --human-mmi)           HUMAN_MMI="$2"; shift 2 ;;
+    *) echo "Unknown option: $1"; exit 1 ;;
   esac
 done
+
+# Validate required paths
+if [[ -z "$KRAKEN2_DB" ]]; then
+  echo "Error: --db <kraken2_db_path> is required"
+  echo "Usage: ./sweep.sh --db /path/to/kraken2/db [--generic-fastq ...] [--vaginal-fastq ...]"
+  exit 1
+fi
+if [[ -z "$GENERIC_FASTQ" || -z "$VAGINAL_FASTQ" ]]; then
+  echo "Error: --generic-fastq and --vaginal-fastq are required"
+  exit 1
+fi
+if [[ -z "$GENERIC_GT" || -z "$VAGINAL_GT" ]]; then
+  echo "Error: --generic-gt and --vaginal-gt (ground truth TSV paths) are required"
+  exit 1
+fi
 
 mkdir -p "${CONFIG_DIR}" "${RESULTS_DIR}"
 

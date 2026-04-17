@@ -10,8 +10,8 @@ cat("  Testing Post-Processing Fix\n")
 cat("==============================================\n\n")
 
 # Setup paths
-repo_root <- "/Users/izzydavidson/Desktop/STaBioM/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/main"
-work_dir <- "/Users/izzydavidson/Desktop"
+repo_root <- file.path(dirname(normalizePath(sys.frame(1)$ofile, mustWork = FALSE)), "main")
+work_dir <- path.expand("~/Desktop")
 run_id <- "Short_Read_Pipeline"
 run_dir <- file.path(work_dir, run_id)
 

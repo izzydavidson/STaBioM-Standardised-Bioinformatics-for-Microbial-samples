@@ -29,11 +29,7 @@ Create a Shiny R application inside the new `frontend` directory.
 
 There is an existing `demo` directory containing JavaScript UI code. Convert its structure and design into a Shiny application. The visual structure and flow should be preserved, but rewritten fully in Shiny (R).
 
-To gain further visual and structural context for what the UI should look like, refer to the screenshots located at:
-
-`/Users/izzydavidson/Desktop/STaBioM/stabiom_photos`
-
-These screenshots define the intended layout, styling, flow, and visual hierarchy. Match them as closely as possible using Shiny.
+To gain further visual and structural context for what the UI should look like, refer to screenshots of the intended design (stored separately). Match the layout, styling, flow, and visual hierarchy as closely as possible using Shiny.
 
 The Shiny app is strictly a frontend layer. Its only responsibilities:
 

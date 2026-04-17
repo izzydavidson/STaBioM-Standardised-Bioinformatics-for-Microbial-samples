@@ -4,15 +4,18 @@ add_ncbi_strains.py — Download additional NCBI RefSeq genome assemblies
 and add them to the custom Kraken2 DB library with correct taxid headers.
 
 Usage:
-    python3 add_ncbi_strains.py
+    python3 add_ncbi_strains.py [--db-base /path/to/custom_db]
 
 Hardcoded list of accessions / taxids / target DBs for the worst-accuracy
 species across gut, oral, skin custom databases.
 """
 
-import os, sys, gzip, urllib.request, urllib.error, shutil, tempfile, time, re
+import os, sys, gzip, urllib.request, urllib.error, shutil, tempfile, time, re, argparse
 
-CUSTOM_DB_BASE = "/Volumes/MyPassport/custom_db"
+_parser = argparse.ArgumentParser(add_help=False)
+_parser.add_argument("--db-base", default="/Volumes/MyPassport/custom_db")
+_args, _ = _parser.parse_known_args()
+CUSTOM_DB_BASE = _args.db_base
 
 # Target accessions per site / species
 # Format: (GCF_accession, species_taxid, db_site, species_name)

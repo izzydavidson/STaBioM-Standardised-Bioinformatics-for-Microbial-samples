@@ -7,7 +7,9 @@ For each body site (gut/oral/skin):
 2. Queries NCBI datasets API to get species_taxid and organism_name
 3. Rewrites FASTA headers to include |kraken:taxid|TAXID| format
 4. Saves prepared FASTAs to /tmp/camisim_prep_{site}/
-5. Copies prepared FASTAs to /Volumes/MyPassport/custom_db/{site}/library/added/
+5. Copies prepared FASTAs to <custom_db_base>/{site}/library/added/
+
+Override the custom DB base path with: --db-base /path/to/custom_db
 """
 
 import os
@@ -20,10 +22,15 @@ import json
 import re
 from pathlib import Path
 
+import argparse as _argparse
+_parser = _argparse.ArgumentParser(add_help=False)
+_parser.add_argument("--db-base", default="/Volumes/MyPassport/custom_db")
+_args, _ = _parser.parse_known_args()
+
 SITES = ["gut", "oral", "skin"]
 CAMISIM_CONFIG_BASE = Path.home() / "camisim_configs"
 CAMISIM_GENOME_BASE = Path.home() / "camisim_genomes"
-CUSTOM_DB_BASE = Path("/Volumes/MyPassport/custom_db")
+CUSTOM_DB_BASE = Path(_args.db_base)
 TMP_BASE = Path("/tmp")
 NCBI_API_BASE = "https://api.ncbi.nlm.nih.gov/datasets/v2/genome/accession/{accession}/dataset_report"
 API_SLEEP = 1.0  # seconds between NCBI API calls

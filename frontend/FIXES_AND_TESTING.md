@@ -62,13 +62,13 @@ In Shiny modules, `session$parent` doesn't exist in the module context. Calling 
 
 1. **Build STaBioM binary** (if not already built):
    ```bash
-   cd /Users/izzydavidson/Desktop/STaBioM/STaBioM-Standardised-Bioinformatics-for-Microbial-samples
+   cd /path/to/STaBioM-Standardised-Bioinformatics-for-Microbial-samples
    # Follow build instructions from main README
    ```
 
 2. **Launch the Shiny app**:
    ```r
-   setwd("/Users/izzydavidson/Desktop/STaBioM/STaBioM-Standardised-Bioinformatics-for-Microbial-samples/frontend")
+   setwd("frontend")  # from repo root
    shiny::runApp()
    ```
 

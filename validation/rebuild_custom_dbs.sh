@@ -8,12 +8,18 @@
 
 set -euo pipefail
 
-# Use Docker Desktop socket explicitly — required when running outside user shell (e.g. nohup)
-export DOCKER_HOST="unix:///Users/izzydavidson/.docker/run/docker.sock"
-
+# CUSTOM_DB_BASE — override with --db-base /path/to/custom_db
 CUSTOM_DB_BASE="/Volumes/MyPassport/custom_db"
 DOCKER_IMAGE="stabiom-tools-lr:dev"
 SITES=(gut oral skin)
+
+# Parse optional --db-base argument
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --db-base) CUSTOM_DB_BASE="$2"; shift 2 ;;
+    *) echo "Unknown option: $1"; exit 1 ;;
+  esac
+done
 BRACKEN_READLEN=1500
 BRACKEN_KMER=35
 THREADS=4

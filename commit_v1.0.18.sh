@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-cd /Users/izzydavidson/Desktop/STaBioM/STaBioM-Standardised-Bioinformatics-for-Microbial-samples
+cd "$(dirname "$0")"
 
 echo "Adding files..."
 git add cli/__init__.py \

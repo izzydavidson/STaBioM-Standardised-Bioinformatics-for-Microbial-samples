@@ -3,8 +3,16 @@
 # Run AFTER v4c pipelines complete.
 set -euo pipefail
 
+# CUSTOM_DB_BASE — override with --db-base /path/to/custom_db
 CUSTOM_DB_BASE="/Volumes/MyPassport/custom_db"
 SITES=(gut oral skin)
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --db-base) CUSTOM_DB_BASE="$2"; shift 2 ;;
+    *) echo "Unknown option: $1"; exit 1 ;;
+  esac
+done
 DOCKER_IMAGE="stabiom-tools-lr:dev"
 READLEN=1500
 KMER=35
