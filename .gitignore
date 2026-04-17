@@ -1,3 +1,8 @@
+# AI assistant files
+.claude/
+claude.md
+CLAUDE.md
+
 # R session files
 .Rproj.user/
 .Rhistory
