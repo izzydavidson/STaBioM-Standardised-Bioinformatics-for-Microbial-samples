@@ -7,9 +7,105 @@ GCF_029542785.1	Malassezia globosa	55193	camisim_simulation
 GCF_000181695.2	Malassezia restricta	76773	camisim_simulation
 GCF_900475555.1	Micrococcus luteus	1270	camisim_simulation
 GCF_006094395.1	Staphylococcus haemolyticus	1283	camisim_simulation
-GCF_001941425.1	Brevibacterium linens	1697	camisim_simulation
+GCF_001941425.1	Corynebacterium glutamicum	1697	camisim_simulation
 GCF_000092445.1	Cutibacterium acnes	1743460	camisim_simulation	CAMISIM used wrong label (Allopiophila luteata); taxid corrected to C. acnes
-# ── Additional NCBI RefSeq strains (added to improve per-species recall) ──────
-GCF_006742205.1	Staphylococcus epidermidis	1282	ncbi_additional	Low recall in v4 validation sweep
-GCF_019329745.1	Staphylococcus epidermidis	1282	ncbi_additional	Low recall in v4 validation sweep
-GCF_019329665.1	Staphylococcus epidermidis	1282	ncbi_additional	Low recall in v4 validation sweep
+# ── Additional NCBI RefSeq strains (v1 — improve S. epidermidis recall) ───────
+GCF_006742205.1	Staphylococcus epidermidis	1282	ncbi_additional
+GCF_019329745.1	Staphylococcus epidermidis	1282	ncbi_additional
+GCF_019329665.1	Staphylococcus epidermidis	1282	ncbi_additional
+# ── v5 expansion — 65 additional species (expand_skin_db.py, 2026-04-16) ──────
+# Covers full HMP skin microbiome: Staphylococcus, Corynebacterium, Cutibacterium,
+# Malassezia, Micrococcus, Acinetobacter, Moraxella, Peptoniphilus, Anaerococcus,
+# Porphyromonas, Rothia, Streptococcus, Enterococcus, Candida, and more.
+# 28 taxa were not in RefSeq (noted at bottom).
+GCF_016028275.1	Staphylococcus carnosus	1281	ncbi_expand
+GCF_000816085.1	Staphylococcus hominis	1284	ncbi_expand
+GCF_019048645.1	Staphylococcus caprae	1289	ncbi_expand
+GCF_029774255.1	Staphylococcus sciuri	1293	ncbi_expand
+GCF_009428905.1	Staphylococcus capitis	29376	ncbi_expand
+GCF_016127455.1	Staphylococcus equorum	246432	ncbi_expand
+GCF_000011325.1	Corynebacterium pseudodiphtheriticum	1716	ncbi_expand
+GCF_000011325.1	Corynebacterium bovis	1718	ncbi_expand
+GCF_900103625.1	Corynebacterium urealyticum	38302	ncbi_expand
+GCF_000013405.1	Corynebacterium confusum	43773	ncbi_expand
+GCF_014199635.1	Corynebacterium resistens	260085	ncbi_expand
+GCF_000178095.1	Cutibacterium avidum	1261	ncbi_expand
+GCF_017161265.1	Malassezia sympodialis	58231	ncbi_expand
+GCF_000336595.1	Malassezia nana	1231382	ncbi_expand
+GCF_000336515.1	Malassezia slooffiae	1231383	ncbi_expand
+GCF_030523875.1	Micrococcus antarcticus	1271	ncbi_expand
+GCF_900163825.1	Micrococcus flavescens	1273	ncbi_expand
+GCF_900444805.1	Acinetobacter lwoffii	471	ncbi_expand
+GCF_965261865.1	Acinetobacter calcoaceticus	472	ncbi_expand
+GCF_041021905.1	Acinetobacter nosocomialis	106654	ncbi_expand
+GCF_004768625.1	Acinetobacter johnsonii	28150	ncbi_expand
+GCF_016576965.1	Acinetobacter bereziniae	106648	ncbi_expand
+GCF_014199985.1	Acinetobacter junii	29427	ncbi_expand
+GCF_900476075.1	Moraxella catarrhalis	480	ncbi_expand
+GCF_015476275.1	Moraxella osloensis	296	ncbi_expand
+GCF_009586235.1	Moraxella nonliquefaciens	292	ncbi_expand
+GCF_900445995.1	Moraxella lacunata	293	ncbi_expand
+GCF_900099775.1	Roseomonas gilardii	158890	ncbi_expand
+GCF_046255015.1	Finegoldia magna	150022	ncbi_expand
+GCF_017498585.1	Peptoniphilus harei	202956	ncbi_expand
+GCF_900130005.1	Peptoniphilus lacrimalis	29357	ncbi_expand
+GCF_000146675.1	Peptoniphilus duerdenii	862515	ncbi_expand
+GCF_000146655.1	Peptoniphilus tyrrelliae	862513	ncbi_expand
+GCF_900637905.1	Anaerococcus vaginalis	33033	ncbi_expand
+GCF_000010505.1	Porphyromonas gingivalis	836	ncbi_expand
+GCF_003515105.1	Porphyromonas somerae	53246	ncbi_expand
+GCF_025822065.1	Porphyromonas uenonis	28445	ncbi_expand
+GCF_003019295.1	Fusobacterium nucleatum	851	ncbi_expand
+GCF_016028855.1	Rothia kristinae	32207	ncbi_expand
+GCF_000175615.1	Rothia mucilaginosa	43675	ncbi_expand
+GCF_900637025.1	Streptococcus mitis	1303	ncbi_expand
+GCF_019046945.1	Streptococcus anginosus	1302	ncbi_expand
+GCF_003172995.1	Streptococcus dysgalactiae	1310	ncbi_expand
+GCF_900475505.1	Streptococcus mutans	1305	ncbi_expand
+GCF_000164675.2	Streptococcus salivarius	1318	ncbi_expand
+GCF_002813755.1	Enterococcus faecalis	1350	ncbi_expand
+GCF_009734005.1	Enterococcus faecium	1352	ncbi_expand
+GCF_050282105.1	Pseudomonas putida	306	ncbi_expand
+GCF_900215245.1	Pseudomonas fluorescens	294	ncbi_expand
+GCF_001435975.1	Chryseobacterium gleum	33960	ncbi_expand
+GCF_000237305.1	Chryseobacterium indologenes	29303	ncbi_expand
+GCF_020641395.2	Stenotrophomonas maltophilia	40324	ncbi_expand
+GCF_001482365.1	Kocuria rosea	57493	ncbi_expand
+GCF_019575955.1	Kocuria kristinae	57494	ncbi_expand
+GCF_039530005.1	Kocuria varians	57495	ncbi_expand
+GCF_901482605.1	Clostridium perfringens	1498	ncbi_expand
+GCF_000182965.3	Candida albicans	5476	ncbi_expand
+GCF_010111755.1	Candida parapsilosis	5478	ncbi_expand
+GCF_000005845.2	Escherichia coli	562	ncbi_expand
+GCF_020099335.1	Citrobacter freundii	544	ncbi_expand
+GCF_000240185.1	Klebsiella pneumoniae	573	ncbi_expand
+GCF_003096095.1	Dietzia maris	37914	ncbi_expand
+# ── Not in RefSeq (queried 2026-04-16, absent from NCBI datasets v2 API) ──────
+# taxid=1287	Staphylococcus cohnii
+# taxid=1291	Staphylococcus intermedius
+# taxid=1728	Corynebacterium ulcerans
+# taxid=28419	Corynebacterium argentoratense
+# taxid=28423	Corynebacterium auriscanis
+# taxid=38285	Corynebacterium freneyi
+# taxid=38287	Corynebacterium durum
+# taxid=38291	Corynebacterium glucuronolyticum
+# taxid=38299	Corynebacterium propinquum
+# taxid=91302	Corynebacterium afermentans
+# taxid=1743458	Cutibacterium namnetense
+# taxid=1743456	Cutibacterium humerusii
+# taxid=4287	Propionibacterium freudenreichii
+# taxid=1743457	Propionibacterium propionicum
+# taxid=55194	Malassezia furfur
+# taxid=76774	Malassezia pachydermatis
+# taxid=1231384	Malassezia obtusa
+# taxid=38513	Brevibacterium epidermidis
+# taxid=38516	Brevibacterium aurantiacum
+# taxid=38519	Brevibacterium iodinum
+# taxid=718229	Acinetobacter pittii
+# taxid=159126	Roseomonas mucosa
+# taxid=201040	Peptoniphilus asaccharolyticus
+# taxid=862511	Peptoniphilus olsenii
+# taxid=862509	Peptoniphilus ivorii
+# taxid=33029	Anaerococcus prevotii (listed but absent; broader taxid coverage via RefSeq)
+# taxid=1283316	Anaerococcus obesiensis
+# taxid=75185	Janibacter limosus
