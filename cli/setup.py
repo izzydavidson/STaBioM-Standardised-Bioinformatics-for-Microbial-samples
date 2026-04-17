@@ -1623,17 +1623,54 @@ def run_doctor() -> int:
 
     # Check Python packages (for compare module)
     print("Python Environment:")
-    try:
-        import pandas
-        print(f"  {Colors.green_bold('OK')} pandas {pandas.__version__}" if is_tty() else f"  [OK] pandas")
-    except ImportError:
-        print(f"  {Colors.yellow_bold('MISSING')} pandas (needed for compare command)" if is_tty() else "  [MISSING] pandas")
+    missing_pkgs = []
+    for pkg, label in [("pandas", "pandas"), ("numpy", "numpy")]:
+        try:
+            mod = __import__(pkg)
+            ver = getattr(mod, "__version__", "")
+            print(f"  {Colors.green_bold('OK')} {label} {ver}" if is_tty() else f"  [OK] {label} {ver}")
+        except ImportError:
+            print(f"  {Colors.yellow_bold('MISSING')} {label} (required for compare command)" if is_tty()
+                  else f"  [MISSING] {label} (required for compare command)")
+            missing_pkgs.append(pkg)
 
-    try:
-        import numpy
-        print(f"  {Colors.green_bold('OK')} numpy {numpy.__version__}" if is_tty() else f"  [OK] numpy")
-    except ImportError:
-        print(f"  {Colors.yellow_bold('MISSING')} numpy" if is_tty() else "  [MISSING] numpy")
+    if missing_pkgs:
+        print()
+        print(f"  {Colors.cyan_bold('compare') if is_tty() else 'compare'} command requires: {', '.join(missing_pkgs)}")
+        if prompt_yes_no(f"  Install {', '.join(missing_pkgs)} now?", default=True):
+            # Determine the pip executable to use
+            pip_candidates = []
+            if not getattr(sys, 'frozen', False):
+                # Running from source — use the same Python that's running this
+                pip_candidates = [[sys.executable, "-m", "pip", "install"] + missing_pkgs]
+            # Always try system pip3/pip as a fallback (covers frozen binary case)
+            for pip_bin in ["pip3", "pip"]:
+                found = shutil.which(pip_bin)
+                if found:
+                    pip_candidates.append([found, "install"] + missing_pkgs)
+            # Try python3 -m pip as final fallback
+            py3 = shutil.which("python3")
+            if py3 and py3 != sys.executable:
+                pip_candidates.append([py3, "-m", "pip", "install"] + missing_pkgs)
+
+            installed = False
+            for cmd in pip_candidates:
+                try:
+                    print(f"  Running: {' '.join(cmd)}")
+                    result = subprocess.run(cmd, timeout=120, capture_output=False)
+                    if result.returncode == 0:
+                        print(f"  {Colors.green_bold('OK') if is_tty() else '[OK]'} Installed {', '.join(missing_pkgs)}")
+                        print("  Note: Restart stabiom for changes to take effect.")
+                        installed = True
+                        break
+                    else:
+                        print(f"  {Colors.yellow_bold('WARN') if is_tty() else '[WARN]'} pip returned non-zero — trying next method")
+                except Exception as e:
+                    print(f"  {Colors.yellow_bold('WARN') if is_tty() else '[WARN]'} {e} — trying next method")
+
+            if not installed:
+                print(f"  {Colors.yellow_bold('WARN') if is_tty() else '[WARN]'} Could not install automatically.")
+                print(f"  Run manually: pip3 install {' '.join(missing_pkgs)}")
 
     print()
 

@@ -20,6 +20,15 @@ from pathlib import Path
 
 # Get the repo root (where this spec file lives)
 REPO_ROOT = Path(SPECPATH)
+
+# Collect pandas and numpy (C-extension packages — must use collect_all, not just hiddenimports)
+try:
+    from PyInstaller.utils.hooks import collect_all
+    pandas_datas, pandas_binaries, pandas_hiddenimports = collect_all('pandas')
+    numpy_datas, numpy_binaries, numpy_hiddenimports = collect_all('numpy')
+except Exception:
+    pandas_datas = pandas_binaries = pandas_hiddenimports = []
+    numpy_datas = numpy_binaries = numpy_hiddenimports = []
 MAIN_DIR = REPO_ROOT / "main"
 
 
@@ -162,16 +171,15 @@ hiddenimports = [
 a = Analysis(
     ["cli/__main__.py"],
     pathex=[str(REPO_ROOT)],
-    binaries=[],
-    datas=datas,
-    hiddenimports=hiddenimports,
+    binaries=[] + pandas_binaries + numpy_binaries,
+    datas=datas + pandas_datas + numpy_datas,
+    hiddenimports=hiddenimports + pandas_hiddenimports + numpy_hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[
         # Exclude packages not needed at runtime
         "tkinter",
-        "matplotlib",
         "PIL",
         "pytest",
         "sphinx",
