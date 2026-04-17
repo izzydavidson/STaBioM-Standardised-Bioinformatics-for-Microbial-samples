@@ -22,28 +22,28 @@ long_read_server <- function(id, shared) {
     # ── Native OS file/dir pickers via osascript ──────────────────────────────
 
     observeEvent(input$input_path_browse_file, {
-      path <- trimws(system("osascript -e 'POSIX path of (choose file)'", intern = TRUE))
-      if (nchar(path) > 0) updateTextInput(session, "input_path", value = path)
+      path <- suppressWarnings(trimws(system("osascript -e 'POSIX path of (choose file)'", intern = TRUE)))
+      if (length(path) > 0 && nchar(path) > 0) updateTextInput(session, "input_path", value = path)
     })
 
     observeEvent(input$input_path_browse_dir, {
-      path <- trimws(system("osascript -e 'POSIX path of (choose folder)'", intern = TRUE))
-      if (nchar(path) > 0) updateTextInput(session, "input_path", value = path)
+      path <- suppressWarnings(trimws(system("osascript -e 'POSIX path of (choose folder)'", intern = TRUE)))
+      if (length(path) > 0 && nchar(path) > 0) updateTextInput(session, "input_path", value = path)
     })
 
     observeEvent(input$dorado_bin_browse, {
-      path <- trimws(system("osascript -e 'POSIX path of (choose file)'", intern = TRUE))
-      if (nchar(path) > 0) updateTextInput(session, "dorado_bin", value = path)
+      path <- suppressWarnings(trimws(system("osascript -e 'POSIX path of (choose file)'", intern = TRUE)))
+      if (length(path) > 0 && nchar(path) > 0) updateTextInput(session, "dorado_bin", value = path)
     })
 
     observeEvent(input$dorado_models_dir_browse, {
-      path <- trimws(system("osascript -e 'POSIX path of (choose folder)'", intern = TRUE))
-      if (nchar(path) > 0) updateTextInput(session, "dorado_models_dir", value = path)
+      path <- suppressWarnings(trimws(system("osascript -e 'POSIX path of (choose folder)'", intern = TRUE)))
+      if (length(path) > 0 && nchar(path) > 0) updateTextInput(session, "dorado_models_dir", value = path)
     })
 
     observeEvent(input$kraken_db_browse, {
-      path <- trimws(system("osascript -e 'POSIX path of (choose folder)'", intern = TRUE))
-      if (nchar(path) > 0) updateTextInput(session, "kraken_db", value = path)
+      path <- suppressWarnings(trimws(system("osascript -e 'POSIX path of (choose folder)'", intern = TRUE)))
+      if (length(path) > 0 && nchar(path) > 0) updateTextInput(session, "kraken_db", value = path)
     })
 
     # ── Site-specific Kraken2 defaults ───────────────────────────────────────────
@@ -61,13 +61,13 @@ long_read_server <- function(id, shared) {
     }, ignoreInit = FALSE)
 
     observeEvent(input$external_db_dir_browse, {
-      path <- trimws(system("osascript -e 'POSIX path of (choose folder)'", intern = TRUE))
-      if (nchar(path) > 0) updateTextInput(session, "external_db_dir", value = path)
+      path <- suppressWarnings(trimws(system("osascript -e 'POSIX path of (choose folder)'", intern = TRUE)))
+      if (length(path) > 0 && nchar(path) > 0) updateTextInput(session, "external_db_dir", value = path)
     })
 
     observeEvent(input$extra_output_dir_browse, {
-      path <- trimws(system("osascript -e 'POSIX path of (choose folder)'", intern = TRUE))
-      if (nchar(path) > 0) {
+      path <- suppressWarnings(trimws(system("osascript -e 'POSIX path of (choose folder)'", intern = TRUE)))
+      if (length(path) > 0 && nchar(path) > 0) {
         updateTextInput(session, "extra_output_dir", value = path)
         shared$additional_output_dir <- path
       }

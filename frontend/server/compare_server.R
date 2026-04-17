@@ -8,13 +8,13 @@ compare_server <- function(id, shared) {
     # ── Native OS file pickers via osascript ─────────────────────────────────
 
     observeEvent(input$path_a_browse, {
-      path <- trimws(system("osascript -e 'POSIX path of (choose file)'", intern = TRUE))
-      if (nchar(path) > 0) updateTextInput(session, "path_a", value = path)
+      path <- suppressWarnings(trimws(system("osascript -e 'POSIX path of (choose file)'", intern = TRUE)))
+      if (length(path) > 0 && nchar(path) > 0) updateTextInput(session, "path_a", value = path)
     })
 
     observeEvent(input$path_b_browse, {
-      path <- trimws(system("osascript -e 'POSIX path of (choose file)'", intern = TRUE))
-      if (nchar(path) > 0) updateTextInput(session, "path_b", value = path)
+      path <- suppressWarnings(trimws(system("osascript -e 'POSIX path of (choose file)'", intern = TRUE)))
+      if (length(path) > 0 && nchar(path) > 0) updateTextInput(session, "path_b", value = path)
     })
 
 
