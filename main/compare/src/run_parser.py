@@ -180,13 +180,19 @@ class RunParser:
                     if self.verbose:
                         print(f"[run_parser] Found species CSV in r_postprocess: {species_csv}")
 
-        # Fallback to standard postprocess
+        # Fallback to standard locations
         if not species_csv:
-            postprocess_dir = module_dir / "results" / "postprocess"
-            if postprocess_dir.exists():
-                candidate = postprocess_dir / "kraken_species_tidy.csv"
+            fallback_candidates = [
+                module_dir / "results" / "tables" / "kraken_species_tidy.csv",
+                module_dir / "results" / "postprocess" / "kraken_species_tidy.csv",
+                module_dir / "sr_meta" / "results" / "tables" / "kraken_species_tidy.csv",
+                module_dir / "sr_meta" / "results" / "postprocess" / "kraken_species_tidy.csv",
+                module_dir / "sr_meta" / "final" / "tables" / "kraken_species_tidy.csv",
+            ]
+            for candidate in fallback_candidates:
                 if candidate.exists():
                     species_csv = candidate
+                    break
 
         if species_csv and species_csv.exists():
             df = pd.read_csv(species_csv)
@@ -253,13 +259,19 @@ class RunParser:
                     if self.verbose:
                         print(f"[run_parser] Found species CSV in r_postprocess: {species_csv}")
 
-        # Fallback to standard postprocess
+        # Fallback to standard locations
         if not species_csv:
-            postprocess_dir = module_dir / "results" / "postprocess"
-            if postprocess_dir.exists():
-                candidate = postprocess_dir / "kraken_species_tidy.csv"
+            fallback_candidates = [
+                module_dir / "results" / "tables" / "kraken_species_tidy.csv",
+                module_dir / "results" / "postprocess" / "kraken_species_tidy.csv",
+                module_dir / "lr_meta" / "results" / "tables" / "kraken_species_tidy.csv",
+                module_dir / "lr_meta" / "results" / "postprocess" / "kraken_species_tidy.csv",
+                module_dir / "lr_meta" / "final" / "tables" / "kraken_species_tidy.csv",
+            ]
+            for candidate in fallback_candidates:
                 if candidate.exists():
                     species_csv = candidate
+                    break
 
         if species_csv and species_csv.exists():
             df = pd.read_csv(species_csv)
