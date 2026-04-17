@@ -1528,8 +1528,9 @@ def run_doctor() -> int:
     bin_dir = get_stabiom_bin_dir()
     if check_path_configured(bin_dir):
         stabiom_path = shutil.which("stabiom")
-        print(f"  {Colors.green_bold('OK')} stabiom is in PATH: {stabiom_path}" if is_tty()
-              else f"  [OK] stabiom is in PATH: {stabiom_path}")
+        path_display = stabiom_path if stabiom_path else str(bin_dir / "stabiom") + " (dir in PATH)"
+        print(f"  {Colors.green_bold('OK')} stabiom is in PATH: {path_display}" if is_tty()
+              else f"  [OK] stabiom is in PATH: {path_display}")
     else:
         print(f"  {Colors.yellow_bold('NOT IN PATH')} Run 'stabiom setup' to add to PATH" if is_tty()
               else "  [NOT IN PATH] Run 'stabiom setup' to add to PATH")

@@ -790,6 +790,11 @@ Use 'stabiom <command> --help' for more information on a specific command.
             sys.exit(1)
 
     if args.command == "run":
+        # Validate mutually exclusive flags
+        if args.valencia and args.no_valencia:
+            print(f"{Colors.red_bold('ERROR')}: --valencia and --no-valencia are mutually exclusive.", file=sys.stderr)
+            sys.exit(1)
+
         # Check for Docker if containers are being used
         if not args.no_container and not args.dry_run:
             from cli.setup import check_docker

@@ -22,10 +22,16 @@ try:
     matplotlib.use("Agg")  # Non-interactive backend
     import matplotlib.pyplot as plt
     from matplotlib.patches import Circle
-    from matplotlib_venn import venn2, venn3
     HAS_MATPLOTLIB = True
 except ImportError:
     HAS_MATPLOTLIB = False
+
+try:
+    from matplotlib_venn import venn2, venn3
+    HAS_VENN = True
+except ImportError:
+    HAS_VENN = False
+    venn2 = venn3 = None
 
 try:
     import seaborn as sns
