@@ -1,8 +1,8 @@
 # STaBioM — Standardised Bioinformatics for Microbial Samples
 
-STaBioM is a tool for analysing the microbiome — the community of microorganisms living in or on the human body. It takes raw sequencing data from a DNA sequencer and identifies which species are present and in what proportions.
+STaBioM is a tool for analysing the microbiome which takes raw sequencing data from a DNA sequencer and identifies which species are present and in what proportions.
 
-It is designed to work with both **short-read** (Illumina) and **long-read** (Oxford Nanopore / PacBio) sequencing data, for both **16S amplicon** and **shotgun metagenomics** workflows. STaBioM comes with a graphical app for everyday use and a command-line tool for scripted or HPC workflows.
+It is designed to work with both **short-read** (Illumina/IonTorrent) and **long-read** (Oxford Nanopore / PacBio) sequencing data, for both **16S amplicon** and **shotgun metagenomics** workflows. STaBioM comes with a graphical app for everyday use and a command-line tool for scripted or HPC workflows.
 
 ---
 
