@@ -35,6 +35,20 @@ short_read_server <- function(id, shared) {
       if (length(path) > 0 && nchar(path) > 0) updateTextInput(session, "external_db_dir", value = path)
     })
 
+    # ── Site-specific Kraken2 defaults ───────────────────────────────────────────
+    # Gut/skin: conf=0.03, MHG=4 | oral: conf=0.04, MHG=4 | vaginal: conf=0.02, MHG=2
+    observeEvent(input$sample_type, {
+      defaults <- switch(input$sample_type,
+        vaginal = list(conf = 0.02, mhg = 2L),
+        gut     = list(conf = 0.03, mhg = 4L),
+        oral    = list(conf = 0.04, mhg = 4L),
+        skin    = list(conf = 0.03, mhg = 4L),
+        other   = list(conf = 0.05, mhg = 2L)
+      )
+      updateNumericInput(session, "kraken_confidence",     value = defaults$conf)
+      updateNumericInput(session, "kraken_min_hit_groups", value = defaults$mhg)
+    }, ignoreInit = FALSE)
+
     observeEvent(input$extra_output_dir_browse, {
       path <- suppressWarnings(trimws(system("osascript -e 'POSIX path of (choose folder)'", intern = TRUE)))
       if (length(path) > 0 && nchar(path) > 0) {
@@ -82,6 +96,155 @@ short_read_server <- function(id, shared) {
           )
         )
       }))
+    })
+
+    # --- Multi-sample batch state (independent samples, each with own R1/R2) ---
+    n_samples <- reactiveVal(0L)
+    MAX_BATCH_SAMPLES <- 50L
+
+    observeEvent(input$add_sample_row, {
+      cur <- n_samples()
+      if (cur < MAX_BATCH_SAMPLES) n_samples(cur + 1L)
+    })
+
+    observeEvent(input$remove_sample_row, {
+      cur <- n_samples()
+      if (cur > 0L) n_samples(cur - 1L)
+    })
+
+    # Pre-register file-browse observers for every possible extra-sample row
+    # (Shiny observers on not-yet-rendered inputs are inert until the input exists).
+    lapply(seq_len(MAX_BATCH_SAMPLES), function(i) {
+      local({
+        idx <- i
+        observeEvent(input[[paste0("smp_r1_browse_", idx)]], {
+          path <- suppressWarnings(trimws(system("osascript -e 'POSIX path of (choose file)'", intern = TRUE)))
+          if (length(path) > 0 && nchar(path) > 0) updateTextInput(session, paste0("smp_r1_", idx), value = path)
+        })
+        observeEvent(input[[paste0("smp_r2_browse_", idx)]], {
+          path <- suppressWarnings(trimws(system("osascript -e 'POSIX path of (choose file)'", intern = TRUE)))
+          if (length(path) > 0 && nchar(path) > 0) updateTextInput(session, paste0("smp_r2_", idx), value = path)
+        })
+        observeEvent(input[[paste0("smp_path_browse_", idx)]], {
+          path <- suppressWarnings(trimws(system("osascript -e 'POSIX path of (choose file)'", intern = TRUE)))
+          if (length(path) > 0 && nchar(path) > 0) updateTextInput(session, paste0("smp_path_", idx), value = path)
+        })
+      })
+    })
+
+    # Sample 1's name field only appears once a second sample has been added —
+    # invisible (and behavior-unchanged) in the default single-sample view.
+    output$sample1_name_row <- renderUI({
+      if (n_samples() == 0L) return(NULL)
+      div(
+        class = "mb-3",
+        tags$label(class = "form-label", "Sample Name (Sample 1)"),
+        textInput(ns("sample1_name"), NULL,
+          placeholder = "e.g., Patient001",
+          value = isolate(input$sample1_name %||% "")
+        )
+      )
+    })
+
+    # Render Sample 2..N rows: Name + (R1/R2 or single path, matching paired_end)
+    output$extra_sample_rows <- renderUI({
+      n <- n_samples()
+      if (n == 0L) return(NULL)
+      paired <- isTRUE(input$paired_end)
+      tagList(lapply(seq_len(n), function(i) {
+        idx <- i + 1L
+        div(
+          class = "card mb-3",
+          div(
+            class = "card-body",
+            h5(sprintf("Sample %d", idx)),
+            div(
+              class = "mb-3",
+              tags$label(class = "form-label", "Sample Name"),
+              textInput(ns(paste0("smp_name_", i)), NULL,
+                placeholder = sprintf("e.g., Patient%03d", idx),
+                value = isolate(input[[paste0("smp_name_", i)]] %||% "")
+              )
+            ),
+            if (paired) {
+              div(
+                class = "row",
+                div(
+                  class = "col-md-6 mb-3",
+                  tags$label(class = "form-label", "Forward Reads (R1)"),
+                  div(
+                    class = "file-browse-group",
+                    div(
+                      class = "drop-zone",
+                      div(class = "drop-zone-header", icon("upload"), " Drag & drop"),
+                      actionButton(ns(paste0("smp_r1_browse_", i)), "Browse",
+                        class = "btn btn-outline-secondary")
+                    ),
+                    textInput(ns(paste0("smp_r1_", i)), NULL,
+                      placeholder = "/path/to/sample_R1.fastq.gz", width = "100%")
+                  )
+                ),
+                div(
+                  class = "col-md-6 mb-3",
+                  tags$label(class = "form-label", "Reverse Reads (R2)"),
+                  div(
+                    class = "file-browse-group",
+                    div(
+                      class = "drop-zone",
+                      div(class = "drop-zone-header", icon("upload"), " Drag & drop"),
+                      actionButton(ns(paste0("smp_r2_browse_", i)), "Browse",
+                        class = "btn btn-outline-secondary")
+                    ),
+                    textInput(ns(paste0("smp_r2_", i)), NULL,
+                      placeholder = "/path/to/sample_R2.fastq.gz", width = "100%")
+                  )
+                )
+              )
+            } else {
+              div(
+                class = "mb-3",
+                tags$label(class = "form-label", "FASTQ File or Directory"),
+                div(
+                  class = "file-browse-group",
+                  div(
+                    class = "drop-zone",
+                    div(class = "drop-zone-header", icon("upload"), " Drag & drop"),
+                    actionButton(ns(paste0("smp_path_browse_", i)), "Browse",
+                      class = "btn btn-outline-secondary")
+                  ),
+                  textInput(ns(paste0("smp_path_", i)), NULL,
+                    placeholder = "/path/to/file.fastq.gz", width = "100%")
+                )
+              )
+            }
+          )
+        )
+      }))
+    })
+
+    # Collect Sample 2..N as a list of {name, input_r1, input_r2, input_path}
+    get_extra_samples <- reactive({
+      n <- n_samples()
+      if (n == 0L) return(list())
+      paired <- isTRUE(input$paired_end)
+      lapply(seq_len(n), function(i) {
+        nm <- trimws(input[[paste0("smp_name_", i)]] %||% "")
+        if (paired) {
+          list(
+            name = nm,
+            input_r1 = trimws(input[[paste0("smp_r1_", i)]] %||% ""),
+            input_r2 = trimws(input[[paste0("smp_r2_", i)]] %||% ""),
+            input_path = ""
+          )
+        } else {
+          list(
+            name = nm,
+            input_r1 = "",
+            input_r2 = "",
+            input_path = trimws(input[[paste0("smp_path_", i)]] %||% "")
+          )
+        }
+      })
     })
 
     # Collect sample_map from current barcode rows
@@ -144,6 +307,33 @@ short_read_server <- function(id, shared) {
         if (nchar(input$input_r2) == 0) errors <- c(errors, "Reverse reads (R2) path is required")
       } else {
         if (nchar(input$input_path) == 0) errors <- c(errors, "Input path is required")
+      }
+
+      if (n_samples() > 0) {
+        s1_name <- trimws(input$sample1_name %||% "")
+        if (nchar(s1_name) == 0) {
+          errors <- c(errors, "Sample 1 name is required once additional samples are added")
+        }
+
+        names_seen <- if (nchar(s1_name) > 0) s1_name else character(0)
+        extras <- get_extra_samples()
+        for (i in seq_along(extras)) {
+          s <- extras[[i]]
+          label <- sprintf("Sample %d", i + 1L)
+          if (nchar(s$name) == 0) {
+            errors <- c(errors, sprintf("%s name is required", label))
+          } else if (s$name %in% names_seen) {
+            errors <- c(errors, sprintf("%s name '%s' is already used — sample names must be unique", label, s$name))
+          } else {
+            names_seen <- c(names_seen, s$name)
+          }
+          if (input$paired_end) {
+            if (nchar(s$input_r1) == 0) errors <- c(errors, sprintf("%s: Forward reads (R1) path is required", label))
+            if (nchar(s$input_r2) == 0) errors <- c(errors, sprintf("%s: Reverse reads (R2) path is required", label))
+          } else {
+            if (nchar(s$input_path) == 0) errors <- c(errors, sprintf("%s: Input path is required", label))
+          }
+        }
       }
 
       if (input$pipeline == "sr_meta" && nchar(input$kraken_db) == 0) {
@@ -261,6 +451,15 @@ short_read_server <- function(id, shared) {
 
       cat("[DEBUG] Validation passed\n")
 
+      # Capture this module's own output-dir field fresh, right as the run starts.
+      # shared$additional_output_dir is a single global value also written to by the
+      # LR module's own field-change observer — without re-asserting it here at
+      # run-time, visiting the other tab (even with its field empty) can silently
+      # clobber whatever this module's field held.
+      extra_output_dir_val <- trimws(input$extra_output_dir %||% "")
+      shared$additional_output_dir <- if (nchar(extra_output_dir_val) > 0) extra_output_dir_val else NULL
+      cat("[DEBUG] shared$additional_output_dir (sr_meta run):", if (is.null(shared$additional_output_dir)) "(none)" else shared$additional_output_dir, "\n")
+
       run_id <- if (!is.null(input$run_name) && nchar(trimws(input$run_name)) > 0) {
         sanitized <- trimws(input$run_name)
         sanitized <- gsub("[\\/:*?\"<>|\\\\]", "_", sanitized)
@@ -284,24 +483,22 @@ short_read_server <- function(id, shared) {
       if (input$output_quality_reports) output_selected <- c(output_selected, "quality_reports")
       if (length(output_selected) == 0) output_selected <- c("all")
 
-      params <- list(
-        run_id = run_id,
+      base_params <- list(
         pipeline = input$pipeline,
         technology = input$technology,
         sample_type = input$sample_type,
         paired_end = input$paired_end,
-        input_path = input$input_path,
-        input_r1 = input$input_r1,
-        input_r2 = input$input_r2,
-        output_dir = file.path(dirname(getwd()), "outputs"),
         quality_threshold = input$quality_threshold,
         min_read_length = input$min_read_length,
         threads = threads_value,
         dada2_trunc_f = input$dada2_trunc_f,
         dada2_trunc_r = input$dada2_trunc_r,
         kraken_db             = input$kraken_db,
+        kraken_confidence     = input$kraken_confidence,
+        kraken_min_hit_groups = input$kraken_min_hit_groups,
         kraken_memory_mapping = input$kraken_memory_mapping,
         human_depletion       = input$human_depletion,
+        bracken_readlen       = shared$bracken_readlen %||% "auto",
         trim_adapter = input$trim_adapter,
         demultiplex = input$demultiplex,
         primer_sequences = input$primer_sequences,
@@ -318,20 +515,9 @@ short_read_server <- function(id, shared) {
         sample_map        = get_sample_map()
       )
 
-      config <- if (input$pipeline == "sr_amp") {
-        generate_sr_amp_config(params)
-      } else {
-        generate_sr_meta_config(params)
-      }
+      generate_fn <- if (input$pipeline == "sr_amp") generate_sr_amp_config else generate_sr_meta_config
 
-      dep_validation <- validate_dependencies(config)
-
-      if (!dep_validation$valid) {
-        error_msg <- paste(c(
-          "Missing required dependencies:",
-          dep_validation$errors
-        ), collapse = "\n• ")
-
+      show_missing_deps_modal <- function(dep_validation) {
         showModal(modalDialog(
           title = "Missing Dependencies",
           tags$div(
@@ -353,32 +539,121 @@ short_read_server <- function(id, shared) {
           removeModal()
           shared$goto_page <- "Setup Wizard"
         }, once = TRUE)
+      }
 
+      extras <- get_extra_samples()
+
+      if (length(extras) == 0L) {
+        # ---- Single-sample path (unchanged behavior) ----
+        params <- c(base_params, list(
+          run_id = run_id,
+          input_path = input$input_path,
+          input_r1 = input$input_r1,
+          input_r2 = input$input_r2,
+          output_dir = file.path(dirname(getwd()), "outputs")
+        ))
+
+        config <- generate_fn(params)
+        dep_validation <- validate_dependencies(config)
+
+        if (!dep_validation$valid) {
+          show_missing_deps_modal(dep_validation)
+          return()
+        }
+        if (length(dep_validation$warnings) > 0) {
+          showNotification(paste(dep_validation$warnings, collapse = "\n"), type = "warning", duration = 10)
+        }
+
+        config_file <- save_config(config, run_id)
+
+        shared$current_batch <- NULL
+        shared$current_run <- list(
+          run_id = run_id,
+          pipeline = input$pipeline,
+          config_file = config_file,
+          run_name = input$run_name,
+          sample_type = input$sample_type
+        )
+
+        cat("[DEBUG] Config saved to:", config_file, "\n")
+        cat("[DEBUG] Setting run_status to ready (will trigger modal)\n")
+        shared$run_status <- "ready"
         return()
       }
 
-      if (length(dep_validation$warnings) > 0) {
-        showNotification(
-          paste(dep_validation$warnings, collapse = "\n"),
-          type = "warning",
-          duration = 10
+      # ---- Batch path (2+ samples): run_name/run_id becomes the batch ID ----
+      sanitize_sample <- function(x) {
+        s <- gsub("[\\/:*?\"<>|\\\\]", "_", trimws(x))
+        s <- gsub("\\s+", "_", s)
+        if (nchar(s) == 0) "sample" else s
+      }
+
+      batch_id <- run_id
+      batch_output_dir <- file.path(dirname(getwd()), "outputs", batch_id)
+
+      all_samples <- c(
+        list(list(
+          name = trimws(input$sample1_name %||% "Sample1"),
+          input_r1 = input$input_r1, input_r2 = input$input_r2, input_path = input$input_path
+        )),
+        extras
+      )
+
+      batch_runs <- list()
+      dep_error <- NULL
+
+      for (i in seq_along(all_samples)) {
+        smp <- all_samples[[i]]
+        sample_run_id <- sanitize_sample(smp$name)
+
+        params <- c(base_params, list(
+          run_id = sample_run_id,
+          input_path = smp$input_path,
+          input_r1 = smp$input_r1,
+          input_r2 = smp$input_r2,
+          output_dir = batch_output_dir
+        ))
+
+        config <- generate_fn(params)
+
+        if (i == 1L) {
+          dep_validation <- validate_dependencies(config)
+          if (!dep_validation$valid) {
+            dep_error <- dep_validation
+            break
+          }
+          if (length(dep_validation$warnings) > 0) {
+            showNotification(paste(dep_validation$warnings, collapse = "\n"), type = "warning", duration = 10)
+          }
+        }
+
+        # Filename disambiguator only (config$run$run_id stays the plain sample id) —
+        # avoids collisions between same-named samples across different batches, since
+        # save_config() writes into a flat outputs/config_<id>.json namespace.
+        config_file <- save_config(config, paste0(batch_id, "__", sample_run_id))
+
+        batch_runs[[i]] <- list(
+          run_id = sample_run_id,
+          pipeline = input$pipeline,
+          config_file = config_file,
+          sample_name = smp$name
         )
       }
 
-      config_file <- save_config(config, run_id)
+      if (!is.null(dep_error)) {
+        show_missing_deps_modal(dep_error)
+        return()
+      }
 
-      shared$current_run <- list(
-        run_id = run_id,
+      cat("[DEBUG] Batch config saved for", length(batch_runs), "sample(s), batch_id:", batch_id, "\n")
+      cat("[DEBUG] Setting run_status to ready (will trigger batch queue)\n")
+
+      shared$current_run <- NULL
+      shared$current_batch <- list(
+        batch_id = batch_id,
         pipeline = input$pipeline,
-        config_file = config_file,
-        run_name = input$run_name,
-        sample_type = input$sample_type
+        runs = batch_runs
       )
-
-      cat("[DEBUG] Config saved to:", config_file, "\n")
-      cat("[DEBUG] Dependency validation passed\n")
-      cat("[DEBUG] Setting run_status to ready (will trigger modal)\n")
-
       shared$run_status <- "ready"
     })
   })

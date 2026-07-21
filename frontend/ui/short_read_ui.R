@@ -136,6 +136,21 @@ short_read_ui <- function(id) {
                     ),
                   )
                 )
+              ),
+
+              # ── Additional samples (batch mode) ────────────────────
+              uiOutput(ns("sample1_name_row")),
+              uiOutput(ns("extra_sample_rows")),
+              div(
+                class = "d-flex gap-2 mt-2",
+                actionButton(ns("add_sample_row"), "+ Add sample",
+                  class = "btn btn-sm btn-outline-primary"),
+                actionButton(ns("remove_sample_row"), "Remove last",
+                  class = "btn btn-sm btn-outline-secondary")
+              ),
+              tags$small(class = "text-muted",
+                "Add more samples to analyse a cohort in one run. Each sample gets its own name, ",
+                "input files, and results folder; a comparison report is generated automatically."
               )
             )
           ),
@@ -337,8 +352,20 @@ short_read_ui <- function(id) {
                     ),
                   ),
                   div(
-                    class = "col-md-6 mb-3",
+                    class = "col-md-12 mb-3",
                     checkboxInput(ns("human_depletion"), "Human Read Depletion", value = FALSE)
+                  ),
+                  div(
+                    class = "col-md-6 mb-3",
+                    tags$label(class = "form-label", "Kraken2 Confidence Threshold"),
+                    numericInput(ns("kraken_confidence"), NULL, value = 0.05, min = 0, max = 1, step = 0.01),
+                    tags$small(class = "text-muted", "Fraction of k-mers supporting classification (0–1). Site defaults: vaginal=0.02, gut=0.03, oral=0.04, skin=0.03")
+                  ),
+                  div(
+                    class = "col-md-6 mb-3",
+                    tags$label(class = "form-label", "Kraken2 Minimum Hit Groups"),
+                    numericInput(ns("kraken_min_hit_groups"), NULL, value = 2L, min = 1, max = 100, step = 1),
+                    tags$small(class = "text-muted", "Distinct k-mer hit groups required for a classification. Site defaults: vaginal=2, gut=4, oral=4, skin=4")
                   ),
                   div(
                     class = "col-md-12 mb-3",

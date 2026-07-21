@@ -782,6 +782,7 @@ class RunConfig:
     # Additional pipeline-specific settings
     sample_id: str = "sample"
     sample_type: str = "other"
+    sample_sheet: str = ""  # Path to barcode->sample_name CSV/TSV (demux naming, lr_amp/lr_meta/sr_amp/sr_meta)
     technology: str = ""  # auto-detected based on pipeline
     input_style: str = ""  # auto-detected based on input
 
@@ -804,6 +805,24 @@ class RunConfig:
     # Database paths
     kraken2_db: str = ""  # Path to Kraken2 database (for sr_meta, lr_meta, lr_amp)
     emu_db: str = ""  # Path to Emu database (for lr_amp)
+
+    # Kraken2 classification params (lr_meta; also stored for sr_meta future use)
+    # Applied to both vaginal and non-vaginal classifications for this run.
+    # None = use pipeline script defaults (vaginal: conf=0.02/mhg=2, nonvaginal: conf=0.02/mhg=2)
+    kraken_confidence: Optional[float] = None
+    kraken_min_hit_groups: Optional[int] = None
+
+    # Bracken abundance re-estimation read length, in bp (sr_meta, lr_meta).
+    # Must match a database{N}mers.kmer_distrib file present in the Kraken2 DB, or
+    # Bracken is silently skipped for that run. None = use pipeline script defaults
+    # (lr_meta: 1500bp; sr_meta: 150bp).
+    bracken_readlen: Optional[int] = None
+    no_bracken: bool = False  # Disable Bracken re-estimation for this run
+
+    # Kraken2 --memory-mapping: read the hash table from disk instead of loading it
+    # fully into RAM. Slower (disk-bound) but avoids OOM on low-RAM hosts when the DB
+    # (hash.k2d) is large relative to available memory.
+    kraken_memory_mapping: bool = False
 
     # Docker image override
     docker_image: str = ""  # Override default image selection (e.g., "stabiom-tools-sr:dev")
@@ -1116,6 +1135,41 @@ def detect_technology(pipeline: str) -> str:
     return "ILLUMINA"  # Default to Illumina for short-read
 
 
+def _apply_kraken_params(cfg: Dict[str, Any], config: "RunConfig") -> None:
+    """Inject kraken_confidence / kraken_min_hit_groups into cfg["tools"]["kraken2"] if set."""
+    if config.kraken_confidence is None and config.kraken_min_hit_groups is None:
+        return
+    kp: Dict[str, Any] = {}
+    if config.kraken_confidence is not None:
+        kp["confidence"] = config.kraken_confidence
+    if config.kraken_min_hit_groups is not None:
+        kp["minimum_hit_groups"] = config.kraken_min_hit_groups
+    cfg.setdefault("tools", {}).setdefault("kraken2", {})
+    cfg["tools"]["kraken2"]["vaginal"] = kp.copy()
+    cfg["tools"]["kraken2"]["nonvaginal"] = kp.copy()
+
+
+def _apply_bracken_params(cfg: Dict[str, Any], config: "RunConfig") -> None:
+    """Inject bracken_readlen / no_bracken into cfg["tools"]["bracken"] if set."""
+    if config.bracken_readlen is None and not config.no_bracken:
+        return
+    bp: Dict[str, Any] = {}
+    if config.no_bracken:
+        bp["enabled"] = 0
+    if config.bracken_readlen is not None:
+        bp["readlen"] = config.bracken_readlen
+    cfg.setdefault("tools", {}).setdefault("bracken", {})
+    cfg["tools"]["bracken"]["vaginal"] = bp.copy()
+    cfg["tools"]["bracken"]["nonvaginal"] = bp.copy()
+
+
+def _apply_kraken_memory_mapping(cfg: Dict[str, Any], config: "RunConfig") -> None:
+    """Inject kraken_memory_mapping into cfg["params"]["kraken2"] if set."""
+    if not config.kraken_memory_mapping:
+        return
+    cfg.setdefault("params", {}).setdefault("kraken2", {})["memory_mapping"] = 1
+
+
 def build_config(config: RunConfig, repo_root: Optional[Path] = None) -> Dict[str, Any]:
     """Build a config dict from RunConfig."""
     if repo_root is None:
@@ -1259,6 +1313,56 @@ def build_config(config: RunConfig, repo_root: Optional[Path] = None) -> Dict[st
         },
     }
 
+    # --- Sample sheet (barcode -> human sample name for demultiplexed runs) ---
+    # Mirrors frontend/utils/config_generator.R's sample_map/sample_sheet wiring so the
+    # same downstream apply_sample_map() in the R postprocess scripts picks it up
+    # regardless of whether the run was launched from the GUI or the CLI.
+    if config.sample_sheet:
+        sample_sheet_src = Path(config.sample_sheet).resolve()
+        if not sample_sheet_src.exists():
+            raise RunnerError(f"Sample sheet not found: {sample_sheet_src}")
+
+        import csv
+
+        delimiter = "\t" if sample_sheet_src.suffix.lower() in (".tsv", ".txt") else ","
+        sample_map: Dict[str, str] = {}
+        try:
+            with open(sample_sheet_src, newline="") as fh:
+                reader = csv.DictReader(fh, delimiter=delimiter)
+                for row in reader:
+                    barcode = (row.get("barcode") or "").strip()
+                    name = (row.get("sample_name") or "").strip()
+                    if barcode and name:
+                        sample_map[barcode] = name
+        except Exception as exc:
+            raise RunnerError(f"Could not parse sample sheet '{sample_sheet_src}': {exc}")
+
+        if not sample_map:
+            raise RunnerError(
+                f"Sample sheet '{sample_sheet_src}' has no usable rows "
+                "(expected columns: barcode, sample_name)"
+            )
+
+        # Written as a SIBLING of run_dir (like the config JSON itself), not inside it —
+        # stabiom_run.sh does `rm -rf "${RUN_DIR}"` on force-overwrite, which would
+        # otherwise delete a file pre-written inside the run directory.
+        sample_sheet_out = outdir / f"sample_sheet_{run_id}.tsv"
+        outdir.mkdir(parents=True, exist_ok=True)
+        with open(sample_sheet_out, "w", newline="") as fh:
+            writer = csv.writer(fh, delimiter="\t")
+            writer.writerow(["barcode", "sample_name"])
+            for barcode, name in sample_map.items():
+                writer.writerow([barcode, name])
+
+        cfg["sample_map"] = sample_map
+        cfg["sample_sheet"] = str(sample_sheet_out)
+        for step_name in ("heatmap", "piechart", "stacked_bar", "results_csv"):
+            if cfg["postprocess"]["steps"].get(step_name):
+                cfg["postprocess"]["steps"][step_name] = {
+                    "enabled": 1,
+                    "params": {"sample_sheet": str(sample_sheet_out)},
+                }
+
     # Add pipeline-specific config
     if config.pipeline == "sr_amp":
         # sr_amp uses QIIME2 with DADA2 for amplicon sequencing - no Kraken2 needed
@@ -1398,6 +1502,9 @@ def build_config(config: RunConfig, repo_root: Optional[Path] = None) -> Dict[st
                 "split_prefix": 1 if config.minimap2_split_index else 0,  # Use split-prefix for low-RAM
             },
         }
+        _apply_kraken_params(cfg, config)
+        _apply_bracken_params(cfg, config)
+        _apply_kraken_memory_mapping(cfg, config)
         # Valencia centroids path - auto-detect from multiple locations
         # Check multiple locations for VALENCIA centroids:
         # 1. tools/VALENCIA/ (installed by setup in bundle)
@@ -1609,6 +1716,9 @@ def build_config(config: RunConfig, repo_root: Optional[Path] = None) -> Dict[st
                 "primer_fasta": "",  # Optional primer FASTA for trimming
             },
         }
+        _apply_kraken_params(cfg, config)
+        _apply_bracken_params(cfg, config)
+        _apply_kraken_memory_mapping(cfg, config)
         # Set full_length based on amplicon type (affects classifier choice: Emu vs Kraken2)
         # full-length (default) -> Emu classifier for complete 16S gene (~1500bp)
         # partial -> Kraken2 classifier for partial 16S (e.g., V3-V4 region)
