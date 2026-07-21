@@ -586,17 +586,61 @@ ui <- suppressWarnings(page_navbar(
         $(this).removeClass('drag-over');
         var $txt = $(this).find('input[type=\"text\"]').first();
         if (!$txt.length) return;
-        var dt = e.originalEvent.dataTransfer;
-        var uri = (dt && dt.getData &&
-                   (dt.getData('text/uri-list') || dt.getData('text/plain'))) || '';
-        if (!uri && dt && dt.files && dt.files.length > 0) {
-          uri = dt.files[0].path || '';
+
+        try {
+          var dt = e.originalEvent.dataTransfer;
+          if (!dt) return;
+
+          var uri = '';
+
+          /* Scan every string MIME type the browser exposed for this drag —
+             WebKit/Safari surfaces a file:// URI for a native Finder drop
+             under 'text/uri-list' (sometimes 'text/plain'), but the exact
+             type name and ordering can vary, so check them all rather than
+             only the two most common ones. */
+          if (dt.types && dt.getData) {
+            var types = Array.prototype.slice.call(dt.types);
+            types.sort(function(a, b) {
+              var rank = function(t) {
+                if (t === 'text/uri-list') return 0;
+                if (t === 'text/plain') return 1;
+                return 2;
+              };
+              return rank(a) - rank(b);
+            });
+            for (var i = 0; i < types.length; i++) {
+              var candidate = '';
+              try { candidate = dt.getData(types[i]) || ''; } catch (err) { candidate = ''; }
+              candidate = candidate.split(/\\r?\\n/)[0].trim();
+              if (candidate && (candidate.indexOf('file://') === 0 || candidate.indexOf('/') === 0)) {
+                uri = candidate;
+                break;
+              }
+            }
+          }
+
+          /* Fall back to a path exposed directly on the File object (only
+             available in some desktop/embedded browser contexts). */
+          if (!uri && dt.files && dt.files.length > 0) {
+            uri = dt.files[0].path || '';
+          }
+
+          if (!uri) return;  /* browser sandboxed the real path — nothing to extract */
+
+          if (uri.indexOf('file://') === 0) {
+            var stripped = uri.replace(/^file:\\/\\/(localhost)?/, '');
+            try {
+              uri = decodeURIComponent(stripped);
+            } catch (err) {
+              uri = stripped;  /* malformed % escape — use the raw path rather than dropping it */
+            }
+          }
+
+          uri = uri.trim();
+          if (uri) { $txt.val(uri).trigger('input'); }
+        } catch (err) {
+          console.error('[STaBioM] drag-and-drop path extraction failed:', err);
         }
-        uri = uri.split(/\\r?\\n/)[0].trim();
-        if (uri.indexOf('file://') === 0) {
-          uri = decodeURIComponent(uri.substring(7));
-        }
-        if (uri) { $txt.val(uri).trigger('input'); }
       });
     });
   ")),

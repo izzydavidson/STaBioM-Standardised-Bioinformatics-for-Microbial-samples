@@ -84,6 +84,52 @@ dashboard_server <- function(id, shared) {
       return("")
     }
 
+    # Read a batch_manifest.json's sample list, tolerant of jsonlite parsing
+    # a uniform array of objects as either a data.frame or a list of lists.
+    read_batch_samples <- function(manifest_path) {
+      manifest <- tryCatch(jsonlite::fromJSON(manifest_path), error = function(e) NULL)
+      if (is.null(manifest) || is.null(manifest$samples)) return(NULL)
+      samples <- manifest$samples
+      if (is.data.frame(samples)) {
+        lapply(seq_len(nrow(samples)), function(i) as.list(samples[i, ]))
+      } else if (is.list(samples) && length(samples) > 0) {
+        samples
+      } else {
+        NULL
+      }
+    }
+
+    # Expand one batch run directory (contains batch_manifest.json) into one
+    # row per sample, reusing the exact same status/pipeline/sample_type
+    # helpers as a normal run directory — just called on the nested sample
+    # run_dir instead of the batch dir itself.
+    expand_batch_dir <- function(batch_dir, batch_date) {
+      sample_list <- read_batch_samples(file.path(batch_dir, "batch_manifest.json"))
+      if (is.null(sample_list)) return(NULL)
+
+      batch_id <- basename(batch_dir)
+      rows <- lapply(sample_list, function(s) {
+        sample_run_id <- if (!is.null(s$run_id)) s$run_id else "sample"
+        sample_name   <- if (!is.null(s$name)) s$name else sample_run_id
+        run_dir       <- if (!is.null(s$run_dir)) s$run_dir else file.path(batch_dir, sample_run_id)
+
+        recorded_status <- if (!is.null(s$status)) s$status else ""
+        status <- if (identical(recorded_status, "completed")) "Completed"
+          else if (identical(recorded_status, "failed")) "Failed"
+          else get_run_status(run_dir)
+
+        data.frame(
+          run_id      = sprintf("%s / %s", batch_id, sample_name),
+          pipeline    = get_pipeline_type(run_dir),
+          sample_type = get_sample_type(run_dir),
+          status      = status,
+          date        = batch_date,
+          stringsAsFactors = FALSE
+        )
+      })
+      do.call(rbind, rows)
+    }
+
     project_stats <- reactive({
       # Poll every 5 seconds — frequent enough to catch new runs without blocking Browse
       invalidateLater(5000)
@@ -102,7 +148,18 @@ dashboard_server <- function(id, shared) {
         return(list(total = 0, completed = 0, in_progress = 0, failed = 0, recent = data.frame()))
       }
 
-      total <- length(run_dirs)
+      # Total sample count: batch dirs count their samples (cheap — just reads
+      # each batch's small manifest file); non-batch dirs count as 1, same as
+      # before. This does not read per-run effective_config.json/logs, so it
+      # stays cheap even with many historical runs.
+      total <- sum(vapply(run_dirs, function(d) {
+        manifest_path <- file.path(d, "batch_manifest.json")
+        if (file.exists(manifest_path)) {
+          sample_list <- read_batch_samples(manifest_path)
+          if (!is.null(sample_list)) return(length(sample_list))
+        }
+        1L
+      }, integer(1)))
 
       # Use a single file.info() call to get all mtimes cheaply, then sort
       # so we only do expensive per-file reads for the most recent 20 runs.
@@ -112,18 +169,19 @@ dashboard_server <- function(id, shared) {
       recent_dirs <- run_dirs[order_idx[seq_len(min(20L, length(run_dirs)))]]
 
       runs <- lapply(recent_dirs, function(run_dir) {
-        run_id     <- basename(run_dir)
-        status     <- get_run_status(run_dir)
-        pipeline   <- get_pipeline_type(run_dir)
-        sample_type <- get_sample_type(run_dir)
-        mtime      <- dir_info[run_dir, "mtime"]
-        date       <- if (!is.na(mtime)) format(mtime, "%Y-%m-%d %H:%M") else ""
+        mtime <- dir_info[run_dir, "mtime"]
+        date  <- if (!is.na(mtime)) format(mtime, "%Y-%m-%d %H:%M") else ""
+
+        if (file.exists(file.path(run_dir, "batch_manifest.json"))) {
+          expanded <- expand_batch_dir(run_dir, date)
+          if (!is.null(expanded) && nrow(expanded) > 0) return(expanded)
+        }
 
         data.frame(
-          run_id      = run_id,
-          pipeline    = pipeline,
-          sample_type = sample_type,
-          status      = status,
+          run_id      = basename(run_dir),
+          pipeline    = get_pipeline_type(run_dir),
+          sample_type = get_sample_type(run_dir),
+          status      = get_run_status(run_dir),
           date        = date,
           stringsAsFactors = FALSE
         )

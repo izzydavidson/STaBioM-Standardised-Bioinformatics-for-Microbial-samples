@@ -166,10 +166,11 @@ Use 'stabiom <command> --help' for more information on a specific command.
     )
     required_group.add_argument(
         "--input", "-i",
-        required=True,
+        required=False,
         nargs="+",
         metavar="PATH",
-        help="Input file(s), directory, or glob pattern (e.g., 'reads/', '*.fastq.gz')",
+        help="Input file(s), directory, or glob pattern (e.g., 'reads/', '*.fastq.gz'). "
+             "Required unless --samples-csv is given.",
     )
 
     # --- OUTPUT options ---
@@ -212,6 +213,24 @@ Use 'stabiom <command> --help' for more information on a specific command.
         default="sample",
         metavar="ID",
         help="Sample identifier for single-sample runs (default: sample)",
+    )
+    sample_group.add_argument(
+        "--samples-csv",
+        default="",
+        metavar="PATH",
+        help="Run a BATCH of independent samples instead of a single run. CSV with header "
+             "'sample_name,r1,r2' (leave r2 blank for single-end). Mutually exclusive with "
+             "--input. Each sample becomes its own run under "
+             "<outdir>/<batch-id>/<sample_name>/, followed by an automatic comparison "
+             "report across all samples (see: stabiom compare).",
+    )
+    sample_group.add_argument(
+        "--sample-sheet",
+        default="",
+        metavar="PATH",
+        help="Path to a barcode->sample-name CSV/TSV (header: barcode,sample_name) for "
+             "demultiplexed runs. Relabels barcode IDs with human-readable sample names "
+             "in final tables/plots (heatmap, piechart, stacked bar, results.csv).",
     )
     sample_group.add_argument(
         "--valencia",
@@ -291,6 +310,47 @@ Use 'stabiom <command> --help' for more information on a specific command.
         default="",
         metavar="PATH",
         help="Emu database path (optional for lr_amp, overrides default)",
+    )
+    db_group.add_argument(
+        "--kraken-confidence",
+        type=float,
+        default=None,
+        metavar="FLOAT",
+        help="Kraken2 confidence threshold (0–1). Fraction of k-mers that must support a "
+             "classification. Site defaults: vaginal=0.02, gut=0.03, oral=0.04, skin=0.03. "
+             "Applies to both vaginal and non-vaginal classifications for this run.",
+    )
+    db_group.add_argument(
+        "--kraken-min-hit-groups",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Kraken2 minimum distinct k-mer hit groups required for a classification. "
+             "Site defaults: vaginal=2, gut=4, oral=4, skin=4. "
+             "Applies to both vaginal and non-vaginal classifications for this run.",
+    )
+    db_group.add_argument(
+        "--bracken-readlen",
+        type=int,
+        default=None,
+        metavar="BP",
+        help="Bracken abundance re-estimation read length in bp. Must match a "
+             "database{N}mers.kmer_distrib file present in the Kraken2 DB, or Bracken "
+             "is silently skipped for that run. Pipeline defaults: lr_meta=1500, sr_meta=150. "
+             "Applies to both vaginal and non-vaginal classifications for this run.",
+    )
+    db_group.add_argument(
+        "--no-bracken",
+        action="store_true",
+        help="Disable Bracken abundance re-estimation for this run (kraken2 classification "
+             "still runs; results.csv falls back to the raw kraken2 report).",
+    )
+    db_group.add_argument(
+        "--kraken-memory-mapping",
+        action="store_true",
+        help="Enable kraken2 --memory-mapping: read the hash table from disk instead of "
+             "loading it fully into RAM. Slower (disk I/O bound) but avoids OOM on low-RAM "
+             "hosts when the database is large relative to available memory.",
     )
 
     # --- PREPROCESSING options ---
@@ -795,6 +855,16 @@ Use 'stabiom <command> --help' for more information on a specific command.
             print(f"{Colors.red_bold('ERROR')}: --valencia and --no-valencia are mutually exclusive.", file=sys.stderr)
             sys.exit(1)
 
+        if args.input and args.samples_csv:
+            print(f"{Colors.red_bold('ERROR')}: --input and --samples-csv are mutually exclusive. "
+                  "Use --input for a single sample, or --samples-csv for a batch.", file=sys.stderr)
+            sys.exit(1)
+
+        if not args.input and not args.samples_csv:
+            print(f"{Colors.red_bold('ERROR')}: Must specify --input (single sample) or "
+                  "--samples-csv (batch of samples).", file=sys.stderr)
+            sys.exit(1)
+
         # Check for Docker if containers are being used
         if not args.no_container and not args.dry_run:
             from cli.setup import check_docker
@@ -808,6 +878,178 @@ Use 'stabiom <command> --help' for more information on a specific command.
                 print("Or run without containers (requires local tool installation):", file=sys.stderr)
                 print("  stabiom run --no-container ...", file=sys.stderr)
                 sys.exit(1)
+
+        # --- BATCH mode: run each row of --samples-csv as its own independent sample run ---
+        if args.samples_csv:
+            import csv
+            import datetime
+            import json
+            import re
+
+            def _sanitize_sample_name(name: str) -> str:
+                cleaned = re.sub(r"[^A-Za-z0-9_.-]+", "_", name.strip())
+                return cleaned.strip("_") or "sample"
+
+            samples_csv_path = Path(args.samples_csv)
+            if not samples_csv_path.exists():
+                print(f"{Colors.red_bold('ERROR')}: --samples-csv file not found: {samples_csv_path}", file=sys.stderr)
+                sys.exit(1)
+
+            rows = []
+            with open(samples_csv_path, newline="") as fh:
+                reader = csv.DictReader(fh)
+                if not reader.fieldnames or "sample_name" not in reader.fieldnames or "r1" not in reader.fieldnames:
+                    print(f"{Colors.red_bold('ERROR')}: --samples-csv must have a header with at least "
+                          "'sample_name,r1' columns (and optionally 'r2').", file=sys.stderr)
+                    sys.exit(1)
+                for row in reader:
+                    name = (row.get("sample_name") or "").strip()
+                    r1 = (row.get("r1") or "").strip()
+                    r2 = (row.get("r2") or "").strip()
+                    if not name or not r1:
+                        continue
+                    rows.append({"sample_name": name, "r1": r1, "r2": r2})
+
+            if not rows:
+                print(f"{Colors.red_bold('ERROR')}: --samples-csv has no usable rows (need sample_name and r1).", file=sys.stderr)
+                sys.exit(1)
+
+            seen_names = set()
+            for row in rows:
+                sanitized = _sanitize_sample_name(row["sample_name"])
+                if sanitized in seen_names:
+                    print(f"{Colors.red_bold('ERROR')}: Duplicate sample name after sanitization: "
+                          f"'{row['sample_name']}' -> '{sanitized}'. Sample names must be unique.", file=sys.stderr)
+                    sys.exit(1)
+                seen_names.add(sanitized)
+
+            batch_id = args.run_id or f"{args.pipeline}_batch_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            batch_outdir = Path(args.outdir) / batch_id
+
+            print(f"\n{Colors.cyan_bold('STaBioM Batch Run')}")
+            print(f"  Batch ID: {batch_id}")
+            print(f"  Samples:  {len(rows)}")
+            print(f"  Output:   {batch_outdir}\n")
+
+            if not args.no_container and not args.dry_run:
+                pass  # Docker already checked above
+
+            repo_root = find_repo_root()
+            batch_results = []
+            for row in rows:
+                sample_name = row["sample_name"]
+                sanitized = _sanitize_sample_name(sample_name)
+                input_paths = [row["r1"]] + ([row["r2"]] if row["r2"] else [])
+
+                for p in input_paths:
+                    if not Path(p).exists():
+                        print(f"{Colors.red_bold('ERROR')}: Input file not found for sample "
+                              f"'{sample_name}': {p}", file=sys.stderr)
+                        sys.exit(1)
+
+                print(f"{Colors.green_bold('-> Sample:')} {sample_name} ({sanitized})")
+
+                sample_config = RunConfig(
+                    pipeline=args.pipeline,
+                    input_paths=input_paths,
+                    outdir=str(batch_outdir),
+                    run_id=sanitized,
+                    threads=args.threads,
+                    sample_type=args.sample_type,
+                    sample_id=sample_name,
+                    sample_sheet=args.sample_sheet or "",
+                    valencia=args.valencia,
+                    no_valencia=args.no_valencia,
+                    valencia_centroids=args.valencia_centroids or "",
+                    barcode_kit=args.barcode_kit,
+                    ligation_kit=args.ligation_kit,
+                    sequencing_kit=args.sequencing_kit or args.ligation_kit,
+                    primer_f=args.primer_f,
+                    primer_r=args.primer_r,
+                    amplicon_type=args.amplicon_type,
+                    seq_type=args.seq_type,
+                    kraken2_db=args.db,
+                    emu_db=args.emu_db,
+                    kraken_confidence=args.kraken_confidence,
+                    kraken_min_hit_groups=args.kraken_min_hit_groups,
+                    bracken_readlen=args.bracken_readlen,
+                    no_bracken=args.no_bracken,
+                    kraken_memory_mapping=args.kraken_memory_mapping,
+                    host_depletion=args.host_depletion,
+                    human_index=args.human_index,
+                    minimap2_split_index=args.minimap2_split,
+                    min_qscore=args.min_qscore,
+                    no_qfilter=args.no_qfilter,
+                    dorado_model=args.dorado_model,
+                    dorado_bin=args.dorado_bin,
+                    dorado_models_dir=args.dorado_models_dir,
+                    postprocess=not args.no_postprocess,
+                    finalize=not args.no_finalize,
+                    qc_in_final=not args.no_qc_in_final,
+                    use_container=not args.no_container,
+                    docker_image=args.image,
+                    verbose=args.verbose and not getattr(args, 'quiet', False),
+                    force_overwrite=args.force,
+                    debug_config=args.debug_config,
+                )
+
+                try:
+                    exit_code = run_pipeline(sample_config, dry_run=args.dry_run, repo_root=repo_root)
+                except RunnerError as e:
+                    print(f"{Colors.red_bold('ERROR')}: sample '{sample_name}': {e}", file=sys.stderr)
+                    exit_code = 1
+                except KeyboardInterrupt:
+                    print(f"\n{Colors.yellow_bold('Interrupted by user')}", file=sys.stderr)
+                    sys.exit(130)
+
+                batch_results.append({
+                    "name": sample_name,
+                    "run_id": sanitized,
+                    "run_dir": str(batch_outdir / sanitized),
+                    "status": "completed" if exit_code == 0 else "failed",
+                })
+
+            n_ok = sum(1 for r in batch_results if r["status"] == "completed")
+            print(f"\n{Colors.cyan_bold('Batch summary')}: {n_ok}/{len(batch_results)} samples completed")
+            for r in batch_results:
+                marker = Colors.green_bold("OK") if r["status"] == "completed" else Colors.red_bold("FAILED")
+                print(f"  [{marker}] {r['name']} -> {r['run_dir']}")
+
+            comparison_dir = None
+            if not args.dry_run and n_ok >= 2:
+                ok_dirs = [r["run_dir"] for r in batch_results if r["status"] == "completed"]
+                try:
+                    from compare.src.compare import CompareConfig, run_compare
+                    print(f"\n{Colors.cyan_bold('Running cross-sample comparison...')}")
+                    compare_cfg = CompareConfig(
+                        run_paths=ok_dirs,
+                        outdir=str(batch_outdir),
+                        name="comparison",
+                        verbose=args.verbose,
+                    )
+                    compare_exit = run_compare(compare_cfg)
+                    if compare_exit == 0:
+                        comparison_dir = str(batch_outdir / "comparison")
+                        print(f"{Colors.green_bold('Comparison report:')} {comparison_dir}/compare/report/index.html")
+                    else:
+                        print(f"{Colors.yellow_bold('WARNING')}: comparison exited with code {compare_exit} "
+                              "(sample results are still valid)", file=sys.stderr)
+                except Exception as e:
+                    print(f"{Colors.yellow_bold('WARNING')}: cross-sample comparison failed: {e} "
+                          "(sample results are still valid)", file=sys.stderr)
+
+            if not args.dry_run:
+                batch_outdir.mkdir(parents=True, exist_ok=True)
+                manifest = {
+                    "batch_id": batch_id,
+                    "pipeline": args.pipeline,
+                    "samples": batch_results,
+                    "comparison_dir": comparison_dir,
+                }
+                with open(batch_outdir / "batch_manifest.json", "w") as fh:
+                    json.dump(manifest, fh, indent=2)
+
+            sys.exit(0 if n_ok == len(batch_results) else 1)
 
         # Expand glob patterns and directories in input paths
         input_paths = []
@@ -858,18 +1100,24 @@ Use 'stabiom <command> --help' for more information on a specific command.
             threads=args.threads,
             sample_type=args.sample_type,
             sample_id=args.sample_id,
+            sample_sheet=args.sample_sheet or "",
             valencia=args.valencia,
             no_valencia=args.no_valencia,
             valencia_centroids=args.valencia_centroids or "",
             barcode_kit=args.barcode_kit,
             ligation_kit=args.ligation_kit,
-            sequencing_kit=args.sequencing_kit or args.ligation_kit,  # Default to ligation_kit if not specified
+            sequencing_kit=args.sequencing_kit or args.ligation_kit,
             primer_f=args.primer_f,
             primer_r=args.primer_r,
             amplicon_type=args.amplicon_type,
             seq_type=args.seq_type,
             kraken2_db=args.db,
             emu_db=args.emu_db,
+            kraken_confidence=args.kraken_confidence,
+            kraken_min_hit_groups=args.kraken_min_hit_groups,
+            bracken_readlen=args.bracken_readlen,
+            no_bracken=args.no_bracken,
+            kraken_memory_mapping=args.kraken_memory_mapping,
             host_depletion=args.host_depletion,
             human_index=args.human_index,
             minimap2_split_index=args.minimap2_split,

@@ -616,6 +616,54 @@ generate_sr_meta_config <- function(params) {
     )
   }
 
+  # --- Kraken2 classification params (confidence / minimum hit groups) ---
+  # CLI reads: .tools.kraken2.vaginal.confidence, .tools.kraken2.vaginal.minimum_hit_groups
+  #            .tools.kraken2.nonvaginal.confidence, .tools.kraken2.nonvaginal.minimum_hit_groups
+  kraken_confidence     <- if (!is.null(params$kraken_confidence))     as.numeric(params$kraken_confidence)     else NULL
+  kraken_min_hit_groups <- if (!is.null(params$kraken_min_hit_groups)) as.integer(params$kraken_min_hit_groups) else NULL
+  cat("[WIRE] tools.kraken2.*.confidence:", if (is.null(kraken_confidence)) "(default)" else kraken_confidence, "\n")
+  cat("[WIRE] tools.kraken2.*.minimum_hit_groups:", if (is.null(kraken_min_hit_groups)) "(default)" else kraken_min_hit_groups, "\n")
+  if (!is.null(kraken_confidence) || !is.null(kraken_min_hit_groups)) {
+    kp <- list()
+    if (!is.null(kraken_confidence))     kp$confidence         <- kraken_confidence
+    if (!is.null(kraken_min_hit_groups)) kp$minimum_hit_groups <- kraken_min_hit_groups
+    if (is.null(config$tools)) config$tools <- list()
+    config$tools$kraken2 <- list(vaginal = kp, nonvaginal = kp)
+  }
+
+  # --- Bracken readlen: respect user wizard preference, auto-detect from DB, fallback to 150 (SR PE150 reads) ---
+  # CLI reads: .tools.bracken.vaginal.enabled/.readlen, .tools.bracken.nonvaginal.enabled/.readlen
+  bracken_rl_pref_sr <- params$bracken_readlen %||% "auto"
+  bracken_readlen_sr <- if (bracken_rl_pref_sr == "auto") {
+    available_sr <- if (!is.null(kraken_db_path) && dir.exists(kraken_db_path)) {
+      files_sr <- list.files(kraken_db_path, pattern = "^database[0-9]+mers\\.kmer_distrib$")
+      lens_sr  <- suppressWarnings(
+        as.integer(gsub("^database([0-9]+)mers\\.kmer_distrib$", "\\1", files_sr)))
+      lens_sr[!is.na(lens_sr)]
+    } else integer(0)
+    if (length(available_sr) > 0) {
+      # SR reads are short (~PE150); unlike LR (which prefers the longest available
+      # profile), pick whichever profile is CLOSEST to 150bp. A DB built for both LR
+      # and SR use (e.g. one with 150/500/750/.../2000mers profiles) must not hand SR
+      # runs a badly-mismatched long-read profile just because it's the largest.
+      chosen_sr <- available_sr[which.min(abs(available_sr - 150L))]
+      cat("[WIRE] bracken readlen: auto-detected", chosen_sr, "mers from DB (closest to 150bp SR read length)\n")
+      chosen_sr
+    } else {
+      cat("[WIRE] bracken readlen: auto fallback to 150 (no DB path or no kmer_distrib)\n")
+      150L
+    }
+  } else {
+    rl_sr <- suppressWarnings(as.integer(bracken_rl_pref_sr))
+    cat("[WIRE] bracken readlen: user preference", rl_sr, "mers\n")
+    rl_sr
+  }
+  if (is.null(config$tools)) config$tools <- list()
+  config$tools$bracken <- list(
+    vaginal    = list(enabled = 1L, readlen = bracken_readlen_sr),
+    nonvaginal = list(enabled = 1L, readlen = bracken_readlen_sr)
+  )
+
   # --- Kraken2 memory mapping (low-RAM mode) ---
   # CLI reads: .params.kraken2.memory_mapping (sr_meta.sh)
   kraken_memory_mapping <- if (!is.null(params$kraken_memory_mapping) && isTRUE(params$kraken_memory_mapping)) TRUE else FALSE
@@ -699,6 +747,9 @@ generate_sr_meta_config <- function(params) {
   if (!is.null(config$host$resources$kraken2_db)) {
     cat("  host.resources.kraken2_db:          ", config$host$resources$kraken2_db$host_path, "\n")
   }
+  cat("  tools.kraken2.vaginal.confidence:   ", if (!is.null(config$tools$kraken2$vaginal$confidence)) config$tools$kraken2$vaginal$confidence else "(default)", "\n")
+  cat("  tools.kraken2.vaginal.min_hit_groups:", if (!is.null(config$tools$kraken2$vaginal$minimum_hit_groups)) config$tools$kraken2$vaginal$minimum_hit_groups else "(default)", "\n")
+  cat("  tools.bracken.vaginal.readlen:      ", if (!is.null(config$tools$bracken$vaginal$readlen)) config$tools$bracken$vaginal$readlen else "(not set)", "\n")
   cat("  params.kraken2.memory_mapping:      ", if (!is.null(config$params$kraken2$memory_mapping)) config$params$kraken2$memory_mapping else "FALSE (omitted)", "\n")
   cat("  tools.minimap2.human_mmi:           ", if (!is.null(config$tools$minimap2$human_mmi)) config$tools$minimap2$human_mmi else "(not set)", "\n")
   cat("  postprocess.steps.valencia:         ", config$postprocess$steps$valencia, "\n")

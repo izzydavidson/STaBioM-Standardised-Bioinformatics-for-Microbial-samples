@@ -832,6 +832,67 @@ fi
 KRAKEN2_MEMORY_MAPPING_RAW="$(jq_first "${CONFIG_PATH}" '.params.kraken2.memory_mapping' '.kraken2.memory_mapping' || true)"
 KRAKEN2_MEMORY_MAPPING="$(normalize_boolish "${KRAKEN2_MEMORY_MAPPING_RAW}")"
 
+# Kraken2 classification tuning (confidence / minimum-hit-groups) — mirrors lr_meta.sh.
+# SPECIMEN_NORM (resolved earlier) selects the vaginal vs nonvaginal config branch.
+KRAKEN_CONF_VAGINAL="$(jq_first "${CONFIG_PATH}" '.tools.kraken2.vaginal.confidence' '.kraken_confidence_vaginal' || true)"
+[[ -n "${KRAKEN_CONF_VAGINAL}" ]] || KRAKEN_CONF_VAGINAL="0.05"
+KRAKEN_MHG_VAGINAL="$(jq_first "${CONFIG_PATH}" '.tools.kraken2.vaginal.minimum_hit_groups' '.kraken_min_hit_groups_vaginal' || true)"
+[[ -n "${KRAKEN_MHG_VAGINAL}" ]] || KRAKEN_MHG_VAGINAL="2"
+
+KRAKEN_CONF_NONVAGINAL="$(jq_first "${CONFIG_PATH}" '.tools.kraken2.nonvaginal.confidence' '.kraken_confidence_nonvaginal' || true)"
+[[ -n "${KRAKEN_CONF_NONVAGINAL}" ]] || KRAKEN_CONF_NONVAGINAL="0.02"
+KRAKEN_MHG_NONVAGINAL="$(jq_first "${CONFIG_PATH}" '.tools.kraken2.nonvaginal.minimum_hit_groups' '.kraken_min_hit_groups_nonvaginal' || true)"
+[[ -n "${KRAKEN_MHG_NONVAGINAL}" ]] || KRAKEN_MHG_NONVAGINAL="2"
+
+if [[ "${SPECIMEN_NORM}" == "vaginal" ]]; then
+  KRAKEN_CONF="${KRAKEN_CONF_VAGINAL}"
+  KRAKEN_MHG="${KRAKEN_MHG_VAGINAL}"
+else
+  KRAKEN_CONF="${KRAKEN_CONF_NONVAGINAL}"
+  KRAKEN_MHG="${KRAKEN_MHG_NONVAGINAL}"
+fi
+
+# Bracken (post-kraken2 abundance re-estimation) tuning — mirrors lr_meta.sh.
+BRACKEN_BIN="$(resolve_tool "${CONFIG_PATH}" '.tools.bracken.bin' 'bracken')"
+USE_BRACKEN_VAGINAL="$(jq_first "${CONFIG_PATH}" '.tools.bracken.vaginal.enabled' '.use_bracken_vaginal' || true)"
+[[ -n "${USE_BRACKEN_VAGINAL}" ]] || USE_BRACKEN_VAGINAL="1"
+BRACKEN_READLEN_VAGINAL="$(jq_first "${CONFIG_PATH}" '.tools.bracken.vaginal.readlen' '.bracken_readlen_vaginal' || true)"
+[[ -n "${BRACKEN_READLEN_VAGINAL}" ]] || BRACKEN_READLEN_VAGINAL="150"
+
+USE_BRACKEN_NONVAGINAL="$(jq_first "${CONFIG_PATH}" '.tools.bracken.nonvaginal.enabled' '.use_bracken_nonvaginal' || true)"
+[[ -n "${USE_BRACKEN_NONVAGINAL}" ]] || USE_BRACKEN_NONVAGINAL="1"
+BRACKEN_READLEN_NONVAGINAL="$(jq_first "${CONFIG_PATH}" '.tools.bracken.nonvaginal.readlen' '.bracken_readlen_nonvaginal' || true)"
+[[ -n "${BRACKEN_READLEN_NONVAGINAL}" ]] || BRACKEN_READLEN_NONVAGINAL="${BRACKEN_READLEN_VAGINAL}"
+
+if [[ "${SPECIMEN_NORM}" == "vaginal" ]]; then
+  USE_BRACKEN="${USE_BRACKEN_VAGINAL}"
+  BRACKEN_READLEN="${BRACKEN_READLEN_VAGINAL}"
+else
+  USE_BRACKEN="${USE_BRACKEN_NONVAGINAL}"
+  BRACKEN_READLEN="${BRACKEN_READLEN_NONVAGINAL}"
+fi
+
+BRACKEN_DIR="${RESULTS_DIR}/bracken"
+BRACKEN_LOG="${LOGS_DIR}/bracken.log"
+BRACKEN_AVAILABLE="0"
+DO_BRACKEN="0"
+if [[ "${USE_BRACKEN}" == "1" || "${USE_BRACKEN}" == "true" ]]; then
+  if ! command -v "${BRACKEN_BIN}" >/dev/null 2>&1; then
+    echo "[bracken] bracken binary not found (${BRACKEN_BIN}) — Bracken will be skipped" >>"${BRACKEN_LOG}" 2>&1
+  else
+    KRAKEN_KMER_DISTRIB="${KRAKEN2_DB}/database${BRACKEN_READLEN}mers.kmer_distrib"
+    if [[ ! -s "${KRAKEN_KMER_DISTRIB}" ]]; then
+      echo "[bracken] kmer_distrib missing for readlen=${BRACKEN_READLEN}: ${KRAKEN_KMER_DISTRIB} — Bracken will be skipped" >>"${BRACKEN_LOG}" 2>&1
+    else
+      BRACKEN_AVAILABLE="1"
+      DO_BRACKEN="1"
+      mkdir -p "${BRACKEN_DIR}"
+    fi
+  fi
+else
+  echo "[bracken] disabled via config (specimen=${SPECIMEN_NORM})" >>"${BRACKEN_LOG}" 2>&1
+fi
+
 KRAKEN_DIR="${RESULTS_DIR}/kraken2"
 mkdir -p "${KRAKEN_DIR}"
 KRAKEN_LOG="${LOGS_DIR}/kraken2.log"
@@ -842,9 +903,12 @@ if [[ "${KRAKEN2_MEMORY_MAPPING}" == "true" ]]; then
   KRAKEN2_EXTRA_ARGS+=( --memory-mapping )
   echo "[kraken2] memory-mapping enabled (uses disk I/O instead of loading DB into RAM)" >>"${KRAKEN_LOG}" 2>&1
 fi
+echo "[kraken2] --confidence ${KRAKEN_CONF} --minimum-hit-groups ${KRAKEN_MHG} (specimen=${SPECIMEN_NORM})" >>"${KRAKEN_LOG}" 2>&1
 
 declare -A KRAKEN_REPORT=()
 declare -A KRAKEN_OUTPUT=()
+declare -A BRACKEN_OUTPUT=()
+declare -A BRACKEN_REPORT=()
 
 started="$(iso_now)"
 set +e
@@ -857,12 +921,16 @@ for u in "${UNITS[@]}"; do
     r1="${NONHOST_R1[${u}]}"
     r2="${NONHOST_R2[${u}]}"
     "${KRAKEN2_BIN}" --db "${KRAKEN2_DB}" "${KRAKEN2_EXTRA_ARGS[@]}" --threads "${THREADS}" --paired --gzip-compressed \
+      --confidence "${KRAKEN_CONF}" \
+      --minimum-hit-groups "${KRAKEN_MHG}" \
       --report "${report}" \
       --output "${out}" \
       "${r1}" "${r2}" >>"${KRAKEN_LOG}" 2>&1
   else
     r1="${NONHOST_R1[${u}]}"
     "${KRAKEN2_BIN}" --db "${KRAKEN2_DB}" "${KRAKEN2_EXTRA_ARGS[@]}" --threads "${THREADS}" --gzip-compressed \
+      --confidence "${KRAKEN_CONF}" \
+      --minimum-hit-groups "${KRAKEN_MHG}" \
       --report "${report}" \
       --output "${out}" \
       "${r1}" >>"${KRAKEN_LOG}" 2>&1
@@ -878,13 +946,39 @@ for u in "${UNITS[@]}"; do
 
   KRAKEN_REPORT["${u}"]="${report}"
   KRAKEN_OUTPUT["${u}"]="${out}"
+
+  if [[ "${DO_BRACKEN}" -eq 1 ]]; then
+    echo "[bracken] unit=${u} readlen=${BRACKEN_READLEN}" >>"${BRACKEN_LOG}" 2>&1
+    bout="${BRACKEN_DIR}/${u}.bracken"
+    breport="${BRACKEN_DIR}/${u}.breport"
+    "${BRACKEN_BIN}" \
+      -d "${KRAKEN2_DB}" \
+      -i "${report}" \
+      -o "${bout}" \
+      -w "${breport}" \
+      -r "${BRACKEN_READLEN}" \
+      -l S >>"${BRACKEN_LOG}" 2>&1
+    if [[ $? -eq 0 && -s "${breport}" ]]; then
+      BRACKEN_OUTPUT["${u}"]="${bout}"
+      BRACKEN_REPORT["${u}"]="${breport}"
+    else
+      echo "[bracken] unit=${u} failed — continuing with raw kraken2 report" >>"${BRACKEN_LOG}" 2>&1
+    fi
+  fi
 done
 set -e
 ended="$(iso_now)"
-steps_append "${STEPS_JSON}" "kraken2" "succeeded" "kraken2 classification completed" "${KRAKEN2_BIN}" "kraken2" "0" "${started}" "${ended}"
+steps_append "${STEPS_JSON}" "kraken2" "succeeded" "kraken2 classification completed (confidence=${KRAKEN_CONF}, minimum-hit-groups=${KRAKEN_MHG})" "${KRAKEN2_BIN}" "kraken2" "0" "${started}" "${ended}"
+if [[ "${DO_BRACKEN}" -eq 1 ]]; then
+  steps_append "${STEPS_JSON}" "bracken" "succeeded" "bracken re-estimation completed (readlen=${BRACKEN_READLEN})" "${BRACKEN_BIN}" "bracken" "0" "${started}" "${ended}"
+else
+  steps_append "${STEPS_JSON}" "bracken" "skipped" "Bracken disabled or unavailable (see logs/bracken.log)" "" "" "0" "${started}" "${ended}"
+fi
 
 tmp="${OUTPUTS_JSON}.tmp"
-jq --arg kraken2_dir "${KRAKEN_DIR}" --arg kraken2_log "${KRAKEN_LOG}" '. + {kraken2:{dir:$kraken2_dir, log:$kraken2_log}}' "${OUTPUTS_JSON}" > "${tmp}"
+jq --arg kraken2_dir "${KRAKEN_DIR}" --arg kraken2_log "${KRAKEN_LOG}" \
+   --arg bracken_dir "${BRACKEN_DIR}" --arg bracken_log "${BRACKEN_LOG}" --arg bracken_enabled "${DO_BRACKEN}" \
+   '. + {kraken2:{dir:$kraken2_dir, log:$kraken2_log}, bracken:{enabled:($bracken_enabled=="1"), dir:$bracken_dir, log:$bracken_log}}' "${OUTPUTS_JSON}" > "${tmp}"
 mv "${tmp}" "${OUTPUTS_JSON}"
 
 # -----------------------------
@@ -942,11 +1036,11 @@ else
   started="$(iso_now)"
   set +e
 
-  python3 - "${STAGED_VALENCIA_CENTROIDS}" "${KRAKEN_DIR}" "${VALENCIA_DIR}" "${VALENCIA_PLOTS_DIR}" >>"${VALENCIA_LOG}" 2>&1 <<'VALENCIA_PY'
+  python3 - "${STAGED_VALENCIA_CENTROIDS}" "${KRAKEN_DIR}" "${VALENCIA_DIR}" "${VALENCIA_PLOTS_DIR}" "${BRACKEN_DIR}" >>"${VALENCIA_LOG}" 2>&1 <<'VALENCIA_PY'
 import sys, os, re, csv, math
 from pathlib import Path
 
-centroids_csv, kraken_dir, out_dir, plots_dir = sys.argv[1:]
+centroids_csv, kraken_dir, out_dir, plots_dir, bracken_dir = sys.argv[1:]
 os.makedirs(out_dir, exist_ok=True)
 os.makedirs(plots_dir, exist_ok=True)
 
@@ -1002,6 +1096,7 @@ def parse_kreport(path: str):
 
 # Find all kreport files (sr_meta uses .report.tsv naming)
 kraken_path = Path(kraken_dir)
+bracken_path = Path(bracken_dir) if bracken_dir else None
 kreport_files = list(kraken_path.glob("*.report.tsv"))
 
 if not kreport_files:
@@ -1010,13 +1105,19 @@ if not kreport_files:
 
 print(f"Found {len(kreport_files)} kreport file(s)")
 
-# Build sample data from kreports
+# Build sample data from kreports (prefer Bracken-corrected .breport when present)
 samples_data = []
 all_taxa = set()
 
 for kreport_path in kreport_files:
     sample_id = kreport_path.stem.replace(".report", "")
-    taxa_counts, total_reads = parse_kreport(kreport_path)
+    source_path = kreport_path
+    if bracken_path is not None:
+        breport_candidate = bracken_path / f"{sample_id}.breport"
+        if breport_candidate.exists() and breport_candidate.stat().st_size > 0:
+            source_path = breport_candidate
+            print(f"  Using Bracken-corrected report for {sample_id}: {breport_candidate.name}")
+    taxa_counts, total_reads = parse_kreport(source_path)
 
     if not taxa_counts:
         print(f"  Skipping {sample_id}: no species-level taxa found")
@@ -1327,7 +1428,7 @@ mkdir -p "${POSTPROCESS_DIR}" "${FINAL_DIR}" "${FINAL_DIR}/plots" "${FINAL_DIR}/
 started="$(iso_now)"
 set +e
 
-python3 - "${KRAKEN_DIR}" "${POSTPROCESS_DIR}" "${FINAL_DIR}" "${VALENCIA_DIR}" "${POSTPROCESS_LOG}" "${SAMPLE_ID}" <<'PY'
+python3 - "${KRAKEN_DIR}" "${POSTPROCESS_DIR}" "${FINAL_DIR}" "${VALENCIA_DIR}" "${POSTPROCESS_LOG}" "${SAMPLE_ID}" "${BRACKEN_DIR}" <<'PY'
 import os
 import sys
 import csv
@@ -1341,6 +1442,7 @@ final_dir = Path(sys.argv[3])
 valencia_dir = Path(sys.argv[4])
 log_path = Path(sys.argv[5])
 sample_id = sys.argv[6]
+bracken_dir = Path(sys.argv[7]) if len(sys.argv) > 7 and sys.argv[7] else None
 
 def log(msg):
     with open(log_path, "a", encoding="utf-8") as f:
@@ -1394,13 +1496,19 @@ if not reports:
 
 log(f"[postprocess] Found {len(reports)} kraken2 report(s)")
 
-# Process each report
+# Process each report (prefer Bracken-corrected .breport when present)
 all_species = []
 all_genus = []
 
 for report_path in reports:
     unit = report_path.stem.replace(".report", "")
-    rows_by_rank, total_reads = parse_kreport(report_path)
+    source_path = report_path
+    if bracken_dir is not None:
+        breport_candidate = bracken_dir / f"{unit}.breport"
+        if breport_candidate.exists() and breport_candidate.stat().st_size > 0:
+            source_path = breport_candidate
+            log(f"[postprocess] Using Bracken-corrected report for {unit}: {breport_candidate.name}")
+    rows_by_rank, total_reads = parse_kreport(source_path)
 
     # Species level (S)
     for row in rows_by_rank.get("S", []):
@@ -1578,10 +1686,16 @@ except Exception as e:
 # Copy key outputs to final directory
 import shutil
 
-# Copy kraken reports
+# Copy kraken reports (and their Bracken-corrected .breport counterpart, if any)
 for report in reports:
     shutil.copy2(report, final_dir / "tables" / report.name)
     log(f"[postprocess] Copied {report.name} to final/tables/")
+    if bracken_dir is not None:
+        unit = report.stem.replace(".report", "")
+        breport_candidate = bracken_dir / f"{unit}.breport"
+        if breport_candidate.exists() and breport_candidate.stat().st_size > 0:
+            shutil.copy2(breport_candidate, final_dir / "tables" / breport_candidate.name)
+            log(f"[postprocess] Copied {breport_candidate.name} to final/tables/")
 
 # Copy summary CSVs
 if species_tidy.exists():

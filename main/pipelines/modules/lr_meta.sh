@@ -463,7 +463,7 @@ KRAKEN_MHG_NONVAGINAL="$(jq_first "${CONFIG_PATH}" '.tools.kraken2.nonvaginal.mi
 USE_BRACKEN_VAGINAL="$(jq_first "${CONFIG_PATH}" '.tools.bracken.vaginal.enabled' '.use_bracken_vaginal' || true)"
 [[ -n "${USE_BRACKEN_VAGINAL}" ]] || USE_BRACKEN_VAGINAL="1"
 BRACKEN_READLEN_VAGINAL="$(jq_first "${CONFIG_PATH}" '.tools.bracken.vaginal.readlen' '.bracken_readlen_vaginal' || true)"
-[[ -n "${BRACKEN_READLEN_VAGINAL}" ]] || BRACKEN_READLEN_VAGINAL="1200"
+[[ -n "${BRACKEN_READLEN_VAGINAL}" ]] || BRACKEN_READLEN_VAGINAL="1500"
 
 USE_BRACKEN_NONVAGINAL="$(jq_first "${CONFIG_PATH}" '.tools.bracken.nonvaginal.enabled' '.use_bracken_nonvaginal' || true)"
 [[ -n "${USE_BRACKEN_NONVAGINAL}" ]] || USE_BRACKEN_NONVAGINAL="1"
@@ -1370,13 +1370,18 @@ if not kreport_files:
 
 print(f"Found {len(kreport_files)} kreport file(s)")
 
-# Build sample data from kreports
+# Build sample data from kreports (prefer Bracken-corrected .breport when present)
 samples_data = []
 all_taxa = set()
 
 for kreport_path in kreport_files:
     sample_id = kreport_path.parent.name
-    taxa_counts, total_reads = parse_kreport(kreport_path)
+    source_path = kreport_path
+    breport_candidate = kreport_path.parent / f"{sample_id}.breport"
+    if breport_candidate.exists() and breport_candidate.stat().st_size > 0:
+        source_path = breport_candidate
+        print(f"  Using Bracken-corrected report for {sample_id}: {breport_candidate.name}")
+    taxa_counts, total_reads = parse_kreport(source_path)
 
     if not taxa_counts:
         print(f"  Skipping {sample_id}: no species-level taxa found")
@@ -1810,13 +1815,18 @@ if not reports:
 
 log(f"[postprocess] Found {len(reports)} kraken2 report(s)")
 
-# Process each report
+# Process each report (prefer Bracken-corrected .breport when present)
 all_species = []
 all_genus = []
 
 for report_path in reports:
     barcode = report_path.parent.name
-    rows_by_rank, total_reads = parse_kreport(report_path)
+    source_path = report_path
+    breport_candidate = report_path.parent / f"{barcode}.breport"
+    if breport_candidate.exists() and breport_candidate.stat().st_size > 0:
+        source_path = breport_candidate
+        log(f"[postprocess] Using Bracken-corrected report for {barcode}: {breport_candidate.name}")
+    rows_by_rank, total_reads = parse_kreport(source_path)
 
     # Species level (S)
     for row in rows_by_rank.get("S", []):
@@ -1867,11 +1877,16 @@ log("[postprocess] Tidy CSVs ready for HOST-side R postprocessing (plots will be
 # Copy key outputs to final directory
 import shutil
 
-# Copy kraken reports
+# Copy kraken reports (and their Bracken-corrected .breport counterpart, if any)
 for report in reports:
     dest_name = f"{report.parent.name}_{report.name}"
     shutil.copy2(report, final_dir / "tables" / dest_name)
     log(f"[postprocess] Copied {dest_name} to final/tables/")
+    breport_candidate = report.parent / f"{report.parent.name}.breport"
+    if breport_candidate.exists() and breport_candidate.stat().st_size > 0:
+        breport_dest = f"{report.parent.name}_{breport_candidate.name}"
+        shutil.copy2(breport_candidate, final_dir / "tables" / breport_dest)
+        log(f"[postprocess] Copied {breport_dest} to final/tables/")
 
 # Copy summary CSVs
 if species_tidy.exists():

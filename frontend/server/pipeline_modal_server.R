@@ -194,33 +194,129 @@ pipeline_modal_server <- function(id, shared) {
     log_offsets <- reactiveVal(list())
     combined_log_buffer <- reactiveVal(character())
 
-    observeEvent(shared$run_status, {
-      if (shared$run_status == "ready" && !is.null(shared$current_run)) {
-        cat("[DEBUG] Showing pipeline modal\n")
+    # --- Batch queue state (multi-sample runs) ---
+    # batch_state$index == 0L means "not currently running a batch" — every code
+    # path below that checks batch_state$index > 0L is additive; single-sample
+    # runs (shared$current_run set directly, shared$current_batch absent) never
+    # touch this and behave exactly as before.
+    batch_state <- reactiveValues(
+      batch_id = NULL, pipeline = NULL, queue = list(), index = 0L, results = list()
+    )
 
-        config_json <- tryCatch({
-          jsonlite::toJSON(
-            jsonlite::fromJSON(shared$current_run$config_file),
-            pretty = TRUE,
-            auto_unbox = TRUE
-          )
+    pipeline_label_for <- function(pipeline_id) {
+      switch(pipeline_id,
+        "sr_amp" = "Short Read 16S Amplicon",
+        "sr_meta" = "Short Read Metagenomics",
+        "lr_amp" = "Long Read 16S Amplicon",
+        "lr_meta" = "Long Read Metagenomics",
+        pipeline_id
+      )
+    }
+
+    show_run_modal <- function(title, pipeline_id, config_file) {
+      config_json <- tryCatch({
+        jsonlite::toJSON(jsonlite::fromJSON(config_file), pretty = TRUE, auto_unbox = TRUE)
+      }, error = function(e) {
+        paste("Error reading config:", e$message)
+      })
+
+      showModal(pipeline_modal_ui(title, pipeline_label_for(pipeline_id), config_json, session))
+    }
+
+    # Start (or restart, for the next queued sample) execution for one batch sample.
+    start_batch_sample <- function(idx) {
+      run_info <- batch_state$queue[[idx]]
+      n_total  <- length(batch_state$queue)
+
+      shared$current_run <- list(
+        run_id      = run_info$run_id,
+        pipeline    = run_info$pipeline,
+        config_file = run_info$config_file,
+        run_name    = run_info$sample_name,
+        sample_type = NULL
+      )
+
+      modal_title <- sprintf("%s  ·  Sample %d of %d: %s",
+        batch_state$batch_id, idx, n_total, run_info$sample_name)
+      show_run_modal(modal_title, run_info$pipeline, run_info$config_file)
+
+      execute_pipeline()
+    }
+
+    # Called once the last queued sample finishes: write batch_manifest.json and,
+    # if >=2 samples succeeded, auto-invoke `stabiom compare` across their run dirs
+    # (reuses the existing compare CLI subcommand — no new plotting/report code).
+    finish_batch <- function() {
+      results <- batch_state$results
+      n_ok <- sum(vapply(results, function(r) r$status == "completed", logical(1)))
+
+      repo_root   <- dirname(getwd())
+      batch_outdir <- file.path(repo_root, "outputs", batch_state$batch_id)
+
+      comparison_dir <- NULL
+      if (n_ok >= 2) {
+        ok_dirs <- vapply(Filter(function(r) r$status == "completed", results), `[[`, character(1), "run_dir")
+        stabiom_bin <- file.path(repo_root, "stabiom")
+        compare_args <- c("compare")
+        for (d in ok_dirs) compare_args <- c(compare_args, "--run", d)
+        compare_args <- c(compare_args, "--outdir", batch_outdir, "--name", "comparison")
+
+        tryCatch({
+          compare_log <- file.path(batch_outdir, "comparison.log")
+          dir.create(batch_outdir, recursive = TRUE, showWarnings = FALSE)
+          processx::run(stabiom_bin, compare_args, wd = repo_root,
+                         stdout = compare_log, stderr = compare_log, error_on_status = FALSE)
+          comparison_dir <- file.path(batch_outdir, "comparison")
+          cat("[INFO] Batch comparison written to:", comparison_dir, "\n")
         }, error = function(e) {
-          paste("Error reading config:", e$message)
+          cat("[WARNING] Batch comparison failed:", e$message, "(sample results are still valid)\n")
         })
+      }
 
-        showModal(pipeline_modal_ui(
-          shared$current_run$run_id,
-          switch(shared$current_run$pipeline,
-            "sr_amp" = "Short Read 16S Amplicon",
-            "sr_meta" = "Short Read Metagenomics",
-            "lr_amp" = "Long Read 16S Amplicon",
-            "lr_meta" = "Long Read Metagenomics",
-            shared$current_run$pipeline
-          ),
-          config_json,
-          session
-        ))
+      tryCatch({
+        dir.create(batch_outdir, recursive = TRUE, showWarnings = FALSE)
+        manifest <- list(
+          batch_id = batch_state$batch_id,
+          pipeline = batch_state$pipeline,
+          samples  = results,
+          comparison_dir = comparison_dir
+        )
+        jsonlite::write_json(manifest, file.path(batch_outdir, "batch_manifest.json"),
+                              auto_unbox = TRUE, pretty = TRUE)
+      }, error = function(e) {
+        cat("[WARNING] Could not write batch_manifest.json:", e$message, "\n")
+      })
 
+      showNotification(
+        sprintf("Batch complete: %d/%d samples succeeded.", n_ok, length(results)),
+        type = if (n_ok == length(results)) "message" else "warning",
+        duration = 15
+      )
+
+      batch_state$index <- 0L
+      shared$run_status <- if (n_ok == length(results)) "completed" else "failed"
+    }
+
+    observeEvent(shared$run_status, {
+      if (shared$run_status != "ready") return()
+
+      if (!is.null(shared$current_batch)) {
+        cat("[DEBUG] Starting batch run:", shared$current_batch$batch_id,
+            "(", length(shared$current_batch$runs), "samples )\n")
+        batch_state$batch_id <- shared$current_batch$batch_id
+        batch_state$pipeline <- shared$current_batch$pipeline
+        batch_state$queue    <- shared$current_batch$runs
+        batch_state$index    <- 1L
+        batch_state$results  <- list()
+        shared$current_batch <- NULL  # consume the trigger
+
+        start_batch_sample(1L)
+        return()
+      }
+
+      if (!is.null(shared$current_run)) {
+        cat("[DEBUG] Showing pipeline modal\n")
+        show_run_modal(shared$current_run$run_id, shared$current_run$pipeline, shared$current_run$config_file)
         execute_pipeline()
       }
     })
@@ -312,6 +408,7 @@ pipeline_modal_server <- function(id, shared) {
 
       }, error = function(e) {
         shared$run_status <- "failed"
+        batch_state$index <- 0L  # abort the batch rather than leaving stale queue state
         cat("[ERROR]", e$message, "\n")
       })
     }
@@ -546,23 +643,64 @@ pipeline_modal_server <- function(id, shared) {
               rd_val  <- run_dir()
               extra   <- trimws(shared$additional_output_dir)
               dest    <- file.path(extra, basename(rd_val))
+              if (!dir.exists(extra)) {
+                stop("Destination directory does not exist: ", extra)
+              }
               # Remove stale destination so file.copy gets a clean slate
               if (dir.exists(dest)) unlink(dest, recursive = TRUE)
-              file.copy(rd_val, extra, recursive = TRUE, overwrite = TRUE)
+              copy_ok <- file.copy(rd_val, extra, recursive = TRUE, overwrite = TRUE)
+              if (!isTRUE(copy_ok)) {
+                stop("file.copy() returned FALSE (source: ", rd_val, ")")
+              }
               cat("[INFO] Copied run folder to additional output:", dest, "\n")
+              showNotification(
+                paste("Run folder copied to", dest),
+                type = "message", duration = 8
+              )
             }, error = function(e) {
               cat("[WARNING] Additional output dir copy failed:", e$message, "\n")
+              showNotification(
+                paste("Could not copy run folder to additional output dir:", e$message),
+                type = "warning", duration = 15
+              )
             })
           }
 
-          shared$run_status <- "completed"
+          sample_ok <- TRUE
           cat("[INFO] Pipeline complete\n")
         } else {
-          shared$run_status <- "failed"
+          sample_ok <- FALSE
           cat("[INFO] Pipeline failed with exit code:", exit_code, "\n")
         }
 
-        pipeline_process(NULL)
+        if (batch_state$index > 0L) {
+          # ---- Batch mode: record this sample's result, then advance or finish ----
+          idx <- batch_state$index
+          run_info <- batch_state$queue[[idx]]
+          batch_state$results[[idx]] <- list(
+            name    = run_info$sample_name,
+            run_id  = run_info$run_id,
+            run_dir = run_dir(),
+            status  = if (sample_ok) "completed" else "failed"
+          )
+
+          pipeline_process(NULL)
+
+          if (idx < length(batch_state$queue)) {
+            # More samples queued — close this sample's modal and open the next.
+            removeModal()
+            batch_state$index <- idx + 1L
+            start_batch_sample(batch_state$index)
+          } else {
+            # Last sample — leave its modal open (same as single-run completion)
+            # so the user sees the final status badge and Return-to-Dashboard button.
+            finish_batch()
+          }
+        } else {
+          # ---- Single-sample mode: unchanged behavior ----
+          shared$run_status <- if (sample_ok) "completed" else "failed"
+          pipeline_process(NULL)
+        }
       }
     })
 
@@ -694,6 +832,9 @@ pipeline_modal_server <- function(id, shared) {
           proc$kill_tree()
           shared$run_status <- "cancelled"
           pipeline_process(NULL)
+          # Stop the batch here — don't auto-advance to the next queued sample,
+          # and don't leave stale batch state that would contaminate the next run.
+          batch_state$index <- 0L
         }, error = function(e) {
           cat("[ERROR] Failed to cancel:", e$message, "\n")
         })
@@ -706,6 +847,7 @@ pipeline_modal_server <- function(id, shared) {
       shared$goto_page <- "Dashboard"
       shared$run_status <- "idle"
       pipeline_process(NULL)
+      batch_state$index <- 0L
     })
   })
 }

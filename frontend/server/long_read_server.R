@@ -157,30 +157,41 @@ long_read_server <- function(id, shared) {
       n <- n_barcodes()
       if (n == 0L) return(NULL)
       tagList(lapply(seq_len(n), function(i) {
-        bc_id <- sprintf("barcode%02d", i)
+        auto_id <- sprintf("barcode%02d", i)
         div(
           class = "row mb-2 align-items-center",
-          div(class = "col-md-3", tags$code(bc_id)),
           div(
-            class = "col-md-9",
+            class = "col-md-7",
             textInput(
               ns(paste0("bc_name_", i)), NULL,
-              placeholder = "Sample name",
+              placeholder = sprintf("Sample name (e.g., Patient%03d)", i),
               value = isolate(input[[paste0("bc_name_", i)]] %||% "")
+            )
+          ),
+          div(
+            class = "col-md-5",
+            textInput(
+              ns(paste0("bc_id_", i)), NULL,
+              placeholder = sprintf("Barcode (optional, default: %s)", auto_id),
+              value = isolate(input[[paste0("bc_id_", i)]] %||% "")
             )
           )
         )
       }))
     })
 
-    # Collect sample_map from current barcode rows
+    # Collect sample_map (barcode -> sample name) from current sample rows.
+    # Barcode is optional per row: blank falls back to the auto-sequential id.
     get_sample_map <- reactive({
       n <- n_barcodes()
       if (n == 0L) return(NULL)
       m <- list()
       for (i in seq_len(n)) {
         nm <- trimws(input[[paste0("bc_name_", i)]] %||% "")
-        if (nchar(nm) > 0) m[[sprintf("barcode%02d", i)]] <- nm
+        if (nchar(nm) == 0) next
+        bc <- trimws(input[[paste0("bc_id_", i)]] %||% "")
+        if (nchar(bc) == 0) bc <- sprintf("barcode%02d", i)
+        m[[bc]] <- nm
       }
       if (length(m) == 0L) NULL else m
     })
@@ -387,6 +398,15 @@ long_read_server <- function(id, shared) {
         )
         return()
       }
+
+      # Capture this module's own output-dir field fresh, right as the run starts.
+      # shared$additional_output_dir is a single global value also written to by the
+      # SR module's own field-change observer — without re-asserting it here at
+      # run-time, visiting the other tab (even with its field empty) can silently
+      # clobber whatever this module's field held.
+      extra_output_dir_val <- trimws(input$extra_output_dir %||% "")
+      shared$additional_output_dir <- if (nchar(extra_output_dir_val) > 0) extra_output_dir_val else NULL
+      cat("[DEBUG] shared$additional_output_dir (lr_meta run):", if (is.null(shared$additional_output_dir)) "(none)" else shared$additional_output_dir, "\n")
 
       run_id <- if (!is.null(input$run_name) && nchar(trimws(input$run_name)) > 0) {
         sanitized <- trimws(input$run_name)

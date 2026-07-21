@@ -377,23 +377,26 @@ long_read_ui <- function(id) {
             )
           ),
 
-          # ── Sample Barcode Mapping (Optional) ────────────────────
+          # ── Samples (barcode mapping for demultiplexed runs) ─────
           conditionalPanel(
             condition = sprintf("input['%s'] != '' || input['%s'] == true", ns("barcoding_kit"), ns("demultiplex")),
             div(
               class = "card mb-4",
               div(
                 class = "card-body",
-                h4("Sample Barcode Mapping (Optional)"),
+                h4("Samples"),
                 tags$p(
                   class = "text-muted",
                   style = "font-size: 0.875rem;",
-                  "Map barcode numbers to meaningful sample names. The selected barcoding kit determines the maximum number of barcodes available."
+                  "Name each sample in this multiplexed run. Barcode is optional — leave it blank ",
+                  "to auto-assign in order (barcode01, barcode02, ...), or enter a specific barcode ",
+                  "ID (e.g. BC01) to pin a sample to it. The selected barcoding kit determines the ",
+                  "maximum number of samples available."
                 ),
                 uiOutput(ns("barcode_map_rows")),
                 div(
                   class = "d-flex gap-2 mt-2",
-                  actionButton(ns("add_barcode_row"), "+ Add barcode",
+                  actionButton(ns("add_barcode_row"), "+ Add sample",
                     class = "btn btn-sm btn-outline-primary"),
                   actionButton(ns("remove_barcode_row"), "Remove last",
                     class = "btn btn-sm btn-outline-secondary")
