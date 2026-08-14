@@ -775,6 +775,7 @@ else
             --i-demultiplexed-sequences "/run/sr_amp/results/qiime2/$(basename "${QIIME2_DEMUX_QZA}")" \
             --p-front-f "${PRIMER_FWD}" \
             --p-front-r "${PRIMER_REV}" \
+            --p-discard-untrimmed \
             --p-cores 1 \
             --o-trimmed-sequences "/run/sr_amp/results/qiime2/trimmed.qza" >>"${QIIME2_LOG}" 2>&1
         ec=$?
@@ -802,6 +803,7 @@ else
             --i-demultiplexed-sequences "/run/sr_amp/results/qiime2/$(basename "${QIIME2_DEMUX_QZA}")" \
             --p-front "${PRIMER_FWD}" \
             --p-adapter "${PRIMER_REV}" \
+            --p-discard-untrimmed \
             --p-cores 1 \
             --o-trimmed-sequences "/run/sr_amp/results/qiime2/trimmed.qza" >>"${QIIME2_LOG}" 2>&1
       elif [[ -n "${PRIMER_FWD}" ]]; then
@@ -811,6 +813,7 @@ else
           qiime cutadapt trim-single \
             --i-demultiplexed-sequences "/run/sr_amp/results/qiime2/$(basename "${QIIME2_DEMUX_QZA}")" \
             --p-front "${PRIMER_FWD}" \
+            --p-discard-untrimmed \
             --p-cores 1 \
             --o-trimmed-sequences "/run/sr_amp/results/qiime2/trimmed.qza" >>"${QIIME2_LOG}" 2>&1
       else
@@ -820,6 +823,7 @@ else
           qiime cutadapt trim-single \
             --i-demultiplexed-sequences "/run/sr_amp/results/qiime2/$(basename "${QIIME2_DEMUX_QZA}")" \
             --p-adapter "${PRIMER_REV}" \
+            --p-discard-untrimmed \
             --p-cores 1 \
             --o-trimmed-sequences "/run/sr_amp/results/qiime2/trimmed.qza" >>"${QIIME2_LOG}" 2>&1
       fi
@@ -904,6 +908,9 @@ else
         --p-trim-left-r "${DADA2_TRIM_LEFT_R}" \
         --p-trunc-len-f "${DADA2_TRUNC_LEN_F}" \
         --p-trunc-len-r "${DADA2_TRUNC_LEN_R}" \
+        --p-trunc-q 0 \
+        --p-max-ee-f 15 \
+        --p-max-ee-r 15 \
         --p-n-threads "${DADA2_N_THREADS}" \
         --o-table "/run/sr_amp/results/qiime2/table.qza" \
         --o-representative-sequences "/run/sr_amp/results/qiime2/rep-seqs.qza" \
@@ -934,6 +941,8 @@ else
         --i-demultiplexed-seqs "${INPUT_FOR_DADA2}" \
         --p-trim-left "${DADA2_TRIM_LEFT_F}" \
         --p-trunc-len "${DADA2_TRUNC_LEN_F}" \
+        --p-trunc-q 0 \
+        --p-max-ee-f 15 \
         --p-n-threads "${DADA2_N_THREADS}" \
         --o-table "/run/sr_amp/results/qiime2/table.qza" \
         --o-representative-sequences "/run/sr_amp/results/qiime2/rep-seqs.qza" \

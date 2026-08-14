@@ -802,6 +802,10 @@ class RunConfig:
     # Options: map-ont (default), map-pb, map-hifi, lr:hq
     seq_type: str = "map-ont"
 
+    # Emu minimum percent identity (0-100), lr_amp only. None = pipeline script
+    # default (95). Recommended: 95 -- see --min-pid help text.
+    emu_min_pid: Optional[float] = None
+
     # Database paths
     kraken2_db: str = ""  # Path to Kraken2 database (for sr_meta, lr_meta, lr_amp)
     emu_db: str = ""  # Path to Emu database (for lr_amp)
@@ -1149,6 +1153,13 @@ def _apply_kraken_params(cfg: Dict[str, Any], config: "RunConfig") -> None:
     cfg["tools"]["kraken2"]["nonvaginal"] = kp.copy()
 
 
+def _apply_emu_params(cfg: Dict[str, Any], config: "RunConfig") -> None:
+    """Inject emu_min_pid into cfg["tools"]["emu"] if set (lr_amp only)."""
+    if config.emu_min_pid is None or config.pipeline != "lr_amp":
+        return
+    cfg.setdefault("tools", {}).setdefault("emu", {})["min_pid"] = config.emu_min_pid
+
+
 def _apply_bracken_params(cfg: Dict[str, Any], config: "RunConfig") -> None:
     """Inject bracken_readlen / no_bracken into cfg["tools"]["bracken"] if set."""
     if config.bracken_readlen is None and not config.no_bracken:
@@ -1443,8 +1454,8 @@ def build_config(config: RunConfig, repo_root: Optional[Path] = None) -> Dict[st
             "dada2": {
                 "trim_left_f": 0,
                 "trim_left_r": 0,
-                "trunc_len_f": 230,
-                "trunc_len_r": 200,
+                "trunc_len_f": 233,
+                "trunc_len_r": 228,
                 "n_threads": 0,  # 0 means use all available
             },
             "diversity": {
@@ -1717,6 +1728,7 @@ def build_config(config: RunConfig, repo_root: Optional[Path] = None) -> Dict[st
             },
         }
         _apply_kraken_params(cfg, config)
+        _apply_emu_params(cfg, config)
         _apply_bracken_params(cfg, config)
         _apply_kraken_memory_mapping(cfg, config)
         # Set full_length based on amplicon type (affects classifier choice: Emu vs Kraken2)

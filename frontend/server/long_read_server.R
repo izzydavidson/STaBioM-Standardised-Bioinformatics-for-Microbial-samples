@@ -438,6 +438,7 @@ long_read_server <- function(id, shared) {
         kraken_db              = input$kraken_db,
         kraken_confidence      = input$kraken_confidence,
         kraken_min_hit_groups  = input$kraken_min_hit_groups,
+        emu_min_pid            = input$emu_min_pid,
         external_db_dir        = input$external_db_dir,
         database_type          = input$database_type,
         human_depletion        = input$human_depletion,

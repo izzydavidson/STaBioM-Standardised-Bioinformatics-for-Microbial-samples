@@ -370,6 +370,8 @@ KRAKEN2_DB="$(jq_first "${CONFIG_PATH}" '.tools.kraken2.db' '.tools.kraken2.db_c
 
 # Emu settings
 EMU_DB="$(jq_first "${CONFIG_PATH}" '.tools.emu.db' '.emu.db' '.emu_db' || true)"
+EMU_MIN_PID="$(jq_first "${CONFIG_PATH}" '.tools.emu.min_pid' '.emu.min_pid' '.emu_min_pid' || true)"
+[[ -n "${EMU_MIN_PID}" ]] || EMU_MIN_PID="95"
 
 # Kraken params for amplicon
 KRAKEN_CONF_VAGINAL="$(jq_first "${CONFIG_PATH}" '.tools.kraken2.vaginal.confidence' '.kraken_confidence_vaginal' || true)"
@@ -966,12 +968,13 @@ emu_classification_per_barcode() {
     local out_dir="${emu_run_dir}/${barcode}"
     make_dir "${out_dir}"
 
-    log "Emu classification (--type ${SEQ_TYPE}): ${fq}"
+    log "Emu classification (--type ${SEQ_TYPE} --min-pid ${EMU_MIN_PID}): ${fq}"
     "${EMU_BIN}" abundance \
       --db "${EMU_DB}" \
       --type "${SEQ_TYPE}" \
       --threads "${THREADS}" \
       --K 100000000 \
+      --min-pid "${EMU_MIN_PID}" \
       --output-dir "${out_dir}" \
       "${fq}" || log_warn "Emu failed for ${barcode}"
   done

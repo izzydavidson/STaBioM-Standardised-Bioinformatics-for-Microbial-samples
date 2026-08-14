@@ -935,6 +935,9 @@ generate_lr_amp_config <- function(params) {
       bin = emu_bin_path
     )
   }
+  if (!is.null(params$emu_min_pid)) {
+    tools_obj$emu$min_pid <- as.numeric(params$emu_min_pid)
+  }
 
   # Dorado settings (FAST5/POD5 only)
   if (input_format %in% c("fast5", "pod5")) {

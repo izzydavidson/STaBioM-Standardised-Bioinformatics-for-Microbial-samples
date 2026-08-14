@@ -355,6 +355,16 @@ long_read_ui <- function(id) {
                     tags$small(class = "text-muted", "Distinct k-mer hit groups required for a classification. Site defaults: vaginal=2, gut=4, oral=4, skin=4")
                   )
                 ),
+                # lr_amp: Emu classifier params
+                conditionalPanel(
+                  condition = sprintf("input['%s'] == 'lr_amp'", ns("pipeline")),
+                  div(
+                    class = "col-md-6 mb-3",
+                    tags$label(class = "form-label", "Emu Minimum Percent Identity"),
+                    numericInput(ns("emu_min_pid"), NULL, value = 95, min = 0, max = 100, step = 1),
+                    tags$small(class = "text-muted", "Recommended: 95")
+                  )
+                ),
                 # Output Types
                 div(
                   class = "col-md-12 mb-3",

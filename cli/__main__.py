@@ -292,6 +292,19 @@ Use 'stabiom <command> --help' for more information on a specific command.
              "map-hifi = PacBio HiFi high-accuracy CCS reads; "
              "lr:hq = Nanopore Q20+ high-quality long reads.",
     )
+    amplicon_group.add_argument(
+        "--min-pid",
+        dest="emu_min_pid",
+        type=float,
+        default=None,
+        metavar="FLOAT",
+        help="Emu minimum percent identity (0-100) for a read alignment to count "
+             "as evidence for a species (Emu's own default is 0, i.e. no identity "
+             "filter). Recommended: 95 -- empirically found to reduce false-positive "
+             "species calls (near-neighbor misclassification) with no recall cost "
+             "across all 4 body sites tested. min-pid=99 is too strict and causes "
+             "near-total recovery collapse; do not use.",
+    )
 
     # --- DATABASE options ---
     db_group = run_parser.add_argument_group(
@@ -968,6 +981,7 @@ Use 'stabiom <command> --help' for more information on a specific command.
                     primer_r=args.primer_r,
                     amplicon_type=args.amplicon_type,
                     seq_type=args.seq_type,
+                    emu_min_pid=args.emu_min_pid,
                     kraken2_db=args.db,
                     emu_db=args.emu_db,
                     kraken_confidence=args.kraken_confidence,
@@ -1111,6 +1125,7 @@ Use 'stabiom <command> --help' for more information on a specific command.
             primer_r=args.primer_r,
             amplicon_type=args.amplicon_type,
             seq_type=args.seq_type,
+            emu_min_pid=args.emu_min_pid,
             kraken2_db=args.db,
             emu_db=args.emu_db,
             kraken_confidence=args.kraken_confidence,
